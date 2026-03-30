@@ -7,7 +7,6 @@ export const exportVideo = async (
   bones: Bone[],
   slots: Slot[],
   attachments: Attachment[],
-  skins: any[],
   keyframes: Keyframes,
   duration: number,
   fps: number,

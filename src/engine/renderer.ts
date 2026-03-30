@@ -1,5 +1,4 @@
 import type { Bone, Skin, Tool } from '../types';
-import { getBoneTip } from './transforms';
 
 export const drawGrid = (
   ctx: CanvasRenderingContext2D,
@@ -100,8 +99,7 @@ export const drawBone = (
   tool: Tool,
   mode: string,
   hasKeyframe: boolean,
-  worldToScreen: (x: number, y: number) => { x: number; y: number },
-  zoom: number
+  worldToScreen: (x: number, y: number) => { x: number; y: number }
 ): void => {
   const color = skin?.color || '#f59e0b';
   const s = worldToScreen(bone._wx, bone._wy);

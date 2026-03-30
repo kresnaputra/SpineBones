@@ -111,7 +111,7 @@ export const MainCanvas = () => {
       const isHovered = hoveredBoneId === bone.id;
       const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
 
-      drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen, camZoom);
+      drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
     });
 
   }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundLoaded, imageLoadTrigger]);

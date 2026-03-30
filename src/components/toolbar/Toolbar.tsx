@@ -184,7 +184,6 @@ export const Toolbar = () => {
         bonesCopy,
         slotState.slots,
         slotState.attachments,
-        skeletonState.skins,
         animationState.keyframes,
         animationState.duration,
         animationState.fps,
