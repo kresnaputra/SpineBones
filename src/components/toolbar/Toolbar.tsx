@@ -130,6 +130,9 @@ export const Toolbar = () => {
         frame: 0,
         playing: false,
       });
+
+      // Save the loaded bone positions as the initial setup pose
+      useSkeletonStore.getState().saveSetupPose();
     };
     
     input.click();
