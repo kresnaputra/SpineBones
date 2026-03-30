@@ -200,6 +200,31 @@ export const Toolbar = () => {
         Clear
       </button>
 
+      <button
+        onClick={() => {
+          if (selectedBoneId === null) return;
+          const animState = useAnimationStore.getState();
+          const boneKeyframes = animState.keyframes[selectedBoneId];
+          if (boneKeyframes) {
+            const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+            if (frames.length > 0) {
+              const firstFrame = frames[0];
+              const firstKey = boneKeyframes[firstFrame];
+              if (firstKey) {
+                captureSnapshot();
+                insertKeyframe(selectedBoneId, firstKey);
+              }
+            }
+          }
+        }}
+        disabled={selectedBoneId === null}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40"
+        title="Copy first keyframe to current frame for smooth looping"
+      >
+        <Diamond size={14} />
+        Loop
+      </button>
+
       <div className="w-px h-6 bg-border mx-1" />
 
       <button
