@@ -2,6 +2,7 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { AttachmentPropertiesPanel } from './AttachmentPropertiesPanel';
 
 export const PropertiesPanel = () => {
   const { selectedBoneId, mode } = useEditorStore();
@@ -11,28 +12,27 @@ export const PropertiesPanel = () => {
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
 
-  const handleChange = (key: string, value: string | number) => {
+  const handleChange = (key: string, value: string | number | null) => {
     if (!selectedBone) return;
     captureSnapshot();
     updateBone(selectedBone.id, { [key]: value });
-    
-    if (mode === 'animate') {
+    if (mode === 'animate' && typeof value === 'number') {
       insertKeyframe(selectedBone.id, {
         x: selectedBone.x,
         y: selectedBone.y,
         rotation: selectedBone.rotation,
         scaleX: selectedBone.scaleX,
         scaleY: selectedBone.scaleY,
-        ...{ [key]: value },
+        [key]: value,
       });
     }
   };
 
   if (!selectedBone) {
     return (
-      <div className="flex flex-col overflow-hidden">
+      <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
         <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-          ⚙ Properties
+          ⚙️ Properties
         </div>
         <div className="p-4 text-[10px] text-text-dim">
           Select a bone to edit its properties
@@ -41,13 +41,13 @@ export const PropertiesPanel = () => {
     );
   }
 
-  const parent = bones.find((b) => b.id === selectedBone.parentId);
-
   return (
-    <div className="flex flex-col overflow-hidden">
+    <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
       <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-        ⚙ Properties
+        ⚙️ Properties
       </div>
+      
+      <AttachmentPropertiesPanel />
       <div className="overflow-y-auto scrollbar-thin">
         <PropRow label="Name">
           <input
@@ -115,12 +115,23 @@ export const PropertiesPanel = () => {
         </PropRow>
 
         <PropRow label="Parent">
-          <input
-            type="text"
-            value={parent?.name || 'none'}
-            disabled
-            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] opacity-50 min-w-0"
-          />
+          <select
+            value={selectedBone.parentId ?? ''}
+            onChange={(e) => {
+              const newParentId = e.target.value === '' ? null : parseInt(e.target.value);
+              handleChange('parentId', newParentId);
+            }}
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+          >
+            <option value="">None</option>
+            {bones
+              .filter((b) => b.id !== selectedBone.id)
+              .map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+          </select>
         </PropRow>
       </div>
     </div>

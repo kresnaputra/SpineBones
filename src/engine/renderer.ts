@@ -100,45 +100,45 @@ export const drawBone = (
   tool: Tool,
   mode: string,
   hasKeyframe: boolean,
-  worldToScreen: (wx: number, wy: number) => { x: number; y: number },
-  camZoom: number
+  worldToScreen: (x: number, y: number) => { x: number; y: number },
+  zoom: number
 ): void => {
-  const skinColor = skin?.color || '#7c3aed';
-  let color = skinColor;
-
-  if (isSelected) color = '#a855f7';
-  else if (isHovered) color = '#06b6d4';
-
+  const color = skin?.color || '#f59e0b';
   const s = worldToScreen(bone._wx, bone._wy);
-  const tip = getBoneTip(bone);
-  const e = worldToScreen(tip.x, tip.y);
 
-  ctx.save();
-  ctx.shadowColor = color;
-  ctx.shadowBlur = isSelected ? 18 : 6;
-
-  drawBoneSegment(ctx, s.x, s.y, e.x, e.y, color + '33', true);
-  drawBoneSegment(ctx, s.x, s.y, e.x, e.y, color, false);
-
-  ctx.restore();
-
+  ctx.fillStyle = isSelected
+    ? '#7c3aed'
+    : isHovered
+    ? '#06b6d4'
+    : color;
+  ctx.globalAlpha = 0.7;
   ctx.beginPath();
-  ctx.arc(s.x, s.y, isSelected ? 6 : 4.5, 0, Math.PI * 2);
-  ctx.fillStyle = isSelected ? '#fff' : color;
+  ctx.arc(s.x, s.y, isSelected ? 8 : 6, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 1.0;
+
+  ctx.strokeStyle = isSelected
+    ? '#7c3aed'
+    : isHovered
+    ? '#06b6d4'
+    : color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, isSelected ? 8 : 6, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.beginPath();
-  ctx.arc(e.x, e.y, 3, 0, Math.PI * 2);
-  ctx.fillStyle = color + '88';
-  ctx.fill();
+  if (hasKeyframe) {
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 12, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
-  if (camZoom > 0.5) {
-    ctx.fillStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.5)';
-    ctx.font = `${Math.max(9, 10 * camZoom)}px JetBrains Mono`;
-    ctx.fillText(bone.name, s.x + 8, s.y - 8);
+  if (isSelected || isHovered) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '10px JetBrains Mono';
+    ctx.fillText(bone.name, s.x + 10, s.y - 10);
   }
 
   if (tool === 'rotate' && isSelected) {

@@ -15,9 +15,13 @@ export const computeAllWorldTransforms = (bones: Bone[]): void => {
         const parent = bones.find((b) => b.id === bone.parentId);
         if (!parent) return;
         
-        const tip = getBoneTip(parent);
-        bone._wx = tip.x;
-        bone._wy = tip.y;
+        const cos = Math.cos((parent._wrot * Math.PI) / 180);
+        const sin = Math.sin((parent._wrot * Math.PI) / 180);
+        const localX = bone.x * parent.scaleX;
+        const localY = bone.y * parent.scaleY;
+        
+        bone._wx = parent._wx + localX * cos - localY * sin;
+        bone._wy = parent._wy + localX * sin + localY * cos;
         bone._wrot = parent._wrot + bone.rotation;
       }
     });

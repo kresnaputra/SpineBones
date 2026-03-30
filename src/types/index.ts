@@ -1,6 +1,30 @@
 export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale';
 export type Mode = 'setup' | 'animate';
 
+export interface Slot {
+  id: number;
+  name: string;
+  boneId: number;
+  color: string;
+  attachmentName: string | null;
+  drawOrder: number;
+}
+
+export interface Attachment {
+  name: string;
+  slotId: number;
+  type: 'image' | 'mesh';
+  imagePath: string;
+  imageData?: string;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+}
+
 export interface Bone {
   id: number;
   name: string;

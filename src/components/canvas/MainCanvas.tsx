@@ -4,8 +4,10 @@ import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useCameraStore } from '../../stores/cameraStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone } from '../../engine/renderer';
+import { drawSlots } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
 
 export const MainCanvas = () => {
@@ -17,6 +19,7 @@ export const MainCanvas = () => {
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
+  const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
 
   const [isPanning, setIsPanning] = useState(false);
@@ -61,6 +64,8 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
+    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom);
+
     bones.forEach((bone) => {
       const skin = skins.find((s) => s.id === bone.skinId);
       const isSelected = selectedBoneId === bone.id;
@@ -79,7 +84,7 @@ export const MainCanvas = () => {
       ctx.lineTo(lastMouse.x, lastMouse.y);
       ctx.stroke();
     }
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, boneCreateStart, lastMouse, worldToScreen]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, boneCreateStart, lastMouse, worldToScreen, slots, attachments]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -100,9 +105,27 @@ export const MainCanvas = () => {
       if (!selectedBone) return;
 
       if (tool === 'move' || tool === 'pose') {
+        let newX = world.x - dragStart.dx;
+        let newY = world.y - dragStart.dy;
+        
+        if (selectedBone.parentId !== null) {
+          computeAllWorldTransforms(bones);
+          const parent = bones.find((b) => b.id === selectedBone.parentId);
+          if (parent) {
+            const cos = Math.cos((-parent._wrot * Math.PI) / 180);
+            const sin = Math.sin((-parent._wrot * Math.PI) / 180);
+            const dx = newX - parent._wx;
+            const dy = newY - parent._wy;
+            newX = dx * cos - dy * sin;
+            newY = dx * sin + dy * cos;
+            newX /= parent.scaleX;
+            newY /= parent.scaleY;
+          }
+        }
+        
         updateBone(selectedBone.id, {
-          x: world.x - dragStart.dx,
-          y: world.y - dragStart.dy,
+          x: newX,
+          y: newY,
         });
       } else if (tool === 'rotate') {
         computeAllWorldTransforms(bones);
