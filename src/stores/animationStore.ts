@@ -9,6 +9,7 @@ interface AnimationState {
   fps: number;
   playing: boolean;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  deleteKeyframe: (boneId: number, frame: number) => void;
   clearKeyframes: (boneId: number) => void;
   setFrame: (frame: number) => void;
   setDuration: (duration: number) => void;
@@ -36,6 +37,22 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  deleteKeyframe: (boneId, frame) => {
+    set((state) => {
+      const boneKeyframes = { ...state.keyframes[boneId] };
+      delete boneKeyframes[frame];
+      
+      const newKeyframes = { ...state.keyframes };
+      if (Object.keys(boneKeyframes).length === 0) {
+        delete newKeyframes[boneId];
+      } else {
+        newKeyframes[boneId] = boneKeyframes;
+      }
+      
+      return { keyframes: newKeyframes };
+    });
   },
 
   clearKeyframes: (boneId) => {

@@ -10,6 +10,8 @@ export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [hoveredKeyframe, setHoveredKeyframe] = useState<{ boneId: number; frame: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; boneId: number; frame: number } | null>(null);
 
   const { mode, selectedBoneId } = useEditorStore();
   const { bones, skins } = useSkeletonStore();
@@ -27,20 +29,25 @@ export const TimelinePanel = () => {
     stop,
     applyKeyframes,
     getKeyframesForBone,
+    deleteKeyframe,
   } = useAnimationStore();
 
   useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current || !wrapRef.current) return;
-      const { clientWidth, clientHeight } = wrapRef.current;
+      const { clientWidth } = wrapRef.current;
+      const rowH = 28;
+      const headerH = 20;
+      const requiredHeight = headerH + bones.length * rowH;
+      
       canvasRef.current.width = clientWidth;
-      canvasRef.current.height = clientHeight;
+      canvasRef.current.height = requiredHeight;
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [bones.length]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -63,10 +70,51 @@ export const TimelinePanel = () => {
     return () => clearInterval(timer);
   }, [playing, frame, duration, fps, mode, setFrame, applyKeyframes]);
 
+  const getKeyframeAtPosition = (sx: number, sy: number): { boneId: number; frame: number } | null => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    
+    const headerW = 120;
+    const rowH = 28;
+    const headerH = 20;
+    const frameW = Math.max(8, (rect.width - headerW) / duration);
+    
+    if (sx < headerW) return null;
+    
+    const boneIndex = Math.floor((sy - headerH) / rowH);
+    if (boneIndex < 0 || boneIndex >= bones.length) return null;
+    
+    const bone = bones[boneIndex];
+    const boneKeyframes = keyframes[bone.id];
+    if (!boneKeyframes) return null;
+    
+    for (const kf of Object.keys(boneKeyframes)) {
+      const kfFrame = parseInt(kf);
+      const kfX = headerW + kfFrame * frameW;
+      const kfY = headerH + boneIndex * rowH + rowH / 2;
+      
+      const dist = Math.hypot(sx - kfX, sy - kfY);
+      if (dist < 8) {
+        return { boneId: bone.id, frame: kfFrame };
+      }
+    }
+    
+    return null;
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    
+    const keyframeHit = getKeyframeAtPosition(sx, sy);
+    
+    if (e.detail === 2 && keyframeHit) {
+      deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
+      return;
+    }
+    
     const headerW = 120;
     const frameW = Math.max(8, (rect.width - headerW) / duration);
 
@@ -79,10 +127,16 @@ export const TimelinePanel = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    
+    const keyframeHit = getKeyframeAtPosition(sx, sy);
+    setHoveredKeyframe(keyframeHit);
+    
+    if (!isDragging) return;
+    
     const headerW = 120;
     const frameW = Math.max(8, (rect.width - headerW) / duration);
     const newFrame = Math.round(Math.max(0, Math.min(duration, (sx - headerW) / frameW)));
@@ -93,6 +147,51 @@ export const TimelinePanel = () => {
   const handleMouseUp = () => {
     setIsDragging(false);
   };
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    
+    const keyframeHit = getKeyframeAtPosition(sx, sy);
+    if (keyframeHit) {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        boneId: keyframeHit.boneId,
+        frame: keyframeHit.frame,
+      });
+    }
+  };
+
+  const handleDeleteFromContextMenu = () => {
+    if (contextMenu) {
+      deleteKeyframe(contextMenu.boneId, contextMenu.frame);
+      setContextMenu(null);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'x' || e.key === 'X' || e.key === 'Delete') && hoveredKeyframe) {
+        deleteKeyframe(hoveredKeyframe.boneId, hoveredKeyframe.frame);
+      }
+    };
+
+    const handleClickOutside = () => {
+      setContextMenu(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('click', handleClickOutside);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('click', handleClickOutside);
+    };
+  }, [hoveredKeyframe, deleteKeyframe]);
 
   const handlePrevKey = () => {
     if (selectedBoneId === null) return;
@@ -177,14 +276,31 @@ export const TimelinePanel = () => {
           max="300"
         />
       </div>
-      <div ref={wrapRef} className="flex-1 overflow-hidden relative">
+      <div ref={wrapRef} className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin">
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          className="absolute top-0 left-0"
+          onContextMenu={handleContextMenu}
+          className="block"
+          style={{ cursor: hoveredKeyframe ? 'pointer' : 'default' }}
         />
+        
+        {contextMenu && (
+          <div
+            className="fixed bg-panel2 border border-border rounded-md shadow-lg py-1 z-50"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={handleDeleteFromContextMenu}
+              className="w-full px-4 py-1.5 text-left text-[11px] text-text hover:bg-accent hover:text-white transition-colors"
+            >
+              Delete Keyframe
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
