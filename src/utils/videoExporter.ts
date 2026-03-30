@@ -14,6 +14,7 @@ export const exportVideo = async (
   camX: number,
   camY: number,
   camZoom: number,
+  backgroundImage: string | null = null,
   width: number = 1920,
   height: number = 1080
 ): Promise<void> => {
@@ -22,6 +23,16 @@ export const exportVideo = async (
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not get canvas context');
+
+  let loadedBackgroundImage: HTMLImageElement | null = null;
+  if (backgroundImage) {
+    loadedBackgroundImage = new Image();
+    await new Promise<void>((resolve, reject) => {
+      loadedBackgroundImage!.onload = () => resolve();
+      loadedBackgroundImage!.onerror = () => reject(new Error('Failed to load background image'));
+      loadedBackgroundImage!.src = backgroundImage;
+    });
+  }
 
   const stream = canvas.captureStream(fps);
   
@@ -111,6 +122,15 @@ export const exportVideo = async (
 
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, width, height);
+
+      if (loadedBackgroundImage) {
+        const scale = Math.min(width / loadedBackgroundImage.width, height / loadedBackgroundImage.height);
+        const w = loadedBackgroundImage.width * scale;
+        const h = loadedBackgroundImage.height * scale;
+        const x = (width - w) / 2;
+        const y = (height - h) / 2;
+        ctx.drawImage(loadedBackgroundImage, x, y, w, h);
+      }
 
       bones.forEach((bone) => {
         applyKeyframe(bone.id, currentFrame);

@@ -1,11 +1,36 @@
+import { useState } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useHistoryStore } from '../../stores/historyStore';
 
 export const BoneTreePanel = () => {
-  const { bones, deleteBone } = useSkeletonStore();
+  const { bones, deleteBone, reorderBones } = useSkeletonStore();
   const { selectedBoneId, selectBone } = useEditorStore();
   const { captureSnapshot } = useHistoryStore();
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === dropIndex) return;
+    
+    captureSnapshot();
+    reorderBones(draggedIndex, dropIndex);
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden border-b border-border">
@@ -13,13 +38,18 @@ export const BoneTreePanel = () => {
         🦴 Bones
       </div>
       <div className="flex-1 overflow-y-auto py-1.5 scrollbar-thin">
-        {bones.map((bone) => (
+        {bones.map((bone, index) => (
           <div
             key={bone.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, index)}
+            onDragEnd={handleDragEnd}
             onClick={() => selectBone(bone.id)}
-            className={`flex items-center gap-1.5 px-3 py-1 cursor-pointer transition-colors group ${
+            className={`flex items-center gap-1.5 px-3 py-1 cursor-move transition-colors group ${
               selectedBoneId === bone.id ? 'bg-accent/20' : 'hover:bg-panel2'
-            }`}
+            } ${draggedIndex === index ? 'opacity-50' : ''}`}
           >
             <div
               className={`w-2 h-2 rounded-full flex-shrink-0 ${

@@ -10,6 +10,7 @@ interface SkeletonState {
   addBone: (bone: Omit<Bone, 'id'>) => Bone;
   updateBone: (id: number, updates: Partial<Bone>) => void;
   deleteBone: (id: number) => void;
+  reorderBones: (fromIndex: number, toIndex: number) => void;
   addSkin: (name: string, color: string) => void;
   setActiveSkin: (id: number) => void;
   getBoneById: (id: number) => Bone | undefined;
@@ -50,6 +51,15 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
     set((state) => ({
       bones: state.bones.filter((bone) => bone.id !== id && bone.parentId !== id),
     }));
+  },
+
+  reorderBones: (fromIndex, toIndex) => {
+    set((state) => {
+      const newBones = [...state.bones];
+      const [movedBone] = newBones.splice(fromIndex, 1);
+      newBones.splice(toIndex, 0, movedBone);
+      return { bones: newBones };
+    });
   },
 
   addSkin: (name, color) => {

@@ -1,4 +1,4 @@
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -35,7 +35,7 @@ const TOOL_SHORTCUTS = {
 };
 
 export const Toolbar = () => {
-  const { tool, mode, setTool, setMode, selectedBoneId } = useEditorStore();
+  const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
   const { addSkin } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
@@ -176,6 +176,7 @@ export const Toolbar = () => {
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
+      const editorState = useEditorStore.getState();
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -189,13 +190,44 @@ export const Toolbar = () => {
         animationState.fps,
         cameraState.x,
         cameraState.y,
-        cameraState.zoom
+        cameraState.zoom,
+        editorState.backgroundImage
       );
       console.log('Video export completed!');
     } catch (error) {
       console.error('Video export failed:', error);
       alert('Video export failed. Check console for details.');
     }
+  };
+
+  const handleBackgroundUpload = () => {
+    console.log('Background upload clicked');
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) {
+        console.log('No file selected');
+        return;
+      }
+
+      console.log('File selected:', file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imageData = event.target?.result as string;
+        console.log('Background image loaded, setting...');
+        setBackgroundImage(imageData);
+      };
+      reader.readAsDataURL(file);
+    };
+    
+    input.click();
+  };
+
+  const handleRemoveBackground = () => {
+    setBackgroundImage(null);
   };
 
   return (
@@ -338,6 +370,26 @@ export const Toolbar = () => {
       >
         <Video size={14} />
         Export Video
+      </button>
+
+      <div className="w-px h-6 bg-border mx-1" />
+
+      <button
+        onClick={handleBackgroundUpload}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Upload background image"
+      >
+        <Image size={14} />
+        Background
+      </button>
+
+      <button
+        onClick={handleRemoveBackground}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Remove background image"
+      >
+        <XCircle size={14} />
+        Remove BG
       </button>
 
       <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">

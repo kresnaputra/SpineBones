@@ -61,19 +61,18 @@ export const drawSlots = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number
 ): void => {
-  const sortedSlots = [...slots].sort((a, b) => a.drawOrder - b.drawOrder);
+  bones.forEach((bone) => {
+    const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
+    
+    boneSlots.forEach((slot) => {
+      if (!slot.attachmentName) return;
 
-  sortedSlots.forEach((slot) => {
-    if (!slot.attachmentName) return;
+      const attachment = attachments.find(
+        (a) => a.slotId === slot.id && a.name === slot.attachmentName
+      );
+      if (!attachment) return;
 
-    const attachment = attachments.find(
-      (a) => a.slotId === slot.id && a.name === slot.attachmentName
-    );
-    if (!attachment) return;
-
-    const bone = bones.find((b) => b.id === slot.boneId);
-    if (!bone) return;
-
-    drawAttachment(ctx, attachment, bone, worldToScreen, zoom);
+      drawAttachment(ctx, attachment, bone, worldToScreen, zoom);
+    });
   });
 };

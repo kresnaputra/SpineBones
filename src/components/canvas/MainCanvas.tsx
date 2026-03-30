@@ -14,8 +14,9 @@ export const MainCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
+  const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   
-  const { tool, mode, selectedBoneId, selectBone } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectBone, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
@@ -34,6 +35,29 @@ export const MainCanvas = () => {
     initSY: number;
     initRot: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!backgroundImage) {
+      backgroundImageRef.current = null;
+      return;
+    }
+    
+    const img = new Image();
+    img.onload = () => {
+      backgroundImageRef.current = img;
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      }
+    };
+    img.onerror = () => {
+      console.error('Failed to load background image');
+      backgroundImageRef.current = null;
+    };
+    img.src = backgroundImage;
+  }, [backgroundImage]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -57,6 +81,17 @@ export const MainCanvas = () => {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
+    if (backgroundImageRef.current) {
+      const scale = Math.min(canvas.width / backgroundImageRef.current.width, canvas.height / backgroundImageRef.current.height);
+      const w = backgroundImageRef.current.width * scale;
+      const h = backgroundImageRef.current.height * scale;
+      const x = (canvas.width - w) / 2;
+      const y = (canvas.height - h) / 2;
+      ctx.globalAlpha = 0.3;
+      ctx.drawImage(backgroundImageRef.current, x, y, w, h);
+      ctx.globalAlpha = 1.0;
+    }
+    
     drawGrid(ctx, camX, camY, camZoom, canvas.width, canvas.height);
     drawOriginCross(ctx, worldToScreen);
 
@@ -73,7 +108,7 @@ export const MainCanvas = () => {
       drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen, camZoom);
     });
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
