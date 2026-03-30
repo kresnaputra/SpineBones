@@ -8,10 +8,10 @@ export const AttachmentPropertiesPanel = () => {
   if (!selectedBoneId) {
     return (
       <div className="border-b border-border">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
           🖼️ Attachment
         </div>
-        <div className="p-3 text-[10px] text-text-dim">
+        <div className="p-3 text-[10px] text-text-dim panel-padding-left">
           Select a bone with an active attachment
         </div>
       </div>
@@ -25,7 +25,7 @@ export const AttachmentPropertiesPanel = () => {
     return (
       <div className="border-b border-border">
         <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-          🖼️ Attachment
+          Attachment
         </div>
         <div className="p-3 text-[10px] text-text-dim">
           No active attachment for this bone
@@ -47,9 +47,9 @@ export const AttachmentPropertiesPanel = () => {
   };
 
   return (
-    <div className="border-b border-border">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-        🖼️ Attachment: {attachment.name}
+    <div className="border-b border-border panel-padding-left">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 ">
+        Attachment: {attachment.name}
       </div>
       <div className="p-3 space-y-2">
         <div className="text-[9px] text-text-dim mb-2">

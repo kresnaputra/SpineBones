@@ -52,3 +52,13 @@ body {
   background: var(--color-border);
   border-radius: 2px;
 }
+
+/* Force left padding for panels */
+.panel-padding-left {
+  padding-left: 16px !important;
+}
+
+/* Force right padding for panels */
+.panel-padding-right {
+  padding-right: 16px !important;
+}

@@ -1,6 +1,11 @@
 export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale';
 export type Mode = 'setup' | 'animate';
 
+export type SetupPose = Record<
+  number,
+  { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
+>;
+
 export interface Slot {
   id: number;
   name: string;
@@ -66,4 +71,18 @@ export interface CameraState {
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface ProjectData {
+  version: string;
+  bones: Bone[];
+  skins: Skin[];
+  activeSkinId?: number;
+  setupPose?: SetupPose;
+  slots: Slot[];
+  attachments: Attachment[];
+  keyframes: Keyframes;
+  duration: number;
+  fps: number;
+  backgroundImage?: string | null;
 }

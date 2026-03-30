@@ -3,6 +3,7 @@ import { useEditorStore } from '../stores/editorStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
+import { loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
   const { tool, setTool, mode, selectedBoneId, selectBone } = useEditorStore();
@@ -30,6 +31,18 @@ export const useKeyboardShortcuts = () => {
       if (isModifierPressed && key === 'y') {
         e.preventDefault();
         redo();
+        return;
+      }
+
+      if (isModifierPressed && key === 's') {
+        e.preventDefault();
+        void saveProject(e.shiftKey);
+        return;
+      }
+
+      if (isModifierPressed && key === 'o') {
+        e.preventDefault();
+        void loadProject();
         return;
       }
 

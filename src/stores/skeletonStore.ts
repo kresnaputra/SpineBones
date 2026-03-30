@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import type { Bone, Skin } from '../types';
+import type { Bone, Skin, SetupPose } from '../types';
 
 interface SkeletonState {
   bones: Bone[];
-  setupPose: Record<number, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }>;
+  setupPose: SetupPose;
   skins: Skin[];
   activeSkinId: number;
   boneIdCounter: number;
@@ -79,7 +79,7 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
 
   saveSetupPose: () => {
     const { bones } = get();
-    const setupPose: Record<number, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }> = {};
+    const setupPose: SetupPose = {};
     bones.forEach((bone) => {
       setupPose[bone.id] = {
         x: bone.x,

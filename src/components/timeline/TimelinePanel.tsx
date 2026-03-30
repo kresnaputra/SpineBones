@@ -223,7 +223,7 @@ export const TimelinePanel = () => {
 
   return (
     <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
         <button
           onClick={playing ? stop : play}
           className="px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-xs"

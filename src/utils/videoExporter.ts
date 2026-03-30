@@ -16,7 +16,7 @@ export const exportVideo = async (
   backgroundImage: string | null = null,
   width: number = 1920,
   height: number = 1080
-): Promise<void> => {
+): Promise<Blob> => {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -113,13 +113,7 @@ export const exportVideo = async (
   return new Promise((resolve) => {
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'spine-animation.webm';
-      a.click();
-      URL.revokeObjectURL(url);
-      resolve();
+      resolve(blob);
     };
 
     mediaRecorder.start();

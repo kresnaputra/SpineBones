@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { useEditorStore } from '../../stores/editorStore';
-import { useSkeletonStore } from '../../stores/skeletonStore';
-import { useHistoryStore } from '../../stores/historyStore';
+import { useState } from "react";
+import { useEditorStore } from "../../stores/editorStore";
+import { useSkeletonStore } from "../../stores/skeletonStore";
+import { useHistoryStore } from "../../stores/historyStore";
 
 export const BoneTreePanel = () => {
   const { bones, deleteBone, reorderBones } = useSkeletonStore();
@@ -11,18 +11,18 @@ export const BoneTreePanel = () => {
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = "move";
   };
 
   const handleDrop = (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === dropIndex) return;
-    
+
     captureSnapshot();
     reorderBones(draggedIndex, dropIndex);
     setDraggedIndex(null);
@@ -34,7 +34,7 @@ export const BoneTreePanel = () => {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden border-b border-border">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+      <div className="panel-padding-left pr-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
         🦴 Bones
       </div>
       <div className="flex-1 overflow-y-auto py-1.5 scrollbar-thin">
@@ -47,13 +47,13 @@ export const BoneTreePanel = () => {
             onDrop={(e) => handleDrop(e, index)}
             onDragEnd={handleDragEnd}
             onClick={() => selectBone(bone.id)}
-            className={`flex items-center gap-1.5 px-3 py-1 cursor-move transition-colors group ${
-              selectedBoneId === bone.id ? 'bg-accent/20' : 'hover:bg-panel2'
-            } ${draggedIndex === index ? 'opacity-50' : ''}`}
+            className={`flex items-center gap-1.5 panel-padding-left pr-3 py-1 cursor-move transition-colors group ${
+              selectedBoneId === bone.id ? "bg-accent/20" : "hover:bg-panel2"
+            } ${draggedIndex === index ? "opacity-50" : ""}`}
           >
             <div
               className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                selectedBoneId === bone.id ? 'bg-bone-sel' : 'bg-bone-col'
+                selectedBoneId === bone.id ? "bg-bone-sel" : "bg-bone-col"
               }`}
             />
             <span className="flex-1 text-text text-[11px]">{bone.name}</span>

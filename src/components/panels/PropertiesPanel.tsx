@@ -31,10 +31,10 @@ export const PropertiesPanel = () => {
   if (!selectedBone) {
     return (
       <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
           ⚙️ Properties
         </div>
-        <div className="p-4 text-[10px] text-text-dim">
+        <div className="p-4 text-[10px] text-text-dim panel-padding-left">
           Select a bone to edit its properties
         </div>
       </div>
@@ -43,12 +43,12 @@ export const PropertiesPanel = () => {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
         ⚙️ Properties
       </div>
       
       <AttachmentPropertiesPanel />
-      <div className="overflow-y-auto scrollbar-thin">
+      <div className="overflow-y-auto scrollbar-thin panel-padding-left">
         <PropRow label="Name">
           <input
             type="text"

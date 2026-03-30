@@ -6,4 +6,10 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), cloudflare()],
+  clearScreen: false,
+  server: {
+    host: process.env.TAURI_DEV_HOST || '0.0.0.0',
+    port: 1420,
+    strictPort: true,
+  },
 })

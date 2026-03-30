@@ -44,7 +44,6 @@ export const MainCanvas = () => {
       if (backgroundImageRef.current) {
         console.log('Clearing background ref and triggering re-render');
         backgroundImageRef.current = null;
-        setBackgroundLoaded(prev => prev + 1);
       }
       return;
     }
@@ -114,7 +113,7 @@ export const MainCanvas = () => {
       drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
     });
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundLoaded, imageLoadTrigger]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage, backgroundLoaded, imageLoadTrigger]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();

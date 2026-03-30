@@ -1,3 +1,4 @@
+import { useEffect, useEffectEvent } from 'react';
 import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
@@ -5,6 +6,8 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
+import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
+import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
 import { exportSpineJSON, createTextureAtlas } from '../../utils/spineExporter';
 import { exportVideo } from '../../utils/videoExporter';
 import JSZip from 'jszip';
@@ -34,12 +37,20 @@ const TOOL_SHORTCUTS = {
   scale: 'S',
 };
 
+const IMAGE_FILTERS = [
+  {
+    name: 'Images',
+    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
+  },
+];
+
 export const Toolbar = () => {
   const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
   const { addSkin, saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
+  const showToolbarFileActions = !isDesktopApp();
 
   const handleInsertKeyframe = () => {
     if (selectedBoneId === null) return;
@@ -72,70 +83,22 @@ export const Toolbar = () => {
     }
   };
 
-  const handleSave = () => {
-    const skeletonState = useSkeletonStore.getState();
-    const animationState = useAnimationStore.getState();
-    const slotState = useSlotStore.getState();
-    
-    const projectData = {
-      version: '1.0',
-      bones: skeletonState.bones,
-      skins: skeletonState.skins,
-      slots: slotState.slots,
-      attachments: slotState.attachments,
-      keyframes: animationState.keyframes,
-      duration: animationState.duration,
-      fps: animationState.fps,
-    };
-
-    const json = JSON.stringify(projectData, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'spine-project.json';
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleSave = async () => {
+    try {
+      await saveProject();
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      alert('Failed to save project. Check console for details.');
+    }
   };
 
-  const handleLoad = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const text = await file.text();
-      const projectData = JSON.parse(text);
-
-      useSkeletonStore.setState({
-        bones: projectData.bones || [],
-        skins: projectData.skins || [],
-        boneIdCounter: Math.max(...(projectData.bones || []).map((b: any) => b.id), 0) + 1,
-        skinIdCounter: Math.max(...(projectData.skins || []).map((s: any) => s.id), 0) + 1,
-      });
-
-      useSlotStore.setState({
-        slots: projectData.slots || [],
-        attachments: projectData.attachments || [],
-        nextSlotId: Math.max(...(projectData.slots || []).map((s: any) => s.id), 0) + 1,
-      });
-
-      useAnimationStore.setState({
-        keyframes: projectData.keyframes || {},
-        duration: projectData.duration || 60,
-        fps: projectData.fps || 24,
-        frame: 0,
-        playing: false,
-      });
-
-      // Save the loaded bone positions as the initial setup pose
-      useSkeletonStore.getState().saveSetupPose();
-    };
-    
-    input.click();
+  const handleLoad = async () => {
+    try {
+      await loadProject();
+    } catch (error) {
+      console.error('Failed to load project:', error);
+      alert('Failed to load project. Check console for details.');
+    }
   };
 
   const handleExportSpine = async () => {
@@ -163,12 +126,13 @@ export const Toolbar = () => {
     });
 
     const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'spine-export.zip';
-    a.click();
-    URL.revokeObjectURL(url);
+    const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-export.zip`;
+    await saveBlobFile(suggestedName, blob, [
+      {
+        name: 'ZIP Archive',
+        extensions: ['zip'],
+      },
+    ]);
   };
 
   const handleExportVideo = async () => {
@@ -182,7 +146,7 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
-      await exportVideo(
+      const blob = await exportVideo(
         bonesCopy,
         slotState.slots,
         slotState.attachments,
@@ -194,6 +158,13 @@ export const Toolbar = () => {
         cameraState.zoom,
         editorState.backgroundImage
       );
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-animation.webm`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'WebM Video',
+          extensions: ['webm'],
+        },
+      ]);
       console.log('Video export completed!');
     } catch (error) {
       console.error('Video export failed:', error);
@@ -201,30 +172,34 @@ export const Toolbar = () => {
     }
   };
 
-  const handleBackgroundUpload = () => {
-    console.log('Background upload clicked');
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
-        console.log('No file selected');
-        return;
-      }
+  const handleExportSpineMenuEvent = useEffectEvent(() => {
+    void handleExportSpine();
+  });
 
-      console.log('File selected:', file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target?.result as string;
-        console.log('Background image loaded, setting...');
-        setBackgroundImage(imageData);
-      };
-      reader.readAsDataURL(file);
+  const handleExportVideoMenuEvent = useEffectEvent(() => {
+    void handleExportVideo();
+  });
+
+  useEffect(() => {
+    window.addEventListener('spine:file-export-spine', handleExportSpineMenuEvent);
+    window.addEventListener('spine:file-export-video', handleExportVideoMenuEvent);
+
+    return () => {
+      window.removeEventListener('spine:file-export-spine', handleExportSpineMenuEvent);
+      window.removeEventListener('spine:file-export-video', handleExportVideoMenuEvent);
     };
-    
-    input.click();
+  }, []);
+
+  const handleBackgroundUpload = async () => {
+    try {
+      const image = await openImageFile({ filters: IMAGE_FILTERS });
+      if (!image) return;
+      console.log('Background image loaded:', getFileNameFromPath(image.path ?? image.name));
+      setBackgroundImage(image.dataUrl);
+    } catch (error) {
+      console.error('Failed to load background image:', error);
+      alert('Failed to load background image. Check console for details.');
+    }
   };
 
   const handleRemoveBackground = () => {
@@ -234,7 +209,7 @@ export const Toolbar = () => {
   };
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0">
+    <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
       <div className="font-sans font-extrabold text-base text-accent tracking-tight mr-4">
         Spine<span className="text-accent2">Web</span>
       </div>
@@ -337,45 +312,49 @@ export const Toolbar = () => {
         Add Skin
       </button>
 
-      <div className="w-px h-6 bg-border mx-1" />
+      {showToolbarFileActions ? (
+        <>
+          <div className="w-px h-6 bg-border mx-1" />
 
-      <button
-        onClick={handleSave}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Save Project"
-      >
-        <Save size={14} />
-        Save
-      </button>
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Save Project"
+          >
+            <Save size={14} />
+            Save
+          </button>
 
-      <button
-        onClick={handleLoad}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Load Project"
-      >
-        <Upload size={14} />
-        Load
-      </button>
+          <button
+            onClick={handleLoad}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Load Project"
+          >
+            <Upload size={14} />
+            Load
+          </button>
 
-      <button
-        onClick={handleExportSpine}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Export for PixiJS (@pixi/spine)"
-      >
-        <Download size={14} />
-        Export Spine
-      </button>
+          <button
+            onClick={handleExportSpine}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export for PixiJS (@pixi/spine)"
+          >
+            <Download size={14} />
+            Export Spine
+          </button>
 
-      <button
-        onClick={handleExportVideo}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Export animation as video (WebM)"
-      >
-        <Video size={14} />
-        Export Video
-      </button>
+          <button
+            onClick={handleExportVideo}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as video (WebM)"
+          >
+            <Video size={14} />
+            Export Video
+          </button>
 
-      <div className="w-px h-6 bg-border mx-1" />
+          <div className="w-px h-6 bg-border mx-1" />
+        </>
+      ) : null}
 
       <button
         onClick={handleBackgroundUpload}
@@ -395,14 +374,16 @@ export const Toolbar = () => {
         Remove BG
       </button>
 
-      <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">
+      <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
         <button
           onClick={() => {
             restoreSetupPose();
             setMode('setup');
           }}
-          className={`px-4 py-1.5 text-[11px] transition-all ${
-            mode === 'setup' ? 'bg-accent text-white' : 'text-text-dim'
+          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+            mode === 'setup'
+              ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
+              : 'text-text-dim hover:bg-panel hover:text-text'
           }`}
         >
           SETUP
@@ -440,8 +421,10 @@ export const Toolbar = () => {
             saveSetupPose();
             setMode('animate');
           }}
-          className={`px-4 py-1.5 text-[11px] transition-all ${
-            mode === 'animate' ? 'bg-accent text-white' : 'text-text-dim'
+          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+            mode === 'animate'
+              ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
+              : 'text-text-dim hover:bg-panel hover:text-text'
           }`}
         >
           ANIMATE

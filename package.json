@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "lint": "eslint .",
     "preview": "bun run build && wrangler dev",
     "deploy": "bun run build && wrangler deploy"
@@ -13,6 +15,10 @@
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.30.2",
     "@tailwindcss/postcss": "^4.2.2",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
@@ -22,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
