@@ -199,12 +199,6 @@ export const Toolbar = () => {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
-      <div className="font-sans font-extrabold text-base text-accent tracking-tight mr-4">
-        Spine<span className="text-accent2">Bones</span>
-      </div>
-
-      <div className="w-px h-6 bg-border mx-1" />
-
       {(Object.keys(TOOL_ICONS) as Tool[]).map((t) => {
         const Icon = TOOL_ICONS[t];
         return (
