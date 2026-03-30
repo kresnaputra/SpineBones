@@ -1,7 +1,8 @@
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2 } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
+import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import type { Tool } from '../../types';
 
@@ -65,6 +66,69 @@ export const Toolbar = () => {
       captureSnapshot();
       addSkin(name, color);
     }
+  };
+
+  const handleSave = () => {
+    const skeletonState = useSkeletonStore.getState();
+    const animationState = useAnimationStore.getState();
+    const slotState = useSlotStore.getState();
+    
+    const projectData = {
+      version: '1.0',
+      bones: skeletonState.bones,
+      skins: skeletonState.skins,
+      slots: slotState.slots,
+      attachments: slotState.attachments,
+      keyframes: animationState.keyframes,
+      duration: animationState.duration,
+      fps: animationState.fps,
+    };
+
+    const json = JSON.stringify(projectData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spine-project.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoad = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const text = await file.text();
+      const projectData = JSON.parse(text);
+
+      useSkeletonStore.setState({
+        bones: projectData.bones || [],
+        skins: projectData.skins || [],
+        boneIdCounter: Math.max(...(projectData.bones || []).map((b: any) => b.id), 0) + 1,
+        skinIdCounter: Math.max(...(projectData.skins || []).map((s: any) => s.id), 0) + 1,
+      });
+
+      useSlotStore.setState({
+        slots: projectData.slots || [],
+        attachments: projectData.attachments || [],
+        nextSlotId: Math.max(...(projectData.slots || []).map((s: any) => s.id), 0) + 1,
+      });
+
+      useAnimationStore.setState({
+        keyframes: projectData.keyframes || {},
+        duration: projectData.duration || 60,
+        fps: projectData.fps || 24,
+        frame: 0,
+        playing: false,
+      });
+    };
+    
+    input.click();
   };
 
   return (
@@ -144,6 +208,26 @@ export const Toolbar = () => {
       >
         <Plus size={14} />
         Add Skin
+      </button>
+
+      <div className="w-px h-6 bg-border mx-1" />
+
+      <button
+        onClick={handleSave}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Save Project"
+      >
+        <Save size={14} />
+        Save
+      </button>
+
+      <button
+        onClick={handleLoad}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Load Project"
+      >
+        <Upload size={14} />
+        Load
       </button>
 
       <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">
