@@ -12,6 +12,7 @@ export const TimelinePanel = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredKeyframe, setHoveredKeyframe] = useState<{ boneId: number; frame: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; boneId: number; frame: number } | null>(null);
+  const [resizeTick, setResizeTick] = useState(0);
 
   const { mode, selectedBoneId, selectBone } = useEditorStore();
   const { bones, skins } = useSkeletonStore();
@@ -42,6 +43,7 @@ export const TimelinePanel = () => {
       
       canvasRef.current.width = clientWidth;
       canvasRef.current.height = requiredHeight;
+      setResizeTick((tick) => tick + 1);
     };
 
     handleResize();
@@ -56,7 +58,7 @@ export const TimelinePanel = () => {
     if (!ctx) return;
 
     drawTimeline(ctx, bones, skins, keyframes, frame, duration, selectedBoneId, canvas.width, canvas.height);
-  }, [bones, skins, keyframes, frame, duration, selectedBoneId]);
+  }, [bones, skins, keyframes, frame, duration, selectedBoneId, resizeTick]);
 
   useEffect(() => {
     if (!playing) return;

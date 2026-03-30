@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -46,7 +46,7 @@ const IMAGE_FILTERS = [
 
 export const Toolbar = () => {
   const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
-  const { addSkin, saveSetupPose, restoreSetupPose } = useSkeletonStore();
+  const { saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
@@ -70,17 +70,6 @@ export const Toolbar = () => {
     if (selectedBoneId === null) return;
     captureSnapshot();
     clearKeyframes(selectedBoneId);
-  };
-
-  const handleAddSkin = () => {
-    const colors = ['#7c3aed', '#06b6d4', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#f97316'];
-    const skinCount = useSkeletonStore.getState().skins.length;
-    const color = colors[skinCount % colors.length];
-    const name = prompt('Skin name:', `skin_${skinCount}`);
-    if (name) {
-      captureSnapshot();
-      addSkin(name, color);
-    }
   };
 
   const handleSave = async () => {
@@ -211,7 +200,7 @@ export const Toolbar = () => {
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
       <div className="font-sans font-extrabold text-base text-accent tracking-tight mr-4">
-        Spine<span className="text-accent2">Web</span>
+        Spine<span className="text-accent2">Bones</span>
       </div>
 
       <div className="w-px h-6 bg-border mx-1" />
@@ -300,16 +289,6 @@ export const Toolbar = () => {
       >
         <Diamond size={14} />
         Loop
-      </button>
-
-      <div className="w-px h-6 bg-border mx-1" />
-
-      <button
-        onClick={handleAddSkin}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-      >
-        <Plus size={14} />
-        Add Skin
       </button>
 
       {showToolbarFileActions ? (

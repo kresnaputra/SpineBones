@@ -3,6 +3,7 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { openImageFile } from '../../utils/nativeIO';
+import { useHistoryStore } from '../../stores/historyStore';
 
 const IMAGE_FILTERS = [
   {
@@ -15,16 +16,15 @@ export const SlotListPanel = () => {
   const { selectedBoneId } = useEditorStore();
   const { bones } = useSkeletonStore();
   const { slots, addSlot, deleteSlot, addAttachment, setSlotAttachment, getAttachmentsBySlot } = useSlotStore();
+  const { captureSnapshot } = useHistoryStore();
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
   const boneSlots = selectedBone ? slots.filter((s) => s.boneId === selectedBone.id) : [];
 
   const handleAddSlot = () => {
     if (!selectedBone) return;
-    const slotName = prompt('Slot name:', `slot_${slots.length}`);
-    if (slotName) {
-      addSlot(selectedBone.id, slotName);
-    }
+    captureSnapshot();
+    addSlot(selectedBone.id, `${selectedBone.name}_slot_${boneSlots.length}`);
   };
 
   const handleUploadImage = async (slotId: number) => {

@@ -13,7 +13,7 @@ import {
 
 const PROJECT_FILTERS = [
   {
-    name: 'Spine Web Project',
+    name: 'SpineBones Project',
     extensions: ['json'],
   },
 ];
@@ -85,7 +85,7 @@ export const applyProjectData = (
 
 export const getSuggestedProjectFileName = () => {
   const currentProjectPath = useEditorStore.getState().currentProjectPath;
-  if (!currentProjectPath) return 'spine-project.json';
+  if (!currentProjectPath) return 'spinebones-project.json';
 
   return `${stripExtension(getFileNameFromPath(currentProjectPath))}.json`;
 };

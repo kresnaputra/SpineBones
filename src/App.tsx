@@ -32,8 +32,8 @@ function App() {
 
   useEffect(() => {
     document.title = currentProjectPath
-      ? `${getFileNameFromPath(currentProjectPath)} - Spine Web`
-      : 'Spine Web';
+      ? `${getFileNameFromPath(currentProjectPath)} - SpineBones`
+      : 'SpineBones';
   }, [currentProjectPath]);
 
   return <EditorLayout />;

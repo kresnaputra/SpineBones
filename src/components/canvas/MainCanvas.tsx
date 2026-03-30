@@ -17,6 +17,7 @@ export const MainCanvas = () => {
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const [backgroundLoaded, setBackgroundLoaded] = useState(0);
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
+  const [resizeTick, setResizeTick] = useState(0);
   
   const { tool, mode, selectedBoneId, selectBone, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
@@ -67,6 +68,7 @@ export const MainCanvas = () => {
       canvasRef.current.width = clientWidth;
       canvasRef.current.height = clientHeight;
       setCanvasSize(clientWidth, clientHeight);
+      setResizeTick((tick) => tick + 1);
     };
 
     handleResize();
@@ -113,7 +115,7 @@ export const MainCanvas = () => {
       drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
     });
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage, backgroundLoaded, imageLoadTrigger]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();

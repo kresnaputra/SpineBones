@@ -1,7 +1,7 @@
 [package]
 name = "spine-web"
 version = "0.1.0"
-description = "Desktop shell for Spine Web"
+description = "Desktop shell for SpineBones"
 authors = ["kresnaputra"]
 license = ""
 repository = ""

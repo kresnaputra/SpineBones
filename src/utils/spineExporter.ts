@@ -186,7 +186,7 @@ export const exportSpineJSON = (
 
   const spineData: SpineSkeletonData = {
     skeleton: {
-      hash: 'SpineWeb',
+      hash: 'SpineBones',
       spine: '4.1.0',
       width: 512,
       height: 512,

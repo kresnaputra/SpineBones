@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Spine Web",
+  "productName": "SpineBones",
   "version": "0.1.0",
-  "identifier": "com.spineweb.desktop",
+  "identifier": "com.spinebones.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Spine Web",
+        "title": "SpineBones",
         "width": 1600,
         "height": 1000,
         "minWidth": 1200,
