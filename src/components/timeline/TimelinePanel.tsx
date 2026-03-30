@@ -13,7 +13,7 @@ export const TimelinePanel = () => {
   const [hoveredKeyframe, setHoveredKeyframe] = useState<{ boneId: number; frame: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; boneId: number; frame: number } | null>(null);
 
-  const { mode, selectedBoneId } = useEditorStore();
+  const { mode, selectedBoneId, selectBone } = useEditorStore();
   const { bones, skins } = useSkeletonStore();
   const { captureSnapshot } = useHistoryStore();
   const {
@@ -108,6 +108,15 @@ export const TimelinePanel = () => {
     return null;
   };
 
+  const getBoneAtPosition = (sy: number) => {
+    const headerH = 20;
+    const rowH = 28;
+    const boneIndex = Math.floor((sy - headerH) / rowH);
+
+    if (boneIndex < 0 || boneIndex >= bones.length) return null;
+    return bones[boneIndex] ?? null;
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -115,6 +124,13 @@ export const TimelinePanel = () => {
     const sy = e.clientY - rect.top;
     
     const keyframeHit = getKeyframeAtPosition(sx, sy);
+    const boneHit = getBoneAtPosition(sy);
+
+    if (boneHit) {
+      selectBone(boneHit.id);
+    } else if (sy <= 20) {
+      selectBone(null);
+    }
     
     if (e.detail === 2 && keyframeHit) {
       deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
