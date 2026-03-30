@@ -24,13 +24,16 @@ export const drawAttachment = (
   attachment: Attachment,
   bone: Bone,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
-  zoom: number
+  zoom: number,
+  onImageLoad?: () => void
 ): void => {
   if (!attachment.imageData) return;
 
   const img = imageCache.get(attachment.imageData);
   if (!img) {
-    loadImage(attachment.imageData);
+    loadImage(attachment.imageData).then(() => {
+      if (onImageLoad) onImageLoad();
+    });
     return;
   }
 
@@ -59,7 +62,8 @@ export const drawSlots = (
   attachments: Attachment[],
   bones: Bone[],
   worldToScreen: (x: number, y: number) => { x: number; y: number },
-  zoom: number
+  zoom: number,
+  onImageLoad?: () => void
 ): void => {
   bones.forEach((bone) => {
     const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
@@ -72,7 +76,7 @@ export const drawSlots = (
       );
       if (!attachment) return;
 
-      drawAttachment(ctx, attachment, bone, worldToScreen, zoom);
+      drawAttachment(ctx, attachment, bone, worldToScreen, zoom, onImageLoad);
     });
   });
 };

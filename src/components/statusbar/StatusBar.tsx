@@ -4,7 +4,7 @@ export const StatusBar = () => {
       <span>SpineWeb v1.0</span>
       <span>|</span>
       <span>
-        <strong className="text-white">Bone tool:</strong> click & drag to create
+        <strong className="text-white">Bone tool:</strong> click to create
       </span>
       <span>|</span>
       <span>
@@ -24,7 +24,11 @@ export const StatusBar = () => {
       </span>
       <span>|</span>
       <span>
-        <strong className="text-white">B/Q/G/R/S</strong> tools
+        <strong className="text-white">Space</strong> play/pause
+      </span>
+      <span>|</span>
+      <span>
+        <strong className="text-white">b/q/m/r/s</strong> tools
       </span>
     </div>
   );

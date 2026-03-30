@@ -35,6 +35,12 @@ export const SlotListPanel = () => {
         
         img.onload = () => {
           const attachmentName = file.name.replace(/\.[^/.]+$/, '');
+          
+          // Calculate scale to fit scene (target ~200px max dimension)
+          const targetSize = 200;
+          const maxDimension = Math.max(img.width, img.height);
+          const scale = maxDimension > targetSize ? targetSize / maxDimension : 1;
+          
           addAttachment(slotId, {
             name: attachmentName,
             type: 'image',
@@ -45,8 +51,8 @@ export const SlotListPanel = () => {
             x: 0,
             y: 0,
             rotation: 0,
-            scaleX: 1,
-            scaleY: 1,
+            scaleX: scale,
+            scaleY: scale,
           });
           setSlotAttachment(slotId, attachmentName);
         };

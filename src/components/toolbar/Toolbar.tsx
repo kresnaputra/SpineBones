@@ -227,7 +227,9 @@ export const Toolbar = () => {
   };
 
   const handleRemoveBackground = () => {
+    console.log('Remove background clicked');
     setBackgroundImage(null);
+    console.log('Background set to null');
   };
 
   return (

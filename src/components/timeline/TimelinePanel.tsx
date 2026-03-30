@@ -157,12 +157,8 @@ export const TimelinePanel = () => {
     
     const keyframeHit = getKeyframeAtPosition(sx, sy);
     if (keyframeHit) {
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        boneId: keyframeHit.boneId,
-        frame: keyframeHit.frame,
-      });
+      captureSnapshot();
+      deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
     }
   };
 

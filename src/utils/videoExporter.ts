@@ -124,7 +124,7 @@ export const exportVideo = async (
       ctx.fillRect(0, 0, width, height);
 
       if (loadedBackgroundImage) {
-        const scale = Math.min(width / loadedBackgroundImage.width, height / loadedBackgroundImage.height);
+        const scale = Math.max(width / loadedBackgroundImage.width, height / loadedBackgroundImage.height);
         const w = loadedBackgroundImage.width * scale;
         const h = loadedBackgroundImage.height * scale;
         const x = (width - w) / 2;

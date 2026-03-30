@@ -15,6 +15,8 @@ export const MainCanvas = () => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
+  const [backgroundLoaded, setBackgroundLoaded] = useState(0);
+  const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   
   const { tool, mode, selectedBoneId, selectBone, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
@@ -38,19 +40,19 @@ export const MainCanvas = () => {
 
   useEffect(() => {
     if (!backgroundImage) {
-      backgroundImageRef.current = null;
+      console.log('Background is null, clearing ref');
+      if (backgroundImageRef.current) {
+        console.log('Clearing background ref and triggering re-render');
+        backgroundImageRef.current = null;
+        setBackgroundLoaded(prev => prev + 1);
+      }
       return;
     }
     
     const img = new Image();
     img.onload = () => {
       backgroundImageRef.current = img;
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        }
-      }
+      setBackgroundLoaded(prev => prev + 1);
     };
     img.onerror = () => {
       console.error('Failed to load background image');
@@ -82,7 +84,7 @@ export const MainCanvas = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     if (backgroundImageRef.current) {
-      const scale = Math.min(canvas.width / backgroundImageRef.current.width, canvas.height / backgroundImageRef.current.height);
+      const scale = Math.max(canvas.width / backgroundImageRef.current.width, canvas.height / backgroundImageRef.current.height);
       const w = backgroundImageRef.current.width * scale;
       const h = backgroundImageRef.current.height * scale;
       const x = (canvas.width - w) / 2;
@@ -97,7 +99,11 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
-    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom);
+    const handleImageLoad = () => {
+      setImageLoadTrigger(prev => prev + 1);
+    };
+
+    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, handleImageLoad);
 
     bones.forEach((bone) => {
       const skin = skins.find((s) => s.id === bone.skinId);
@@ -108,7 +114,7 @@ export const MainCanvas = () => {
       drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen, camZoom);
     });
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundLoaded, imageLoadTrigger]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -234,10 +240,13 @@ export const MainCanvas = () => {
     if (target) {
       captureSnapshot();
       if (hit && hit.id !== selectedBoneId) selectBone(hit.id);
+      
+      computeAllWorldTransforms(bones);
+      
       setIsDragging(true);
       setDragStart({
-        dx: world.x - target.x,
-        dy: world.y - target.y,
+        dx: world.x - target._wx,
+        dy: world.y - target._wy,
         sx,
         sy,
         initSX: target.scaleX,

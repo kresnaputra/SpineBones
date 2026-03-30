@@ -36,7 +36,7 @@ export const useKeyboardShortcuts = () => {
       const toolMap: Record<string, typeof tool> = {
         q: 'pose',
         b: 'bone',
-        g: 'move',
+        m: 'move',
         r: 'rotate',
         s: 'scale',
       };
