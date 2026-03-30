@@ -262,27 +262,69 @@ export const Toolbar = () => {
 
       <button
         onClick={() => {
-          if (selectedBoneId === null) return;
           const animState = useAnimationStore.getState();
-          const boneKeyframes = animState.keyframes[selectedBoneId];
-          if (boneKeyframes) {
-            const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
-            if (frames.length > 0) {
-              const firstFrame = frames[0];
-              const firstKey = boneKeyframes[firstFrame];
-              if (firstKey) {
-                captureSnapshot();
-                insertKeyframe(selectedBoneId, firstKey);
-              }
+          const allKeyframes = animState.keyframes;
+          const boneIds = Object.keys(allKeyframes).map(Number);
+          if (boneIds.length === 0) return;
+
+          captureSnapshot();
+
+          // Find the global last keyframe across all bones
+          let globalMax = 0;
+          for (const boneId of boneIds) {
+            const frames = Object.keys(allKeyframes[boneId]).map(Number);
+            const max = Math.max(...frames);
+            if (max > globalMax) globalMax = max;
+          }
+
+          // For each bone, mirror keyframes in reverse after the last keyframe
+          for (const boneId of boneIds) {
+            const boneKfs = allKeyframes[boneId];
+            const frames = Object.keys(boneKfs).map(Number).sort((a, b) => a - b);
+            if (frames.length < 2) continue;
+
+            const lastFrame = frames[frames.length - 1];
+            // Reverse all frames except the last one (already exists)
+            const reversed = frames.slice(0, -1).reverse();
+
+            for (const srcFrame of reversed) {
+              const gap = lastFrame - srcFrame;
+              const destFrame = globalMax + gap;
+              // Use setFrame then insertKeyframe via getState to ensure frame is set before insert
+              useAnimationStore.getState().setFrame(destFrame);
+              useAnimationStore.getState().insertKeyframe(boneId, { ...boneKfs[srcFrame] });
             }
           }
+
+          // Restore frame position to 0
+          useAnimationStore.getState().setFrame(0);
         }}
-        disabled={selectedBoneId === null}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40"
-        title="Copy first keyframe to current frame for smooth looping"
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Mirror keyframes in reverse to create a seamless loop"
       >
         <Diamond size={14} />
         Loop
+      </button>
+
+      <button
+        onClick={() => {
+          if (selectedBoneId === null) return;
+          const animState = useAnimationStore.getState();
+          const boneKeyframes = animState.keyframes[selectedBoneId];
+          if (!boneKeyframes) return;
+          const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+          if (frames.length === 0) return;
+          const firstKey = boneKeyframes[frames[0]];
+          if (!firstKey) return;
+          captureSnapshot();
+          insertKeyframe(selectedBoneId, { ...firstKey });
+        }}
+        disabled={selectedBoneId === null}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40"
+        title="Copy first keyframe to current frame"
+      >
+        <Diamond size={14} />
+        1st Key
       </button>
 
       {showToolbarFileActions ? (

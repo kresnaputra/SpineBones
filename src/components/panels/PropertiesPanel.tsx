@@ -3,6 +3,7 @@ import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { AttachmentPropertiesPanel } from './AttachmentPropertiesPanel';
+import { computeAllWorldTransforms } from '../../engine/transforms';
 
 export const PropertiesPanel = () => {
   const { selectedBoneId, mode } = useEditorStore();
@@ -118,8 +119,39 @@ export const PropertiesPanel = () => {
           <select
             value={selectedBone.parentId ?? ''}
             onChange={(e) => {
+              if (!selectedBone) return;
               const newParentId = e.target.value === '' ? null : parseInt(e.target.value);
-              handleChange('parentId', newParentId);
+              
+              captureSnapshot();
+              computeAllWorldTransforms(bones);
+
+              const worldX = selectedBone._wx;
+              const worldY = selectedBone._wy;
+              const worldRot = selectedBone._wrot;
+
+              let newX = worldX;
+              let newY = worldY;
+              let newRot = worldRot;
+
+              if (newParentId !== null) {
+                const newParent = bones.find((b) => b.id === newParentId);
+                if (newParent) {
+                  const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+                  const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+                  const dx = worldX - newParent._wx;
+                  const dy = worldY - newParent._wy;
+                  newX = (dx * cos - dy * sin) / newParent.scaleX;
+                  newY = (dx * sin + dy * cos) / newParent.scaleY;
+                  newRot = worldRot - newParent._wrot;
+                }
+              }
+
+              updateBone(selectedBone.id, {
+                parentId: newParentId,
+                x: newX,
+                y: newY,
+                rotation: newRot,
+              });
             }}
             className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
           >

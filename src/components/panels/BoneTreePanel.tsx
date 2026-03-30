@@ -11,7 +11,6 @@ export const BoneTreePanel = () => {
 
   const handleDragStart = (e: React.DragEvent, boneId: number) => {
     e.stopPropagation();
-    console.log('Drag start:', boneId);
     setDraggedBoneId(boneId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(boneId));
@@ -28,20 +27,14 @@ export const BoneTreePanel = () => {
     e.stopPropagation();
     const draggedId =
       draggedBoneId ?? Number.parseInt(e.dataTransfer.getData("text/plain"), 10);
-    console.log('Drop event - draggedId:', draggedId, 'dropBoneId:', dropBoneId);
-    
     if (Number.isNaN(draggedId)) {
-      console.log('Invalid draggedId');
       setDraggedBoneId(null);
       return;
     }
 
     const fromIndex = bones.findIndex((bone) => bone.id === draggedId);
     const toIndex = bones.findIndex((bone) => bone.id === dropBoneId);
-    console.log('Reordering from index', fromIndex, 'to index', toIndex);
-    
     if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
-      console.log('Invalid indices or same position');
       setDraggedBoneId(null);
       return;
     }

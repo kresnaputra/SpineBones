@@ -65,12 +65,24 @@ export const TimelinePanel = () => {
 
     const interval = 1000 / fps;
     const timer = setInterval(() => {
-      const newFrame = (frame + 1) % (duration + 1);
-      setFrame(newFrame);
+      // Find the highest keyframe across all bones
+      let maxKeyframe = 0;
+      Object.values(keyframes).forEach((boneKeyframes) => {
+        const frames = Object.keys(boneKeyframes).map(Number);
+        const maxFrame = Math.max(...frames);
+        if (maxFrame > maxKeyframe) maxKeyframe = maxFrame;
+      });
+
+      // If we've reached or passed the last keyframe, loop back to 0
+      if (frame >= maxKeyframe && maxKeyframe > 0) {
+        setFrame(0);
+      } else {
+        setFrame(frame + 1);
+      }
     }, interval);
 
     return () => clearInterval(timer);
-  }, [playing, frame, duration, fps, setFrame]);
+  }, [playing, frame, duration, fps, setFrame, keyframes]);
 
   useEffect(() => {
     if (playing && mode === 'animate') {
