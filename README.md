@@ -1,21 +1,21 @@
 # SpineWeb
 
-SpineWeb adalah editor skeleton 2D berbasis web untuk membuat rig sederhana, menambahkan attachment gambar, mengatur keyframe animasi, lalu mengekspor hasilnya ke format project JSON, paket Spine-like, atau video.
+SpineWeb is a web-based 2D skeleton editor for creating simple rigs, attaching images, animating bones with keyframes, and exporting the result as project JSON, a Spine-like package, or video.
 
-## Fitur Utama
+## Main Features
 
-- Membuat dan menyusun hirarki bone langsung di canvas
-- Mengatur posisi, rotasi, scale, parent, dan panjang bone
-- Menambahkan slot dan upload attachment gambar per bone
-- Mengelola skin aktif
-- Membuat animasi keyframe per bone di timeline
-- Undo/redo perubahan
-- Import dan simpan project dalam format JSON
-- Export ke paket Spine (`.zip` berisi `skeleton.json`, `atlas.atlas`, dan image attachment)
-- Export animasi ke video `WebM`
-- Menambahkan background image sebagai referensi animasi
+- Create and arrange bone hierarchies directly on the canvas
+- Edit bone position, rotation, scale, parent, and length
+- Add slots and upload image attachments per bone
+- Manage active skins
+- Animate bones with keyframes on a timeline
+- Undo and redo changes
+- Save and load projects in JSON format
+- Export to a Spine-like package (`.zip` containing `skeleton.json`, `atlas.atlas`, and attachment images)
+- Export animation as `WebM` video
+- Add a background image as animation reference
 
-## Teknologi
+## Tech Stack
 
 - React 19
 - TypeScript
@@ -23,46 +23,46 @@ SpineWeb adalah editor skeleton 2D berbasis web untuk membuat rig sederhana, men
 - Zustand
 - Tailwind CSS 4
 
-## Requirement
+## Requirements
 
-- Bun atau Node.js modern
-- Browser modern yang mendukung Canvas API, File API, dan `MediaRecorder`
+- Bun or a modern Node.js version
+- A modern browser with support for Canvas API, File API, and `MediaRecorder`
 
-## Instalasi
+## Installation
 
-Disarankan memakai Bun karena repo ini sudah menyertakan `bun.lock`.
+Using Bun is recommended because this repository already includes `bun.lock`.
 
 ```bash
 bun install
 ```
 
-Kalau ingin memakai npm:
+If you prefer npm:
 
 ```bash
 npm install
 ```
 
-## Menjalankan Aplikasi
+## Running the App
 
-Mode development:
+Development mode:
 
 ```bash
 bun run dev
 ```
 
-atau:
+or:
 
 ```bash
 npm run dev
 ```
 
-Build production:
+Production build:
 
 ```bash
 bun run build
 ```
 
-Preview hasil build:
+Preview the production build:
 
 ```bash
 bun run preview
@@ -74,51 +74,51 @@ Lint:
 bun run lint
 ```
 
-## Struktur Antarmuka
+## Interface Overview
 
-Saat aplikasi dibuka, editor akan menampilkan demo skeleton otomatis jika project masih kosong.
+When the app starts, it automatically loads a demo skeleton if the project is still empty.
 
-- Toolbar atas: pilih tool, undo/redo, keyframe, skin, save/load, export, dan mode editor
-- Panel kiri: bone list, slot per bone, dan daftar skin
-- Canvas tengah: area menggambar skeleton, pose, dan melihat attachment
-- Panel kanan: properti bone dan attachment aktif
-- Timeline bawah: playback animasi, frame control, fps, duration, dan keyframe per bone
-- Status bar: ringkasan shortcut penting
+- Top toolbar: tool selection, undo/redo, keyframe actions, skin actions, save/load, export, and editor mode
+- Left panel: bone list, slots per bone, and skin list
+- Center canvas: main workspace for creating bones, posing, and previewing attachments
+- Right panel: selected bone and active attachment properties
+- Bottom timeline: animation playback, frame control, fps, duration, and bone keyframes
+- Status bar: quick shortcut reference
 
-## Cara Penggunaan
+## How To Use
 
-### 1. Membuat Bone
+### 1. Create Bones
 
-1. Jalankan aplikasi.
-2. Pilih tool `Bone` atau tekan `B`.
-3. Klik di canvas untuk membuat bone baru.
-4. Klik bone yang sudah ada saat membuat bone baru jika ingin menjadikannya parent.
+1. Run the application.
+2. Select the `Bone` tool or press `B`.
+3. Click on the canvas to create a new bone.
+4. Click an existing bone while creating a new one if you want to assign it as the parent.
 
-Catatan:
+Notes:
 
-- Bone baru akan mengikuti skin yang sedang aktif.
-- Bone dapat dipilih dari canvas atau dari panel `Bones`.
-- Urutan bone di panel kiri bisa di-drag untuk diubah.
+- A new bone uses the currently active skin.
+- Bones can be selected from the canvas or from the `Bones` panel.
+- Bone order in the left panel can be changed with drag and drop.
 
-### 2. Mengedit Bone
+### 2. Edit Bones
 
-Pilih sebuah bone, lalu gunakan:
+Select a bone, then use:
 
-- Tool `Pose` (`Q`) untuk memilih dan memindahkan seperti manipulasi umum
-- Tool `Move` (`M`) untuk menggeser posisi bone
-- Tool `Rotate` (`R`) untuk memutar bone
-- Tool `Scale` (`S`) untuk mengubah skala bone
-- Panel `Properties` untuk mengubah nama, posisi, panjang, rotasi, scale, dan parent secara presisi
+- `Pose` tool (`Q`) for general selection and manipulation
+- `Move` tool (`M`) to move the bone
+- `Rotate` tool (`R`) to rotate the bone
+- `Scale` tool (`S`) to scale the bone
+- `Properties` panel to edit name, position, length, rotation, scale, and parent precisely
 
-### 3. Menambahkan Slot dan Attachment
+### 3. Add Slots and Attachments
 
-1. Pilih bone yang ingin diberi gambar.
-2. Di panel `Slots`, klik tombol `+`.
-3. Isi nama slot.
-4. Klik ikon upload pada slot.
-5. Pilih file gambar dari komputer.
+1. Select the bone you want to attach an image to.
+2. In the `Slots` panel, click the `+` button.
+3. Enter a slot name.
+4. Click the upload icon on the slot.
+5. Choose an image file from your computer.
 
-Setelah attachment aktif, panel kanan akan menampilkan pengaturan:
+Once an attachment is active, the right panel will show controls for:
 
 - `Offset X`
 - `Offset Y`
@@ -126,47 +126,47 @@ Setelah attachment aktif, panel kanan akan menampilkan pengaturan:
 - `Scale X`
 - `Scale Y`
 
-Pengaturan ini berguna untuk menyesuaikan posisi pivot dan tampilan gambar terhadap bone.
+These settings help adjust the image pivot and visual placement relative to the bone.
 
-### 4. Mengelola Skin
+### 4. Manage Skins
 
-- Daftar skin ada di panel `Skins`
-- Klik skin untuk menjadikannya skin aktif
-- Gunakan tombol `Add Skin` di toolbar untuk menambah skin baru
+- The skin list is available in the `Skins` panel
+- Click a skin to make it active
+- Use the `Add Skin` button in the toolbar to create a new skin
 
-### 5. Membuat Animasi
+### 5. Create Animation
 
-1. Klik tombol mode `ANIMATE` di kanan toolbar.
-2. Pilih bone yang ingin dianimasikan.
-3. Geser frame aktif di timeline.
-4. Ubah posisi, rotasi, atau scale bone.
-5. Tekan `K` atau klik tombol `Key` untuk menyimpan keyframe.
+1. Click the `ANIMATE` mode button on the right side of the toolbar.
+2. Select the bone you want to animate.
+3. Move the current frame in the timeline.
+4. Change the bone position, rotation, or scale.
+5. Press `K` or click the `Key` button to insert a keyframe.
 
-Fitur timeline:
+Timeline features:
 
-- `Play/Pause` untuk preview animasi
-- `Stop` untuk kembali ke frame 0
-- `Prev/Next Key` untuk pindah antar keyframe pada bone terpilih
-- `Clear` untuk menghapus semua keyframe bone terpilih
-- `Loop` untuk menyalin keyframe pertama ke frame aktif agar transisi loop lebih halus
-- Ubah `FPS` dan `Duration` langsung dari panel timeline
+- `Play/Pause` for animation preview
+- `Stop` to return to frame 0
+- `Prev/Next Key` to jump between keyframes on the selected bone
+- `Clear` to remove all keyframes from the selected bone
+- `Loop` to copy the first keyframe to the current frame for smoother looping
+- Editable `FPS` and `Duration` values directly from the timeline
 
-Interpolasi antar keyframe berjalan linear untuk:
+Keyframes are interpolated linearly for:
 
-- posisi `x`
-- posisi `y`
+- `x`
+- `y`
 - `rotation`
 - `scaleX`
 - `scaleY`
 
-### 6. Menambahkan Background Referensi
+### 6. Add a Reference Background
 
-- Klik `Background` di toolbar untuk upload gambar referensi
-- Klik `Remove BG` untuk menghapus background
+- Click `Background` in the toolbar to upload a reference image
+- Click `Remove BG` to remove the background
 
-Background hanya dipakai sebagai referensi visual di editor dan juga bisa ikut masuk saat export video.
+The background is used as a visual reference inside the editor and can also appear in video exports.
 
-## Shortcut Keyboard
+## Keyboard Shortcuts
 
 - `Q`: Pose tool
 - `B`: Bone tool
@@ -174,22 +174,22 @@ Background hanya dipakai sebagai referensi visual di editor dan juga bisa ikut m
 - `R`: Rotate tool
 - `S`: Scale tool
 - `K`: Insert keyframe
-- `Space`: Play/Pause animasi
-- `Delete` / `Backspace`: Hapus bone terpilih
-- `Esc`: Batalkan seleksi bone
-- `Arrow Left` / `Arrow Right`: Pindah frame
+- `Space`: Play/Pause animation
+- `Delete` / `Backspace`: Delete selected bone
+- `Esc`: Clear bone selection
+- `Arrow Left` / `Arrow Right`: Move frame backward or forward
 - `Ctrl/Cmd + Z`: Undo
-- `Ctrl/Cmd + Shift + Z` atau `Ctrl/Cmd + Y`: Redo
-- Klik kanan + drag di canvas: Pan camera
-- Scroll mouse: Zoom camera
-- Double click keyframe di timeline: Hapus keyframe
-- Tombol `X` atau `Delete` saat hover keyframe: Hapus keyframe
+- `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y`: Redo
+- Right mouse drag on canvas: Pan camera
+- Mouse wheel: Zoom camera
+- Double click a keyframe in the timeline: Delete keyframe
+- `X` or `Delete` while hovering a keyframe: Delete keyframe
 
-## Save, Load, dan Export
+## Save, Load, and Export
 
 ### Save Project
 
-Tombol `Save` akan mengunduh file `spine-project.json` yang berisi:
+The `Save` button downloads a `spine-project.json` file containing:
 
 - bones
 - skins
@@ -201,36 +201,36 @@ Tombol `Save` akan mengunduh file `spine-project.json` yang berisi:
 
 ### Load Project
 
-Tombol `Load` menerima file `.json` project yang sebelumnya disimpan dari aplikasi ini.
+The `Load` button accepts a `.json` project file previously saved from this application.
 
 ### Export Spine
 
-Tombol `Export Spine` menghasilkan file `spine-export.zip` yang berisi:
+The `Export Spine` button generates a `spine-export.zip` file containing:
 
 - `skeleton.json`
 - `atlas.atlas`
-- file PNG untuk setiap attachment
+- one PNG file for each attachment
 
-Format ini ditujukan sebagai export ringan yang kompatibel untuk workflow mirip Spine, termasuk penggunaan di renderer seperti PixiJS Spine.
+This export is intended as a lightweight Spine-like output for workflows such as PixiJS Spine integration.
 
 ### Export Video
 
-Tombol `Export Video` akan menghasilkan file `spine-animation.webm`.
+The `Export Video` button generates a `spine-animation.webm` file.
 
-Catatan:
+Notes:
 
-- Export video memakai `MediaRecorder`
-- Hasil terbaik bergantung pada dukungan browser
-- Jika browser tidak mendukung codec tertentu, sistem akan mencoba fallback format yang tersedia
+- Video export uses `MediaRecorder`
+- Final output quality depends on browser support
+- If a browser does not support a preferred codec, the exporter will try available fallback formats
 
-## Catatan Penggunaan
+## Usage Notes
 
-- Data aplikasi saat ini dikelola di state lokal browser selama sesi berjalan
-- File project harus disimpan manual jika ingin dipakai lagi nanti
-- Aplikasi otomatis memuat demo skeleton saat state masih kosong
-- Menghapus bone parent juga akan menghapus child bone yang terhubung
+- App data is currently stored in local in-memory state during the session
+- Projects must be saved manually if you want to reuse them later
+- The app automatically loads a demo skeleton when the state is empty
+- Deleting a parent bone also removes its child bones
 
-## Struktur Script
+## Available Scripts
 
 ```json
 {
@@ -241,13 +241,14 @@ Catatan:
 }
 ```
 
-## Pengembangan Lanjutan
+## Possible Future Improvements
 
-Beberapa area yang bisa dikembangkan lagi:
+Some areas that can be extended further:
 
-- import asset batch
-- pengaturan draw order dari UI
-- dukungan easing timeline
-- export/import format Spine yang lebih lengkap
-- autosave project
+- batch asset import
+- draw order management in the UI
+- timeline easing support
+- more complete Spine import/export support
+- project autosave
 - multi-animation management
+
