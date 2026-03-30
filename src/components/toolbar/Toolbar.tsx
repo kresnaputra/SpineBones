@@ -1,9 +1,13 @@
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { useCameraStore } from '../../stores/cameraStore';
+import { exportSpineJSON, createTextureAtlas } from '../../utils/spineExporter';
+import { exportVideo } from '../../utils/videoExporter';
+import JSZip from 'jszip';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -131,6 +135,69 @@ export const Toolbar = () => {
     input.click();
   };
 
+  const handleExportSpine = async () => {
+    const skeletonState = useSkeletonStore.getState();
+    const animationState = useAnimationStore.getState();
+    const slotState = useSlotStore.getState();
+
+    const skeletonJSON = exportSpineJSON(
+      skeletonState.bones,
+      slotState.slots,
+      slotState.attachments,
+      animationState.keyframes,
+      animationState.fps,
+      animationState.duration
+    );
+
+    const { atlas, images } = createTextureAtlas(slotState.attachments);
+
+    const zip = new JSZip();
+    zip.file('skeleton.json', skeletonJSON);
+    zip.file('atlas.atlas', atlas);
+
+    images.forEach((imageData, name) => {
+      const base64Data = imageData.split(',')[1];
+      zip.file(`${name}.png`, base64Data, { base64: true });
+    });
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spine-export.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportVideo = async () => {
+    try {
+      console.log('Starting video export...');
+      const skeletonState = useSkeletonStore.getState();
+      const animationState = useAnimationStore.getState();
+      const slotState = useSlotStore.getState();
+      const cameraState = useCameraStore.getState();
+
+      const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
+
+      await exportVideo(
+        bonesCopy,
+        slotState.slots,
+        slotState.attachments,
+        skeletonState.skins,
+        animationState.keyframes,
+        animationState.duration,
+        animationState.fps,
+        cameraState.x,
+        cameraState.y,
+        cameraState.zoom
+      );
+      console.log('Video export completed!');
+    } catch (error) {
+      console.error('Video export failed:', error);
+      alert('Video export failed. Check console for details.');
+    }
+  };
+
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0">
       <div className="font-sans font-extrabold text-base text-accent tracking-tight mr-4">
@@ -253,6 +320,24 @@ export const Toolbar = () => {
       >
         <Upload size={14} />
         Load
+      </button>
+
+      <button
+        onClick={handleExportSpine}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Export for PixiJS (@pixi/spine)"
+      >
+        <Download size={14} />
+        Export Spine
+      </button>
+
+      <button
+        onClick={handleExportVideo}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+        title="Export animation as video (WebM)"
+      >
+        <Video size={14} />
+        Export Video
       </button>
 
       <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">

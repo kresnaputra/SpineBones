@@ -1,0 +1,128 @@
+import type { Bone, Slot, Attachment, Keyframes } from '../types';
+import { computeAllWorldTransforms } from '../engine/transforms';
+import { drawSlots } from '../engine/imageRenderer';
+import { lerp } from '../engine/math';
+
+export const exportVideo = async (
+  bones: Bone[],
+  slots: Slot[],
+  attachments: Attachment[],
+  skins: any[],
+  keyframes: Keyframes,
+  duration: number,
+  fps: number,
+  camX: number,
+  camY: number,
+  camZoom: number,
+  width: number = 1920,
+  height: number = 1080
+): Promise<void> => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+
+  const stream = canvas.captureStream(fps);
+  
+  let mimeType = 'video/webm';
+  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+    mimeType = 'video/webm;codecs=vp8';
+  } else if (MediaRecorder.isTypeSupported('video/webm')) {
+    mimeType = 'video/webm';
+  } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+    mimeType = 'video/mp4';
+  }
+  
+  const mediaRecorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: 5000000,
+  });
+
+  const chunks: Blob[] = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  const worldToScreen = (x: number, y: number) => ({
+    x: width / 2 + (x - camX) * camZoom,
+    y: height / 2 + (y - camY) * camZoom,
+  });
+
+  const applyKeyframe = (boneId: number, frame: number) => {
+    const boneKeyframes = keyframes[boneId];
+    if (!boneKeyframes) return;
+
+    const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+    if (frames.length === 0) return;
+
+    let prevFrame = frames[0];
+    let nextFrame = frames[0];
+
+    for (let i = 0; i < frames.length; i++) {
+      if (frames[i] <= frame) prevFrame = frames[i];
+      if (frames[i] >= frame) {
+        nextFrame = frames[i];
+        break;
+      }
+    }
+
+    const bone = bones.find((b) => b.id === boneId);
+    if (!bone) return;
+
+    if (prevFrame === nextFrame) {
+      const kf = boneKeyframes[prevFrame];
+      Object.assign(bone, kf);
+    } else {
+      const kf1 = boneKeyframes[prevFrame];
+      const kf2 = boneKeyframes[nextFrame];
+      const t = (frame - prevFrame) / (nextFrame - prevFrame);
+
+      bone.x = lerp(kf1.x, kf2.x, t);
+      bone.y = lerp(kf1.y, kf2.y, t);
+      bone.rotation = lerp(kf1.rotation, kf2.rotation, t);
+      bone.scaleX = lerp(kf1.scaleX, kf2.scaleX, t);
+      bone.scaleY = lerp(kf1.scaleY, kf2.scaleY, t);
+    }
+  };
+
+  return new Promise((resolve) => {
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'spine-animation.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+
+    mediaRecorder.start();
+
+    let currentFrame = 0;
+    const totalFrames = duration;
+
+    const renderFrame = () => {
+      if (currentFrame >= totalFrames) {
+        mediaRecorder.stop();
+        return;
+      }
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, width, height);
+
+      bones.forEach((bone) => {
+        applyKeyframe(bone.id, currentFrame);
+      });
+
+      computeAllWorldTransforms(bones);
+      drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom);
+
+      currentFrame++;
+      setTimeout(renderFrame, 1000 / fps);
+    };
+
+    renderFrame();
+  });
+};
