@@ -7,29 +7,52 @@ export const BoneTreePanel = () => {
   const { bones, deleteBone, reorderBones } = useSkeletonStore();
   const { selectedBoneId, selectBone } = useEditorStore();
   const { captureSnapshot } = useHistoryStore();
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedBoneId, setDraggedBoneId] = useState<number | null>(null);
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
+  const handleDragStart = (e: React.DragEvent, boneId: number) => {
+    e.stopPropagation();
+    console.log('Drag start:', boneId);
+    setDraggedBoneId(boneId);
     e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(boneId));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
   };
 
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = (e: React.DragEvent, dropBoneId: number) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === dropIndex) return;
+    e.stopPropagation();
+    const draggedId =
+      draggedBoneId ?? Number.parseInt(e.dataTransfer.getData("text/plain"), 10);
+    console.log('Drop event - draggedId:', draggedId, 'dropBoneId:', dropBoneId);
+    
+    if (Number.isNaN(draggedId)) {
+      console.log('Invalid draggedId');
+      setDraggedBoneId(null);
+      return;
+    }
+
+    const fromIndex = bones.findIndex((bone) => bone.id === draggedId);
+    const toIndex = bones.findIndex((bone) => bone.id === dropBoneId);
+    console.log('Reordering from index', fromIndex, 'to index', toIndex);
+    
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+      console.log('Invalid indices or same position');
+      setDraggedBoneId(null);
+      return;
+    }
 
     captureSnapshot();
-    reorderBones(draggedIndex, dropIndex);
-    setDraggedIndex(null);
+    reorderBones(fromIndex, toIndex);
+    setDraggedBoneId(null);
   };
 
   const handleDragEnd = () => {
-    setDraggedIndex(null);
+    setDraggedBoneId(null);
   };
 
   return (
@@ -38,18 +61,18 @@ export const BoneTreePanel = () => {
         🦴 Bones
       </div>
       <div className="flex-1 overflow-y-auto py-1.5 scrollbar-thin">
-        {bones.map((bone, index) => (
+        {bones.map((bone) => (
           <div
             key={bone.id}
             draggable
-            onDragStart={(e) => handleDragStart(e, index)}
+            onDragStart={(e) => handleDragStart(e, bone.id)}
             onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, index)}
+            onDrop={(e) => handleDrop(e, bone.id)}
             onDragEnd={handleDragEnd}
             onClick={() => selectBone(bone.id)}
-            className={`flex items-center gap-1.5 panel-padding-left pr-3 py-1 cursor-move transition-colors group ${
+            className={`flex items-center gap-1.5 panel-padding-left pr-3 py-1 cursor-move transition-colors group select-none ${
               selectedBoneId === bone.id ? "bg-accent/20" : "hover:bg-panel2"
-            } ${draggedIndex === index ? "opacity-50" : ""}`}
+            } ${draggedBoneId === bone.id ? "opacity-50" : ""}`}
           >
             <div
               className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -58,6 +81,8 @@ export const BoneTreePanel = () => {
             />
             <span className="flex-1 text-text text-[11px]">{bone.name}</span>
             <button
+              draggable={false}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 captureSnapshot();
