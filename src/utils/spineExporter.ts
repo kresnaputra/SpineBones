@@ -69,8 +69,8 @@ export const exportSpineJSON = (
   slots: Slot[],
   attachments: Attachment[],
   keyframes: Keyframes,
-  fps: number,
-  _duration: number
+  fps: number
+  // duration: number  // Reserved for future use
 ): string => {
   const spineBones: SpineBone[] = bones.map((bone) => {
     const spineBone: SpineBone = {

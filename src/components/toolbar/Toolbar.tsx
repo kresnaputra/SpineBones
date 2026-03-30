@@ -145,8 +145,7 @@ export const Toolbar = () => {
       slotState.slots,
       slotState.attachments,
       animationState.keyframes,
-      animationState.fps,
-      animationState.duration
+      animationState.fps
     );
 
     const { atlas, images } = createTextureAtlas(slotState.attachments);
