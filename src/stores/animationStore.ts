@@ -18,6 +18,7 @@ interface AnimationState {
   stop: () => void;
   applyKeyframes: () => void;
   getKeyframesForBone: (boneId: number) => number[];
+  shiftKeyframes: (deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }>) => void;
 }
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
@@ -71,17 +72,32 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
 
   applyKeyframes: () => {
     const { keyframes, frame } = get();
-    const { bones, updateBone } = useSkeletonStore.getState();
+    const { bones, updateBone, setupPose } = useSkeletonStore.getState();
 
     bones.forEach((bone) => {
       const boneKeyframes = keyframes[bone.id];
-      if (!boneKeyframes) return;
+      
+      // If no keyframes for this bone, restore setup pose
+      if (!boneKeyframes) {
+        const pose = setupPose[bone.id];
+        if (pose) {
+          updateBone(bone.id, pose);
+        }
+        return;
+      }
 
       const frames = Object.keys(boneKeyframes)
         .map(Number)
         .sort((a, b) => a - b);
 
-      if (frames.length === 0) return;
+      if (frames.length === 0) {
+        // No keyframes, restore setup pose
+        const pose = setupPose[bone.id];
+        if (pose) {
+          updateBone(bone.id, pose);
+        }
+        return;
+      }
 
       let prev: number | null = null;
       let next: number | null = null;
@@ -116,5 +132,31 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     const boneKeyframes = get().keyframes[boneId];
     if (!boneKeyframes) return [];
     return Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+  },
+
+  shiftKeyframes: (deltas) => {
+    set((state) => {
+      const newKeyframes = { ...state.keyframes };
+      for (const boneIdStr of Object.keys(newKeyframes)) {
+        const boneId = Number(boneIdStr);
+        const delta = deltas[boneId];
+        if (!delta) continue;
+
+        const boneFrames = { ...newKeyframes[boneId] };
+        for (const frameStr of Object.keys(boneFrames)) {
+          const f = Number(frameStr);
+          const kf = boneFrames[f];
+          boneFrames[f] = {
+            x: kf.x + delta.dx,
+            y: kf.y + delta.dy,
+            rotation: kf.rotation + delta.dRot,
+            scaleX: kf.scaleX + delta.dScaleX,
+            scaleY: kf.scaleY + delta.dScaleY,
+          };
+        }
+        newKeyframes[boneId] = boneFrames;
+      }
+      return { keyframes: newKeyframes };
+    });
   },
 }));

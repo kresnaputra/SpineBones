@@ -3,6 +3,7 @@ import type { Bone, Skin } from '../types';
 
 interface SkeletonState {
   bones: Bone[];
+  setupPose: Record<number, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }>;
   skins: Skin[];
   activeSkinId: number;
   boneIdCounter: number;
@@ -14,10 +15,13 @@ interface SkeletonState {
   addSkin: (name: string, color: string) => void;
   setActiveSkin: (id: number) => void;
   getBoneById: (id: number) => Bone | undefined;
+  saveSetupPose: () => void;
+  restoreSetupPose: () => void;
 }
 
 export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   bones: [],
+  setupPose: {},
   skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
   activeSkinId: 0,
   boneIdCounter: 0,
@@ -72,4 +76,32 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   setActiveSkin: (id) => set({ activeSkinId: id }),
 
   getBoneById: (id) => get().bones.find((bone) => bone.id === id),
+
+  saveSetupPose: () => {
+    const { bones } = get();
+    const setupPose: Record<number, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }> = {};
+    bones.forEach((bone) => {
+      setupPose[bone.id] = {
+        x: bone.x,
+        y: bone.y,
+        rotation: bone.rotation,
+        scaleX: bone.scaleX,
+        scaleY: bone.scaleY,
+      };
+    });
+    set({ setupPose });
+  },
+
+  restoreSetupPose: () => {
+    const { bones, setupPose } = get();
+    set({
+      bones: bones.map((bone) => {
+        const pose = setupPose[bone.id];
+        if (pose) {
+          return { ...bone, ...pose };
+        }
+        return bone;
+      }),
+    });
+  },
 }));

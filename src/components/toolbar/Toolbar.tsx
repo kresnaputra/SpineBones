@@ -36,7 +36,7 @@ const TOOL_SHORTCUTS = {
 
 export const Toolbar = () => {
   const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
-  const { addSkin } = useSkeletonStore();
+  const { addSkin, saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
@@ -394,7 +394,10 @@ export const Toolbar = () => {
 
       <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">
         <button
-          onClick={() => setMode('setup')}
+          onClick={() => {
+            restoreSetupPose();
+            setMode('setup');
+          }}
           className={`px-4 py-1.5 text-[11px] transition-all ${
             mode === 'setup' ? 'bg-accent text-white' : 'text-text-dim'
           }`}
@@ -402,7 +405,38 @@ export const Toolbar = () => {
           SETUP
         </button>
         <button
-          onClick={() => setMode('animate')}
+          onClick={() => {
+            const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
+            const { shiftKeyframes } = useAnimationStore.getState();
+
+            // Calculate deltas between old setup pose and current bone positions
+            const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
+            let hasDeltas = false;
+            if (Object.keys(oldSetupPose).length > 0) {
+              currentBones.forEach((bone) => {
+                const old = oldSetupPose[bone.id];
+                if (old) {
+                  const dx = bone.x - old.x;
+                  const dy = bone.y - old.y;
+                  const dRot = bone.rotation - old.rotation;
+                  const dScaleX = bone.scaleX - old.scaleX;
+                  const dScaleY = bone.scaleY - old.scaleY;
+                  if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0) {
+                    deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY };
+                    hasDeltas = true;
+                  }
+                }
+              });
+            }
+
+            // Shift existing keyframes by deltas so they match the new setup pose
+            if (hasDeltas) {
+              shiftKeyframes(deltas);
+            }
+
+            saveSetupPose();
+            setMode('animate');
+          }}
           className={`px-4 py-1.5 text-[11px] transition-all ${
             mode === 'animate' ? 'bg-accent text-white' : 'text-text-dim'
           }`}

@@ -63,12 +63,18 @@ export const TimelinePanel = () => {
 
     const interval = 1000 / fps;
     const timer = setInterval(() => {
-      setFrame((frame + 1) % (duration + 1));
-      if (mode === 'animate') applyKeyframes();
+      const newFrame = (frame + 1) % (duration + 1);
+      setFrame(newFrame);
     }, interval);
 
     return () => clearInterval(timer);
-  }, [playing, frame, duration, fps, mode, setFrame, applyKeyframes]);
+  }, [playing, frame, duration, fps, setFrame]);
+
+  useEffect(() => {
+    if (playing && mode === 'animate') {
+      applyKeyframes();
+    }
+  }, [frame, playing, mode, applyKeyframes]);
 
   const getKeyframeAtPosition = (sx: number, sy: number): { boneId: number; frame: number } | null => {
     const rect = canvasRef.current?.getBoundingClientRect();
