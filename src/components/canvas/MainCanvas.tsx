@@ -34,8 +34,6 @@ export const MainCanvas = () => {
     initSY: number;
     initRot: number;
   } | null>(null);
-  const [boneCreateStart, setBoneCreateStart] = useState<{ x: number; y: number; parentId: number | null } | null>(null);
-  const [lastMouse, setLastMouse] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -75,23 +73,13 @@ export const MainCanvas = () => {
       drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen, camZoom);
     });
 
-    if (tool === 'bone' && boneCreateStart && lastMouse) {
-      const s = worldToScreen(boneCreateStart.x, boneCreateStart.y);
-      ctx.strokeStyle = 'rgba(6,182,212,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(s.x, s.y);
-      ctx.lineTo(lastMouse.x, lastMouse.y);
-      ctx.stroke();
-    }
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, boneCreateStart, lastMouse, worldToScreen, slots, attachments]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    setLastMouse({ x: sx, y: sy });
 
     if (isPanning && panStart) {
       pan(sx - panStart.x, sy - panStart.y);
@@ -171,7 +159,38 @@ export const MainCanvas = () => {
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
 
     if (tool === 'bone') {
-      setBoneCreateStart({ ...world, parentId: hit ? hit.id : null });
+      captureSnapshot();
+      computeAllWorldTransforms(bones);
+      
+      let x = world.x;
+      let y = world.y;
+      let rotation = 0;
+      const parentId = hit ? hit.id : null;
+
+      if (parentId !== null) {
+        const parent = bones.find((p) => p.id === parentId);
+        if (parent) {
+          rotation -= parent._wrot;
+          x = 0;
+          y = 0;
+        }
+      }
+
+      const newBone = addBone({
+        name: `bone_${bones.length}`,
+        x,
+        y,
+        length: 50,
+        rotation,
+        scaleX: 1,
+        scaleY: 1,
+        parentId,
+        skinId: activeSkinId,
+        _wx: x,
+        _wy: y,
+        _wrot: rotation,
+      });
+      selectBone(newBone.id);
       return;
     }
 
@@ -195,53 +214,7 @@ export const MainCanvas = () => {
     }
   };
 
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool === 'bone' && boneCreateStart) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
-      const dx = world.x - boneCreateStart.x;
-      const dy = world.y - boneCreateStart.y;
-      const len = Math.hypot(dx, dy);
-
-      if (len > 8) {
-        captureSnapshot();
-        computeAllWorldTransforms(bones);
-        let rotation = (Math.atan2(dy, dx) * 180) / Math.PI;
-        let x = boneCreateStart.x;
-        let y = boneCreateStart.y;
-
-        if (boneCreateStart.parentId !== null) {
-          const parent = bones.find((p) => p.id === boneCreateStart.parentId);
-          if (parent) {
-            rotation -= parent._wrot;
-            x = 0;
-            y = 0;
-          }
-        }
-
-        const newBone = addBone({
-          name: `bone_${bones.length}`,
-          x,
-          y,
-          length: len,
-          rotation,
-          scaleX: 1,
-          scaleY: 1,
-          parentId: boneCreateStart.parentId,
-          skinId: activeSkinId,
-          _wx: x,
-          _wy: y,
-          _wrot: rotation,
-        });
-        selectBone(newBone.id);
-      }
-      setBoneCreateStart(null);
-      return;
-    }
-
+  const handleMouseUp = () => {
     setIsPanning(false);
     setPanStart(null);
 
