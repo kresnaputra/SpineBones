@@ -34,6 +34,20 @@ export const exportVideo = async (
     });
   }
 
+  // Preload all attachment images
+  const imageLoadPromises = attachments
+    .filter(att => att.imageData)
+    .map(att => {
+      return new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error(`Failed to load attachment image: ${att.name}`));
+        img.src = att.imageData!;
+      });
+    });
+  
+  await Promise.all(imageLoadPromises);
+
   const stream = canvas.captureStream(fps);
   
   let mimeType = 'video/webm';

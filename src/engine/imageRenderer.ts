@@ -50,7 +50,7 @@ export const drawAttachment = (
   const offsetX = attachment.x * zoom;
   const offsetY = attachment.y * zoom;
 
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 1.0;
   ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
 
   ctx.restore();
