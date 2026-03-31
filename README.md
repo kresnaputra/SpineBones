@@ -1,29 +1,29 @@
 # SpineBones
 
-SpineBones adalah editor skeleton 2D untuk membuat rig sederhana, memasang gambar ke bone melalui slot, membuat animasi berbasis keyframe, lalu mengekspor hasilnya sebagai project JSON, paket Spine-like, atau video WebM.
+SpineBones is a 2D skeleton editor for building simple rigs, attaching images to bones through slots, animating them with keyframes, and exporting the result as project JSON, a Spine-like package, or WebM video.
 
-README ini ditulis sebagai panduan penggunaan aplikasi secara praktis, supaya orang yang baru membuka project ini bisa langsung memahami semua fitur yang memang sudah ada di aplikasi.
+This README is written as a practical user guide so someone new to the project can understand what the application already supports and how to use it effectively.
 
-## Fitur Utama
+## Main Features
 
-- Membuat bone baru langsung dari canvas
-- Menyusun parent-child hierarchy antar bone
-- Drag and drop urutan bone di panel Bones
-- Mengedit properti bone: nama, posisi, panjang, rotasi, scale, dan parent
-- Menambahkan slot pada bone terpilih
-- Mengunggah attachment gambar per slot
-- Mengatur attachment aktif pada slot
-- Mengelola skin aktif
-- Menampilkan atau menyembunyikan bone indicators
-- Menambahkan background image sebagai referensi
-- Mode `SETUP` dan `ANIMATE`
-- Timeline dengan scrub frame, playback, prev/next key, stop, FPS, dan duration
-- Insert, clear, delete, dan looping keyframe
-- Undo/redo
-- Save/load project JSON
-- Export Spine-like ZIP
-- Export video WebM
-- Desktop menu untuk aksi file dan view
+- Create bones directly on the canvas
+- Build parent-child bone hierarchies
+- Reorder bones with drag and drop in the Bones panel
+- Edit bone properties such as name, position, length, rotation, scale, and parent
+- Add slots to the selected bone
+- Upload image attachments per slot
+- Switch the active attachment on a slot
+- Manage the active skin
+- Show or hide bone indicators
+- Add a background image as visual reference
+- Use `SETUP` and `ANIMATE` modes
+- Scrub and play animation in the timeline
+- Insert, clear, delete, and loop keyframes
+- Undo and redo edits
+- Save and load project JSON files
+- Export a Spine-like ZIP package
+- Export animation as WebM video
+- Use desktop menu actions for file and view controls
 
 ## Tech Stack
 
@@ -32,219 +32,219 @@ README ini ditulis sebagai panduan penggunaan aplikasi secara praktis, supaya or
 - Zustand
 - Vite
 - Tailwind CSS 4
-- Tauri 2 untuk build desktop
+- Tauri 2 for desktop builds
 
-## Kebutuhan
+## Requirements
 
 ### Web
 
-- Bun direkomendasikan
-- Browser modern dengan dukungan Canvas API, File API, dan `MediaRecorder`
+- Bun is recommended
+- A modern browser with support for Canvas API, File API, and `MediaRecorder`
 
 ### Desktop
 
 - Bun
 - Rust toolchain
-- Dependensi Tauri yang sesuai OS
+- The Tauri system dependencies required by your operating system
 
-## Instalasi
+## Installation
 
-Menggunakan Bun:
+Using Bun:
 
 ```bash
 bun install
 ```
 
-Alternatif npm:
+Using npm:
 
 ```bash
 npm install
 ```
 
-## Menjalankan Aplikasi
+## Running the App
 
-### Development Web
+### Web Development
 
 ```bash
 bun run dev
 ```
 
-### Build Web
+### Web Production Build
 
 ```bash
 bun run build
 ```
 
-### Preview Web Build
+### Preview the Web Build
 
 ```bash
 bun run preview
 ```
 
-### Development Desktop
+### Desktop Development
 
 ```bash
 bun run tauri:dev
 ```
 
-### Build Desktop
+### Desktop Build
 
 ```bash
 bun run tauri:build
 ```
 
-### Build DMG macOS
+### Build macOS DMG
 
 ```bash
 bun run tauri:build -- --bundles dmg
 ```
 
-## Struktur Antarmuka
+## Interface Overview
 
-Saat aplikasi dibuka dan project masih kosong, aplikasi akan memuat demo skeleton secara otomatis agar user langsung punya contoh rig yang bisa dieksplorasi.
+When the application starts and the project is empty, SpineBones automatically loads a demo skeleton so there is always something ready to explore.
 
-### 1. Toolbar Atas
+### Top Toolbar
 
-Toolbar berisi:
+The top toolbar contains:
 
 - Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`
-- `Undo` dan `Redo`
-- `Key` untuk insert keyframe
-- `Clear` untuk menghapus semua keyframe pada bone terpilih
-- `Loop` untuk membuat loop dari keyframe yang ada
-- `1st Key` untuk menyalin keyframe pertama ke frame saat ini
-- `Save`, `Load`, `Export Spine`, `Export Video` pada mode web/non-desktop
-- `Background` untuk upload gambar referensi
-- `Remove BG` untuk menghapus background
-- Toggle mode `SETUP` dan `ANIMATE`
+- `Undo` and `Redo`
+- `Key` to insert a keyframe
+- `Clear` to remove all keyframes from the selected bone
+- `Loop` to mirror keyframes into a loop
+- `1st Key` to copy the first keyframe of the selected bone to the current frame
+- `Save`, `Load`, `Export Spine`, and `Export Video` in web or non-desktop mode
+- `Background` to upload a reference image
+- `Remove BG` to clear the background image
+- `SETUP` and `ANIMATE` mode buttons
 
-### 2. Panel Kiri
+### Left Sidebar
 
-Panel kiri terdiri dari:
+The left side contains:
 
 - `Bones`
 - `Slots`
 - `Skins`
 
-Fungsi panel kiri:
+This side is used to:
 
-- memilih bone
-- menyusun urutan bone
-- mengelola slot dan attachment
-- mengganti skin aktif
+- select bones
+- reorder bones
+- manage slots and attachments
+- switch the active skin
 
-### 3. Canvas Tengah
+### Center Canvas
 
-Canvas adalah area kerja utama untuk:
+The canvas is the main workspace for:
 
-- membuat bone
-- memilih bone
-- menggeser posisi bone
-- memutar bone
-- mengubah scale bone
-- melihat attachment yang dipasang
-- melihat background referensi
-- pan dan zoom kamera
+- creating bones
+- selecting bones
+- moving bones
+- rotating bones
+- scaling bones
+- previewing attachments
+- viewing the background reference image
+- panning and zooming the camera
 
-### 4. Panel Kanan
+### Right Sidebar
 
-Panel kanan menampilkan:
+The right side shows:
 
-- properti attachment aktif pada slot terpilih
-- properti bone terpilih
+- active attachment properties for the current slot
+- properties of the selected bone
 
-Kalau tidak ada bone yang dipilih, panel ini akan menampilkan pesan bantuan.
+If no bone is selected, the panel shows a helper message.
 
-### 5. Timeline Bawah
+### Bottom Timeline
 
-Timeline digunakan untuk:
+The timeline is used for:
 
-- scrub frame
-- playback animasi
-- berpindah ke keyframe sebelumnya atau berikutnya
-- stop dan kembali ke frame 0
-- edit FPS
-- edit duration
-- memilih baris bone dari timeline
-- menghapus keyframe dengan double click, klik kanan, atau tombol keyboard
+- frame scrubbing
+- animation playback
+- previous and next keyframe navigation
+- stopping and returning to frame 0
+- editing FPS
+- editing duration
+- selecting bones from timeline rows
+- deleting keyframes with double click, right click, or keyboard shortcuts
 
-### 6. Status Bar
+### Status Bar
 
-Status bar di bawah menampilkan:
+The bottom status bar shows:
 
-- nama aplikasi
-- nama file project yang sedang dibuka
-- tombol `Open File` pada desktop app
-- shortcut penting seperti delete, keyframe, play/pause, setup/animate, dan tool shortcuts
+- the application name
+- the currently opened project filename
+- an `Open File` button in desktop mode
+- important usage hints such as delete, keyframe, play/pause, setup/animate, and tool shortcuts
 
-## Panduan Pemakaian Lengkap
+## Complete Usage Guide
 
-## 1. Membuat Bone
+## 1. Creating Bones
 
-Cara membuat bone:
+To create a bone:
 
-1. Pilih tool `Bone`.
-2. Klik di canvas untuk membuat bone baru.
-3. Jika kamu klik di atas bone yang sudah ada saat membuat bone baru, bone baru akan memakai bone tersebut sebagai parent.
+1. Select the `Bone` tool.
+2. Click on the canvas.
+3. If you click on top of an existing bone while creating a new one, the new bone will use that bone as its parent.
 
-Perilaku bone baru:
+New bone defaults:
 
-- nama default: `bone_{index}`
-- panjang default: `50`
-- `scaleX` dan `scaleY` default: `1`
-- skin bone baru mengikuti skin yang sedang aktif
+- default name: `bone_{index}`
+- default length: `50`
+- default `scaleX` and `scaleY`: `1`
+- the new bone uses the currently active skin
 
-Catatan:
+Notes:
 
-- bone bisa dipilih dari canvas atau dari panel `Bones`
-- urutan bone di panel `Bones` bisa diubah dengan drag and drop
-- menghapus bone parent juga akan menghapus child bone yang terhubung langsung ke parent itu
+- bones can be selected from the canvas or from the `Bones` panel
+- bone order in the `Bones` panel can be changed with drag and drop
+- deleting a parent bone also removes child bones that depend on it
 
-## 2. Memilih dan Memanipulasi Bone
+## 2. Selecting and Manipulating Bones
 
 ### Pose Tool
 
-Gunakan `Pose` untuk seleksi dan manipulasi umum.
+Use `Pose` for general selection and manipulation.
 
-Di canvas:
+On the canvas:
 
-- klik bone untuk memilih
-- klik area kosong untuk clear selection
-- drag bone terpilih untuk menggeser
+- click a bone to select it
+- click empty space to clear selection
+- drag the selected bone to move it
 
 ### Move Tool
 
-Gunakan `Move` untuk memindahkan bone secara eksplisit.
+Use `Move` to explicitly reposition a bone.
 
-Perilaku:
+Behavior:
 
-- klik bone untuk memilih
-- drag untuk mengubah posisi
-- jika bone punya parent, posisi lokal akan dihitung ulang terhadap parent itu
+- click a bone to select it
+- drag to change its position
+- if the bone has a parent, its local position is recalculated relative to that parent
 
 ### Rotate Tool
 
-Gunakan `Rotate` untuk memutar bone dari pivot bone tersebut.
+Use `Rotate` to rotate a bone around its pivot.
 
-Perilaku:
+Behavior:
 
-- klik bone
-- drag melingkar di sekitar titik bone
-- rotasi akan diubah berdasarkan sudut pointer terhadap posisi bone
+- click a bone
+- drag around the bone pivot
+- the rotation is updated from the pointer angle relative to the bone position
 
 ### Scale Tool
 
-Gunakan `Scale` untuk mengubah `scaleX` dan `scaleY` bone secara bersamaan.
+Use `Scale` to change `scaleX` and `scaleY` together.
 
-Perilaku:
+Behavior:
 
-- klik bone
-- drag menjauh atau mendekat dari pivot
-- faktor scale dihitung dari rasio jarak pointer
+- click a bone
+- drag farther away or closer to the pivot
+- the scale factor is computed from the pointer distance ratio
 
-## 3. Mengedit Bone dari Properties Panel
+## 3. Editing Bones from the Properties Panel
 
-Saat bone dipilih, panel `Properties` menyediakan field berikut:
+When a bone is selected, the `Properties` panel exposes:
 
 - `Name`
 - `X`
@@ -255,27 +255,27 @@ Saat bone dipilih, panel `Properties` menyediakan field berikut:
 - `Scale Y`
 - `Parent`
 
-Catatan penting:
+Important behavior:
 
-- jika mode saat ini `ANIMATE`, perubahan numerik seperti posisi, rotasi, dan scale akan otomatis menulis keyframe untuk bone aktif
-- mengganti `Parent` menjaga world transform bone tetap konsisten, sehingga bone tidak “loncat” sembarangan saat reparent
+- when the current mode is `ANIMATE`, changing numeric values such as position, rotation, or scale automatically writes a keyframe for the selected bone
+- changing `Parent` preserves the world transform of the bone so it does not unexpectedly jump during reparenting
 
-## 4. Mengelola Slots dan Attachments
+## 4. Managing Slots and Attachments
 
-### Menambahkan Slot
+### Adding a Slot
 
-1. Pilih bone.
-2. Di panel `Slots`, klik tombol `+`.
-3. Slot baru akan dibuat dengan nama default berbasis nama bone.
+1. Select a bone.
+2. In the `Slots` panel, click the `+` button.
+3. A new slot is created using a default name based on the selected bone.
 
-### Upload Gambar ke Slot
+### Uploading an Image to a Slot
 
-1. Klik tombol upload pada slot.
-2. Pilih file gambar.
-3. Aplikasi otomatis membuat attachment image untuk slot itu.
-4. Attachment tersebut langsung dijadikan attachment aktif.
+1. Click the upload button on a slot.
+2. Choose an image file.
+3. The app creates an image attachment for that slot.
+4. The uploaded attachment becomes the active attachment automatically.
 
-Format gambar yang diterima:
+Supported image types:
 
 - PNG
 - JPG / JPEG
@@ -283,153 +283,153 @@ Format gambar yang diterima:
 - GIF
 - SVG
 
-Saat gambar dimuat:
+When an image is loaded:
 
-- ukuran asli gambar dibaca
-- aplikasi otomatis memberi scale awal agar ukuran visual lebih pas di scene
+- the original image size is read
+- the app automatically applies an initial scale so the image fits the scene more reasonably
 
-### Memilih Attachment Aktif
+### Switching the Active Attachment
 
-Jika satu slot punya lebih dari satu attachment, semua attachment akan tampil sebagai daftar tombol di bawah slot. Klik salah satu nama attachment untuk menjadikannya aktif.
+If a slot has more than one attachment, all attachments are shown in a list under that slot. Click an attachment name to make it the active one.
 
-### Menghapus Slot
+### Deleting a Slot
 
-Klik ikon trash pada slot untuk menghapus slot tersebut.
+Click the trash icon on the slot row to remove that slot.
 
-## 5. Mengatur Attachment dari Panel Kanan
+## 5. Editing Attachments from the Right Panel
 
-Jika slot aktif memiliki attachment image, panel kanan akan menampilkan properti attachment seperti:
+If the active slot has an image attachment, the right panel shows attachment properties such as:
 
-- posisi offset
-- rotasi
+- position offset
+- rotation
 - scale
 
-Panel ini dipakai untuk menyelaraskan gambar dengan bone, misalnya:
+This panel is used to align the image with the bone, for example:
 
-- menaikkan gambar agar tepat di atas tulang
-- memutar gambar supaya searah dengan bone
-- membesarkan atau mengecilkan gambar tanpa mengubah data bone
+- moving the image upward so it sits above the bone
+- rotating the image to match the bone direction
+- resizing the image without changing the underlying bone data
 
-## 6. Mengelola Skins
+## 6. Managing Skins
 
-Panel `Skins` menampilkan daftar semua skin.
+The `Skins` panel shows all available skins.
 
-Yang bisa dilakukan:
+Available actions:
 
-- klik skin untuk menjadikannya skin aktif
-- semua bone baru akan menggunakan skin aktif tersebut
-- warna skin dipakai sebagai warna dasar indikator bone di canvas
+- click a skin to make it the active skin
+- every newly created bone uses the active skin
+- the skin color is used as the base color for bone indicators on the canvas
 
 ## 7. Background Reference
 
-Toolbar menyediakan dua aksi:
+The toolbar provides:
 
 - `Background`
 - `Remove BG`
 
-Fungsinya:
+Purpose:
 
-- upload gambar referensi untuk tracing atau sebagai acuan pose
-- hapus background jika tidak diperlukan lagi
+- upload a reference image for tracing or pose matching
+- remove the reference image when it is no longer needed
 
-Perilaku background:
+Background behavior:
 
-- background dirender semi-transparan
-- tetap tampil di canvas sebagai referensi visual
-- dapat ikut muncul saat export video
+- it is rendered semi-transparently
+- it stays visible in the canvas as a visual guide
+- it can appear in exported video output
 
 ## 8. Bone Indicators
 
-Bone indicators adalah lingkaran dan label visual pada bone di canvas.
+Bone indicators are the visual circles and labels shown on top of bones in the canvas.
 
-Perilaku:
+Behavior:
 
-- bisa di-hide/show
-- saat disembunyikan, bone tetap bisa di-hit-test dan diedit
-- jadi toggle ini hanya menyembunyikan indikator visual, bukan mematikan sistem bone
+- they can be shown or hidden
+- even when hidden, bones can still be hit-tested and edited
+- the toggle only hides the visual indicators, not the actual bone system
 
-### Desktop Menu
+### Desktop View Menu
 
-Di desktop app, toggle ini ada di:
+In the desktop app, this toggle is available under:
 
 - `View > Toggle Bone Indicators`
 
-Shortcut desktop:
+Desktop shortcut:
 
 - `Cmd/Ctrl + B`
 
-## 9. Mode SETUP dan ANIMATE
+## 9. SETUP and ANIMATE Modes
 
 ### SETUP
 
-Mode ini dipakai untuk menyiapkan rig dasar:
+Use this mode to prepare the base rig:
 
-- mengatur pose dasar
-- menyusun parent
-- menyesuaikan attachment
+- set the default pose
+- organize parent relationships
+- align attachments
 
-Saat masuk `SETUP`:
+When entering `SETUP`:
 
-- aplikasi me-restore setup pose yang tersimpan
+- the app restores the stored setup pose
 
 ### ANIMATE
 
-Mode ini dipakai untuk membuat animasi frame-by-frame berbasis keyframe.
+Use this mode to create frame-based animation with keyframes.
 
-Saat pindah ke `ANIMATE`:
+When switching to `ANIMATE`:
 
-- aplikasi membandingkan pose sekarang dengan setup pose lama
-- jika ada delta posisi, rotasi, atau scale, keyframe yang ada akan di-shift agar tetap sinkron dengan setup pose baru
-- setup pose baru kemudian disimpan
+- the app compares the current pose against the previous setup pose
+- if there are deltas in position, rotation, or scale, existing keyframes are shifted so the animation remains aligned with the updated setup pose
+- the new setup pose is then saved
 
-Ini penting karena memungkinkan kamu memperbaiki rig setup tanpa langsung merusak keyframe animasi yang sudah ada.
+This allows you to refine the setup rig without immediately breaking existing animation.
 
-## 10. Timeline dan Animasi
+## 10. Timeline and Animation
 
-### Memilih Frame
+### Selecting Frames
 
-Cara memilih frame:
+You can select a frame by:
 
-- klik area timeline
-- drag pada area timeline untuk scrub frame
-- pakai `Arrow Left` dan `Arrow Right`
+- clicking the timeline
+- dragging across the timeline to scrub
+- using `Arrow Left` and `Arrow Right`
 
-Saat mode `ANIMATE`, perubahan frame akan menerapkan keyframe ke skeleton.
+When the current mode is `ANIMATE`, changing the frame applies keyframes to the skeleton.
 
 ### Playback
 
-Kontrol timeline:
+Timeline controls:
 
 - `Play/Pause`
 - `Stop`
 - `Prev Key`
 - `Next Key`
 
-Perilaku playback:
+Playback behavior:
 
-- playback memakai `fps` yang sedang aktif
-- timeline akan loop otomatis ke frame `0` setelah keyframe terakhir global tercapai
+- playback uses the currently configured `fps`
+- the timeline automatically loops back to frame `0` after the last global keyframe is reached
 
-### Edit FPS dan Duration
+### Editing FPS and Duration
 
-Field di timeline:
+Timeline fields:
 
-- `FPS` bisa diatur dari `1` sampai `120`
-- `Duration` bisa diatur dari `10` sampai `300`
+- `FPS` can be set from `1` to `120`
+- `Duration` can be set from `10` to `300`
 
-### Interaksi Keyframe
+### Keyframe Actions
 
-Yang bisa dilakukan:
+Available actions:
 
-- `K` atau tombol `Key`: insert keyframe pada frame aktif
-- `Clear`: hapus semua keyframe pada bone terpilih
-- `Loop`: mirror keyframes untuk membantu membuat loop
-- `1st Key`: copy keyframe pertama bone aktif ke frame saat ini
-- double click keyframe: hapus keyframe itu
-- hover keyframe lalu tekan `X` atau `Delete`: hapus keyframe
-- klik kanan pada keyframe: hapus keyframe
+- `K` or the `Key` button inserts a keyframe on the current frame
+- `Clear` removes all keyframes from the selected bone
+- `Loop` mirrors existing keyframes to help create a looping animation
+- `1st Key` copies the first keyframe of the selected bone to the current frame
+- double click a keyframe to delete it
+- hover a keyframe and press `X` or `Delete` to delete it
+- right click a keyframe to delete it
 
-Properti yang di-keyframe:
+Animated properties:
 
 - `x`
 - `y`
@@ -437,15 +437,15 @@ Properti yang di-keyframe:
 - `scaleX`
 - `scaleY`
 
-Interpolasi yang dipakai saat playback:
+Interpolation:
 
 - linear interpolation
 
-## 11. Save, Load, dan Project File
+## 11. Save, Load, and Project Files
 
-### Save Project
+### Saving a Project
 
-Save akan menulis project JSON yang berisi:
+Saving writes a project JSON file containing:
 
 - bones
 - skins
@@ -458,26 +458,26 @@ Save akan menulis project JSON yang berisi:
 - fps
 - background image
 
-Nama file saran default:
+Default suggested filename:
 
 - `spinebones-project.json`
 
-### Load Project
+### Loading a Project
 
-Load membaca file project JSON yang sebelumnya disimpan dari aplikasi ini.
+Loading reads a JSON project file previously saved from this application.
 
-Saat project dimuat:
+When a project is loaded:
 
-- state editor diganti ke isi file
-- frame di-reset ke `0`
-- playback dimatikan
-- selection dibersihkan
-- setup pose dipastikan valid
-- bones di-restore ke setup pose agar tampilan awal benar
+- editor state is replaced by the file contents
+- the current frame resets to `0`
+- playback is stopped
+- selection is cleared
+- the setup pose is validated
+- bones are restored to the setup pose so the initial display is correct
 
 ### Desktop File Menu
 
-Pada desktop app tersedia menu:
+In the desktop app, the File menu includes:
 
 - `File > Save`
 - `File > Save As…`
@@ -489,51 +489,51 @@ Pada desktop app tersedia menu:
 
 ### Export Spine
 
-Export Spine membuat file ZIP berisi:
+Export Spine creates a ZIP file containing:
 
 - `skeleton.json`
 - `atlas.atlas`
-- file PNG untuk setiap attachment
+- one PNG file for each attachment
 
-Cocok untuk workflow ringan yang butuh output mirip format Spine.
+This is intended as a lightweight Spine-like export for simple downstream workflows.
 
 ### Export Video
 
-Export video menghasilkan file:
+Video export produces:
 
 - `*.webm`
 
-Video export:
+Video export behavior:
 
-- merender animation frame-by-frame
-- memakai `MediaRecorder`
-- bisa memasukkan background image kalau sedang aktif
+- renders the animation frame by frame
+- uses `MediaRecorder`
+- can include the current background image if one is active
 
-## Shortcut Lengkap
+## Full Shortcut Reference
 
-### Tools dan Mode
+### Tools and Modes
 
 - `Q`: Pose
 - `B`: Bone
 - `M`: Move
 - `R`: Rotate
 - `S`: Scale
-- `W`: pindah ke `SETUP`
-- `E`: pindah ke `ANIMATE`
+- `W`: switch to `SETUP`
+- `E`: switch to `ANIMATE`
 
 ### Editing
 
 - `K`: insert keyframe
-- `Delete` / `Backspace`: delete bone terpilih
+- `Delete` / `Backspace`: delete the selected bone
 - `Esc`: clear selection
 
 ### Timeline
 
 - `Space`: play/pause
-- `Arrow Left`: frame mundur
-- `Arrow Right`: frame maju
+- `Arrow Left`: previous frame
+- `Arrow Right`: next frame
 - double click keyframe: delete keyframe
-- `X` atau `Delete` saat hover keyframe: delete keyframe
+- `X` or `Delete` while hovering a keyframe: delete keyframe
 
 ### Undo / Redo / File
 
@@ -544,33 +544,33 @@ Video export:
 - `Cmd/Ctrl + Shift + S`: save as
 - `Cmd/Ctrl + O`: open
 
-### Navigasi Canvas
+### Canvas Navigation
 
-- `Right Mouse Button` drag: pan
-- scroll wheel: zoom
+- right mouse button drag: pan
+- mouse wheel: zoom
 
 ### Desktop View Menu
 
 - `Cmd/Ctrl + B`: toggle bone indicators
 
-## Tips Penggunaan
+## Usage Tips
 
-- Mulailah di mode `SETUP` untuk membangun struktur rig
-- Setelah pose dasar benar, pindah ke `ANIMATE`
-- Gunakan panel `Properties` jika butuh nilai numerik presisi
-- Gunakan skin aktif sebelum membuat bone baru jika kamu ingin warna bone berbeda
-- Gunakan background image sebagai panduan tracing pose
-- Jika animasi terasa sulit diatur, insert keyframe lebih sering pada pose penting
+- Start in `SETUP` mode to build the rig structure
+- Once the base pose is correct, switch to `ANIMATE`
+- Use the `Properties` panel when you need precise numeric values
+- Choose the active skin before creating new bones if you want different bone colors
+- Use the background image as a tracing or pose reference
+- If an animation feels difficult to control, insert more keyframes on important poses
 
-## Catatan Perilaku Penting
+## Important Notes
 
-- State aplikasi bersifat in-memory selama sesi berjalan
-- Project harus disimpan manual jika ingin dipakai lagi
-- Demo skeleton dimuat otomatis saat state masih kosong
-- Menghapus bone parent juga akan menghapus child bone yang bergantung padanya
-- Menyembunyikan bone indicators tidak menonaktifkan bone editing
+- App state is stored in memory during the session
+- Projects must be saved manually if you want to reuse them later
+- A demo skeleton is loaded automatically when the state is empty
+- Deleting a parent bone also removes dependent child bones
+- Hiding bone indicators does not disable bone editing
 
-## Script yang Tersedia
+## Available Scripts
 
 ```json
 {
