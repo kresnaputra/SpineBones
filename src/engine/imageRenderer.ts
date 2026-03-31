@@ -45,12 +45,17 @@ export const drawAttachment = (
   ctx.rotate((attachment.rotation * Math.PI) / 180);
 
   const scale = zoom * 0.5;
-  const w = attachment.width * attachment.scaleX * bone.scaleX * scale;
-  const h = attachment.height * attachment.scaleY * bone.scaleY * scale;
+  const totalScaleX = attachment.scaleX * bone.scaleX;
+  const totalScaleY = attachment.scaleY * bone.scaleY;
+  const flipX = totalScaleX < 0 ? -1 : 1;
+  const flipY = totalScaleY < 0 ? -1 : 1;
+  const w = attachment.width * Math.abs(totalScaleX) * scale;
+  const h = attachment.height * Math.abs(totalScaleY) * scale;
   const offsetX = attachment.x * zoom;
   const offsetY = attachment.y * zoom;
 
   ctx.globalAlpha = 1.0;
+  ctx.scale(flipX, flipY);
   ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
 
   ctx.restore();
@@ -75,8 +80,8 @@ export const hitTestAttachment = (
   const localX = (dx * cos - dy * sin) / zoom;
   const localY = (dx * sin + dy * cos) / zoom;
 
-  const widthLocal = attachment.width * attachment.scaleX * bone.scaleX * 0.5;
-  const heightLocal = attachment.height * attachment.scaleY * bone.scaleY * 0.5;
+  const widthLocal = attachment.width * Math.abs(attachment.scaleX * bone.scaleX) * 0.5;
+  const heightLocal = attachment.height * Math.abs(attachment.scaleY * bone.scaleY) * 0.5;
 
   const left = attachment.x - widthLocal / 2;
   const right = attachment.x + widthLocal / 2;
@@ -95,14 +100,19 @@ export const drawAttachmentOutline = (
 ): void => {
   const screenPos = worldToScreen(bone._wx, bone._wy);
   const totalRotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
-  const width = attachment.width * attachment.scaleX * bone.scaleX * zoom * 0.5;
-  const height = attachment.height * attachment.scaleY * bone.scaleY * zoom * 0.5;
+  const totalScaleX = attachment.scaleX * bone.scaleX;
+  const totalScaleY = attachment.scaleY * bone.scaleY;
+  const flipX = totalScaleX < 0 ? -1 : 1;
+  const flipY = totalScaleY < 0 ? -1 : 1;
+  const width = attachment.width * Math.abs(totalScaleX) * zoom * 0.5;
+  const height = attachment.height * Math.abs(totalScaleY) * zoom * 0.5;
   const offsetX = attachment.x * zoom;
   const offsetY = attachment.y * zoom;
 
   ctx.save();
   ctx.translate(screenPos.x, screenPos.y);
   ctx.rotate(totalRotation);
+  ctx.scale(flipX, flipY);
   ctx.strokeStyle = 'rgba(124,58,237,0.95)';
   ctx.lineWidth = 2;
   ctx.setLineDash([6, 4]);

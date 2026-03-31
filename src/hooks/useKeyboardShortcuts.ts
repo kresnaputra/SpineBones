@@ -7,7 +7,7 @@ import { useSlotStore } from '../stores/slotStore';
 import { loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
-  const { tool, setTool, mode, setMode, selectedBoneId, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
+  const { tool, setTool, mode, setMode, selectedBoneId, selectedBoneIds, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
@@ -100,16 +100,19 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'k') {
-        if (selectedBoneId === null) return;
-        const bone = bones.find((b) => b.id === selectedBoneId);
-        if (!bone) return;
+        if (selectedBoneIds.length === 0) return;
         captureSnapshot();
-        insertKeyframe(bone.id, {
-          x: bone.x,
-          y: bone.y,
-          rotation: bone.rotation,
-          scaleX: bone.scaleX,
-          scaleY: bone.scaleY,
+        selectedBoneIds.forEach((boneId) => {
+          const bone = bones.find((b) => b.id === boneId);
+          if (!bone) return;
+
+          insertKeyframe(bone.id, {
+            x: bone.x,
+            y: bone.y,
+            rotation: bone.rotation,
+            scaleX: bone.scaleX,
+            scaleY: bone.scaleY,
+          });
         });
         return;
       }
@@ -125,9 +128,9 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'delete' || key === 'backspace') {
-        if (selectedBoneId !== null) {
+        if (selectedBoneIds.length > 0) {
           captureSnapshot();
-          deleteBone(selectedBoneId);
+          selectedBoneIds.forEach((boneId) => deleteBone(boneId));
           selectBone(null);
         }
         return;
@@ -171,6 +174,7 @@ export const useKeyboardShortcuts = () => {
     mode,
     setMode,
     selectedBoneId,
+    selectedBoneIds,
     selectBone,
     attachmentDragEnabled,
     setAttachmentDragEnabled,

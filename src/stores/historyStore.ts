@@ -10,6 +10,7 @@ interface ProjectSnapshot {
   editor: {
     mode: ReturnType<typeof useEditorStore.getState>['mode'];
     selectedBoneId: ReturnType<typeof useEditorStore.getState>['selectedBoneId'];
+    selectedBoneIds: ReturnType<typeof useEditorStore.getState>['selectedBoneIds'];
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
@@ -57,6 +58,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     editor: {
       mode: editor.mode,
       selectedBoneId: editor.selectedBoneId,
+      selectedBoneIds: editor.selectedBoneIds,
     },
     skeleton: {
       bones: skeleton.bones,
@@ -87,6 +89,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   useEditorStore.setState({
     mode: snapshot.editor.mode,
     selectedBoneId: snapshot.editor.selectedBoneId,
+    selectedBoneIds: cloneSnapshot(snapshot.editor.selectedBoneIds),
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),

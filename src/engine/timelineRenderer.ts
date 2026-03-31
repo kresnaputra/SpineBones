@@ -16,6 +16,7 @@ export const drawTimeline = (
   frame: number,
   duration: number,
   selectedBoneId: number | null,
+  selectedBoneIds: number[],
   audioTrack: AudioTrackRenderData,
   width: number,
   height: number
@@ -134,16 +135,17 @@ export const drawTimeline = (
   bones.forEach((bone, i) => {
     const y = 20 + audioRowH + i * rowH;
     const skinCol = skins.find((s) => s.id === bone.skinId)?.color || '#7c3aed';
+    const isSelected = selectedBoneIds.includes(bone.id) || selectedBoneId === bone.id;
 
     ctx.fillStyle =
-      selectedBoneId === bone.id
+      isSelected
         ? 'rgba(124,58,237,0.15)'
         : i % 2 === 0
         ? '#13131a'
         : '#111119';
     ctx.fillRect(0, y, width, rowH);
 
-    ctx.fillStyle = selectedBoneId === bone.id ? '#a855f7' : '#94a3b8';
+    ctx.fillStyle = isSelected ? '#a855f7' : '#94a3b8';
     ctx.font = '10px JetBrains Mono';
     ctx.fillText(bone.name, 8, y + rowH / 2 + 4);
 

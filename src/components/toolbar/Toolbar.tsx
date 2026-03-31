@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -51,32 +51,64 @@ export const Toolbar = () => {
     setTool,
     setMode,
     selectedBoneId,
+    selectedBoneIds,
     setBackgroundImage,
   } = useEditorStore();
-  const { saveSetupPose, restoreSetupPose } = useSkeletonStore();
+  const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
 
   const handleInsertKeyframe = () => {
-    if (selectedBoneId === null) return;
-    const bone = bones.find((b) => b.id === selectedBoneId);
-    if (!bone) return;
+    if (selectedBoneIds.length === 0) return;
     captureSnapshot();
-    insertKeyframe(bone.id, {
-      x: bone.x,
-      y: bone.y,
-      rotation: bone.rotation,
-      scaleX: bone.scaleX,
-      scaleY: bone.scaleY,
+    selectedBoneIds.forEach((boneId) => {
+      const bone = bones.find((b) => b.id === boneId);
+      if (!bone) return;
+
+      insertKeyframe(bone.id, {
+        x: bone.x,
+        y: bone.y,
+        rotation: bone.rotation,
+        scaleX: bone.scaleX,
+        scaleY: bone.scaleY,
+      });
     });
   };
 
   const handleClearKeyframes = () => {
-    if (selectedBoneId === null) return;
+    if (selectedBoneIds.length === 0) return;
     captureSnapshot();
-    clearKeyframes(selectedBoneId);
+    selectedBoneIds.forEach((boneId) => clearKeyframes(boneId));
+  };
+
+  const handleMirror = (axis: 'horizontal' | 'vertical') => {
+    if (selectedBoneIds.length === 0) return;
+
+    captureSnapshot();
+    selectedBoneIds.forEach((boneId) => {
+      const bone = bones.find((item) => item.id === boneId);
+      if (!bone) return;
+
+      const nextScaleX = axis === 'horizontal' ? bone.scaleX * -1 : bone.scaleX;
+      const nextScaleY = axis === 'vertical' ? bone.scaleY * -1 : bone.scaleY;
+
+      updateBone(boneId, {
+        scaleX: nextScaleX,
+        scaleY: nextScaleY,
+      });
+
+      if (mode === 'animate') {
+        insertKeyframe(boneId, {
+          x: bone.x,
+          y: bone.y,
+          rotation: bone.rotation,
+          scaleX: nextScaleX,
+          scaleY: nextScaleY,
+        });
+      }
+    });
   };
 
   const handleSave = async () => {
@@ -224,6 +256,26 @@ export const Toolbar = () => {
           </button>
         );
       })}
+
+      <button
+        onClick={() => handleMirror('horizontal')}
+        disabled={selectedBoneIds.length === 0}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent"
+        title="Mirror selected bones horizontally"
+      >
+        <ArrowLeftRight size={14} />
+        Mirror H
+      </button>
+
+      <button
+        onClick={() => handleMirror('vertical')}
+        disabled={selectedBoneIds.length === 0}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent"
+        title="Mirror selected bones vertically"
+      >
+        <ArrowUpDown size={14} />
+        Mirror V
+      </button>
 
       <div className="w-px h-6 bg-border mx-1" />
 

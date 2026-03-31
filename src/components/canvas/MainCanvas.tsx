@@ -19,24 +19,44 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectBone, showBoneIndicators, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
 
+  const getTransformTargetIds = () => {
+    const selectedSet = new Set(selectedBoneIds);
+    if (selectedSet.size === 0) {
+      return selectedBoneId === null ? [] : [selectedBoneId];
+    }
+
+    return selectedBoneIds.filter((boneId) => {
+      const bone = bones.find((item) => item.id === boneId);
+      return !selectedSet.has(bone?.parentId ?? -1);
+    });
+  };
+
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{
-    dx: number;
-    dy: number;
+    startWorldX: number;
+    startWorldY: number;
     sx: number;
     sy: number;
-    initSX: number;
-    initSY: number;
-    initRot: number;
+    anchorBoneId: number;
+    bones: Record<number, {
+      x: number;
+      y: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+      wx: number;
+      wy: number;
+      parentId: number | null;
+    }>;
   } | null>(null);
   const [attachmentDragStart, setAttachmentDragStart] = useState<{
     slotId: number;
@@ -130,7 +150,7 @@ export const MainCanvas = () => {
     if (showBoneIndicators) {
       bones.forEach((bone) => {
         const skin = skins.find((s) => s.id === bone.skinId);
-        const isSelected = selectedBoneId === bone.id;
+        const isSelected = selectedBoneIds.includes(bone.id);
         const isHovered = hoveredBoneId === bone.id;
         const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
 
@@ -138,7 +158,7 @@ export const MainCanvas = () => {
       });
     }
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -169,50 +189,70 @@ export const MainCanvas = () => {
 
     if (isDragging && dragStart) {
       const world = screenToWorld(sx, sy);
-      const selectedBone = bones.find((b) => b.id === selectedBoneId);
-      if (!selectedBone) return;
+      const transformTargetIds = getTransformTargetIds();
+      const anchorBone = bones.find((b) => b.id === dragStart.anchorBoneId);
+      if (!anchorBone || transformTargetIds.length === 0) return;
 
       if (tool === 'move' || tool === 'pose') {
-        let newX = world.x - dragStart.dx;
-        let newY = world.y - dragStart.dy;
-        
-        if (selectedBone.parentId !== null) {
-          computeAllWorldTransforms(bones);
-          const parent = bones.find((b) => b.id === selectedBone.parentId);
-          if (parent) {
-            const cos = Math.cos((-parent._wrot * Math.PI) / 180);
-            const sin = Math.sin((-parent._wrot * Math.PI) / 180);
-            const dx = newX - parent._wx;
-            const dy = newY - parent._wy;
-            newX = dx * cos - dy * sin;
-            newY = dx * sin + dy * cos;
-            newX /= parent.scaleX;
-            newY /= parent.scaleY;
+        const deltaX = world.x - dragStart.startWorldX;
+        const deltaY = world.y - dragStart.startWorldY;
+
+        computeAllWorldTransforms(bones);
+
+        transformTargetIds.forEach((boneId) => {
+          const initialState = dragStart.bones[boneId];
+          if (!initialState) return;
+
+          let nextX = initialState.wx + deltaX;
+          let nextY = initialState.wy + deltaY;
+
+          if (initialState.parentId !== null) {
+            const parent = bones.find((b) => b.id === initialState.parentId);
+            if (parent) {
+              const cos = Math.cos((-parent._wrot * Math.PI) / 180);
+              const sin = Math.sin((-parent._wrot * Math.PI) / 180);
+              const localDx = nextX - parent._wx;
+              const localDy = nextY - parent._wy;
+              nextX = (localDx * cos - localDy * sin) / parent.scaleX;
+              nextY = (localDx * sin + localDy * cos) / parent.scaleY;
+            }
           }
-        }
-        
-        updateBone(selectedBone.id, {
-          x: newX,
-          y: newY,
+
+          updateBone(boneId, {
+            x: nextX,
+            y: nextY,
+          });
         });
       } else if (tool === 'rotate') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(selectedBone._wx, selectedBone._wy);
+        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
         const angle = (Math.atan2(sy - bs.y, sx - bs.x) * 180) / Math.PI;
         const initAngle = (Math.atan2(dragStart.sy - bs.y, dragStart.sx - bs.x) * 180) / Math.PI;
-        updateBone(selectedBone.id, {
-          rotation: dragStart.initRot + (angle - initAngle),
+        const rotationDelta = angle - initAngle;
+
+        transformTargetIds.forEach((boneId) => {
+          const initialState = dragStart.bones[boneId];
+          if (!initialState) return;
+
+          updateBone(boneId, {
+            rotation: initialState.rotation + rotationDelta,
+          });
         });
       } else if (tool === 'scale') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(selectedBone._wx, selectedBone._wy);
+        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
         const dist = Math.hypot(sx - bs.x, sy - bs.y);
         const initDist = Math.hypot(dragStart.sx - bs.x, dragStart.sy - bs.y);
         if (initDist > 0) {
           const factor = dist / initDist;
-          updateBone(selectedBone.id, {
-            scaleX: dragStart.initSX * factor,
-            scaleY: dragStart.initSY * factor,
+          transformTargetIds.forEach((boneId) => {
+            const initialState = dragStart.bones[boneId];
+            if (!initialState) return;
+
+            updateBone(boneId, {
+              scaleX: initialState.scaleX * factor,
+              scaleY: initialState.scaleY * factor,
+            });
           });
         }
       }
@@ -303,22 +343,53 @@ export const MainCanvas = () => {
     }
 
     const target = hit || (tool !== 'pose' ? bones.find((b) => b.id === selectedBoneId) : null);
+    const transformTargetIds = getTransformTargetIds();
 
     if (target) {
       captureSnapshot();
       if (hit && hit.id !== selectedBoneId) selectBone(hit.id);
       
       computeAllWorldTransforms(bones);
+      const dragBones = Object.fromEntries(
+        transformTargetIds
+          .map((boneId) => {
+            const bone = bones.find((item) => item.id === boneId);
+            if (!bone) return null;
+
+            return [
+              boneId,
+              {
+                x: bone.x,
+                y: bone.y,
+                rotation: bone.rotation,
+                scaleX: bone.scaleX,
+                scaleY: bone.scaleY,
+                wx: bone._wx,
+                wy: bone._wy,
+                parentId: bone.parentId,
+              },
+            ];
+          })
+          .filter((entry): entry is [number, {
+            x: number;
+            y: number;
+            rotation: number;
+            scaleX: number;
+            scaleY: number;
+            wx: number;
+            wy: number;
+            parentId: number | null;
+          }] => entry !== null),
+      );
       
       setIsDragging(true);
       setDragStart({
-        dx: world.x - target._wx,
-        dy: world.y - target._wy,
+        startWorldX: world.x,
+        startWorldY: world.y,
         sx,
         sy,
-        initSX: target.scaleX,
-        initSY: target.scaleY,
-        initRot: target.rotation,
+        anchorBoneId: target.id,
+        bones: dragBones,
       });
     } else {
       selectBone(null);
@@ -329,9 +400,11 @@ export const MainCanvas = () => {
     setIsPanning(false);
     setPanStart(null);
 
-    if (isDragging && selectedBoneId !== null && mode === 'animate') {
-      const bone = bones.find((b) => b.id === selectedBoneId);
-      if (bone) {
+    if (isDragging && selectedBoneIds.length > 0 && mode === 'animate') {
+      selectedBoneIds.forEach((boneId) => {
+        const bone = bones.find((b) => b.id === boneId);
+        if (!bone) return;
+
         insertKeyframe(bone.id, {
           x: bone.x,
           y: bone.y,
@@ -339,7 +412,7 @@ export const MainCanvas = () => {
           scaleX: bone.scaleX,
           scaleY: bone.scaleY,
         });
-      }
+      });
     }
 
     setAttachmentDragStart(null);

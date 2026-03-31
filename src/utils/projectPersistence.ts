@@ -113,6 +113,7 @@ export const applyProjectData = (
     backgroundImage: projectData.backgroundImage ?? null,
     currentProjectPath: sourcePath,
     selectedBoneId: null,
+    selectedBoneIds: [],
   });
 
   if (!projectData.setupPose || Object.keys(projectData.setupPose).length === 0) {

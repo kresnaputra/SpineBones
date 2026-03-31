@@ -5,6 +5,7 @@ interface EditorState {
   tool: Tool;
   mode: Mode;
   selectedBoneId: number | null;
+  selectedBoneIds: number[];
   showBoneIndicators: boolean;
   attachmentDragEnabled: boolean;
   backgroundImage: string | null;
@@ -12,6 +13,7 @@ interface EditorState {
   setTool: (tool: Tool) => void;
   setMode: (mode: Mode) => void;
   selectBone: (id: number | null) => void;
+  toggleBoneSelection: (id: number) => void;
   setShowBoneIndicators: (show: boolean) => void;
   setAttachmentDragEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
@@ -22,13 +24,33 @@ export const useEditorStore = create<EditorState>((set) => ({
   tool: 'pose',
   mode: 'setup',
   selectedBoneId: null,
+  selectedBoneIds: [],
   showBoneIndicators: true,
   attachmentDragEnabled: false,
   backgroundImage: null,
   currentProjectPath: null,
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
-  selectBone: (id) => set({ selectedBoneId: id }),
+  selectBone: (id) => set({ selectedBoneId: id, selectedBoneIds: id === null ? [] : [id] }),
+  toggleBoneSelection: (id) =>
+    set((state) => {
+      const isSelected = state.selectedBoneIds.includes(id);
+      if (isSelected) {
+        const nextSelectedBoneIds = state.selectedBoneIds.filter((boneId) => boneId !== id);
+        return {
+          selectedBoneIds: nextSelectedBoneIds,
+          selectedBoneId:
+            state.selectedBoneId === id
+              ? (nextSelectedBoneIds[nextSelectedBoneIds.length - 1] ?? null)
+              : state.selectedBoneId,
+        };
+      }
+
+      return {
+        selectedBoneId: id,
+        selectedBoneIds: [...state.selectedBoneIds, id],
+      };
+    }),
   setShowBoneIndicators: (showBoneIndicators) => set({ showBoneIndicators }),
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),

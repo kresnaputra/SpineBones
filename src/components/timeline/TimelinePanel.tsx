@@ -71,7 +71,7 @@ export const TimelinePanel = () => {
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
 
-  const { mode, selectedBoneId, selectBone } = useEditorStore();
+  const { mode, selectedBoneId, selectedBoneIds, selectBone } = useEditorStore();
   const { bones, skins } = useSkeletonStore();
   const { captureSnapshot } = useHistoryStore();
   const {
@@ -249,6 +249,7 @@ export const TimelinePanel = () => {
       frame,
       duration,
       selectedBoneId,
+      selectedBoneIds,
       {
         enabled: Boolean(audioData),
         name: audioName,
@@ -259,7 +260,7 @@ export const TimelinePanel = () => {
       canvas.width,
       canvas.height,
     );
-  }, [bones, skins, keyframes, frame, duration, selectedBoneId, resizeTick, audioData, audioName, audioOffsetFrames, audioDurationSeconds, fps, waveformPeaks]);
+  }, [bones, skins, keyframes, frame, duration, selectedBoneId, selectedBoneIds, resizeTick, audioData, audioName, audioOffsetFrames, audioDurationSeconds, fps, waveformPeaks]);
 
   useEffect(() => {
     if (!playing) return;
