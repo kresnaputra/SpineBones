@@ -5,7 +5,7 @@ export const AttachmentPropertiesPanel = () => {
   const { selectedBoneId } = useEditorStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
 
-  if (!selectedBoneId) {
+  if (selectedBoneId === null) {
     return (
       <div className="border-b border-border">
         <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
