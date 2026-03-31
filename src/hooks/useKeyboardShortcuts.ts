@@ -3,13 +3,15 @@ import { useEditorStore } from '../stores/editorStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
+import { useSlotStore } from '../stores/slotStore';
 import { loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
-  const { tool, setTool, mode, setMode, selectedBoneId, selectBone } = useEditorStore();
+  const { tool, setTool, mode, setMode, selectedBoneId, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
+  const { slots } = useSlotStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -112,6 +114,16 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (key === 'd') {
+        if (selectedBoneId === null) return;
+        const hasActiveAttachment = slots.some(
+          (slot) => slot.boneId === selectedBoneId && slot.attachmentName !== null
+        );
+        if (!hasActiveAttachment) return;
+        setAttachmentDragEnabled(!attachmentDragEnabled);
+        return;
+      }
+
       if (key === 'delete' || key === 'backspace') {
         if (selectedBoneId !== null) {
           captureSnapshot();
@@ -160,7 +172,10 @@ export const useKeyboardShortcuts = () => {
     setMode,
     selectedBoneId,
     selectBone,
+    attachmentDragEnabled,
+    setAttachmentDragEnabled,
     bones,
+    slots,
     deleteBone,
     saveSetupPose,
     restoreSetupPose,

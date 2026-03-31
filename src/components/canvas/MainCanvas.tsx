@@ -7,7 +7,7 @@ import { useHistoryStore } from '../../stores/historyStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone } from '../../engine/renderer';
-import { drawSlots } from '../../engine/imageRenderer';
+import { drawAttachmentOutline, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
 
 export const MainCanvas = () => {
@@ -19,7 +19,7 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectBone, showBoneIndicators, backgroundImage } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectBone, showBoneIndicators, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
@@ -37,6 +37,15 @@ export const MainCanvas = () => {
     initSX: number;
     initSY: number;
     initRot: number;
+  } | null>(null);
+  const [attachmentDragStart, setAttachmentDragStart] = useState<{
+    slotId: number;
+    attachmentName: string;
+    initialX: number;
+    initialY: number;
+    startSx: number;
+    startSy: number;
+    totalRotation: number;
   } | null>(null);
 
   useEffect(() => {
@@ -106,6 +115,18 @@ export const MainCanvas = () => {
 
     drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, handleImageLoad);
 
+    if (attachmentDragEnabled && selectedBoneId !== null) {
+      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
+      const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+      const activeAttachment = activeSlot
+        ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
+        : null;
+
+      if (activeSlot && selectedBone && activeAttachment) {
+        drawAttachmentOutline(ctx, activeAttachment, selectedBone, worldToScreen, camZoom);
+      }
+    }
+
     if (showBoneIndicators) {
       bones.forEach((bone) => {
         const skin = skins.find((s) => s.id === bone.skinId);
@@ -117,7 +138,7 @@ export const MainCanvas = () => {
       });
     }
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -128,6 +149,21 @@ export const MainCanvas = () => {
     if (isPanning && panStart) {
       pan(sx - panStart.x, sy - panStart.y);
       setPanStart({ x: sx, y: sy });
+      return;
+    }
+
+    if (attachmentDragStart) {
+      const dx = sx - attachmentDragStart.startSx;
+      const dy = sy - attachmentDragStart.startSy;
+      const cos = Math.cos(-attachmentDragStart.totalRotation);
+      const sin = Math.sin(-attachmentDragStart.totalRotation);
+      const localDx = (dx * cos - dy * sin) / camZoom;
+      const localDy = (dx * sin + dy * cos) / camZoom;
+
+      useSlotStore.getState().updateAttachment(attachmentDragStart.slotId, attachmentDragStart.attachmentName, {
+        x: attachmentDragStart.initialX + localDx,
+        y: attachmentDragStart.initialY + localDy,
+      });
       return;
     }
 
@@ -201,6 +237,34 @@ export const MainCanvas = () => {
 
     const world = screenToWorld(sx, sy);
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
+    if (attachmentDragEnabled && selectedBoneId !== null) {
+      computeAllWorldTransforms(bones);
+      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
+      const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+      const activeAttachment = activeSlot
+        ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
+        : null;
+
+      if (
+        activeSlot &&
+        selectedBone &&
+        activeAttachment &&
+        hitTestAttachment(sx, sy, activeAttachment, selectedBone, worldToScreen, camZoom)
+      ) {
+        captureSnapshot();
+        setAttachmentDragStart({
+          slotId: activeSlot.id,
+          attachmentName: activeAttachment.name,
+          initialX: activeAttachment.x,
+          initialY: activeAttachment.y,
+          startSx: sx,
+          startSy: sy,
+          totalRotation: ((selectedBone._wrot + activeAttachment.rotation) * Math.PI) / 180,
+        });
+        return;
+      }
+    }
 
     if (tool === 'bone') {
       captureSnapshot();
@@ -278,6 +342,7 @@ export const MainCanvas = () => {
       }
     }
 
+    setAttachmentDragStart(null);
     setIsDragging(false);
     setDragStart(null);
   };
@@ -321,6 +386,7 @@ export const MainCanvas = () => {
         <div>Mode: <span className="text-text">{mode.charAt(0).toUpperCase() + mode.slice(1)}</span></div>
         <div>Bones: <span className="text-text">{bones.length}</span></div>
         <div>Frame: <span className="text-text">{frame}</span></div>
+        <div>Attachment Drag: <span className="text-text">{attachmentDragEnabled ? 'On' : 'Off'}</span></div>
       </div>
     </div>
   );
