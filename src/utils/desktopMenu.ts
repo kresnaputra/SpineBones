@@ -7,6 +7,7 @@ type DesktopMenuHandlers = {
   onOpen: () => void | Promise<void>;
   onExportSpine: () => void | Promise<void>;
   onExportVideo: () => void | Promise<void>;
+  onToggleBoneIndicators: () => void | Promise<void>;
 };
 
 let menuSetupPromise: Promise<void> | null = null;
@@ -79,6 +80,12 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
           text: 'Reload',
           accelerator: 'CmdOrCtrl+R',
           action: () => window.location.reload(),
+        }),
+        await MenuItem.new({
+          id: 'view-toggle-bone-indicators',
+          text: 'Toggle Bone Indicators',
+          accelerator: 'CmdOrCtrl+B',
+          action: () => void handlers.onToggleBoneIndicators(),
         }),
         await buildPredefined('Fullscreen'),
       ],

@@ -51,7 +51,11 @@ export const StatusBar = () => {
       </span>
       <span>|</span>
       <span>
-        <strong className="text-white">b/q/m/r/s</strong> tools
+        <strong className="text-white">W/E</strong> setup/animate
+      </span>
+      <span>|</span>
+      <span>
+        <strong className="text-white">Q/B/M/R/S</strong> tools
       </span>
     </div>
   );

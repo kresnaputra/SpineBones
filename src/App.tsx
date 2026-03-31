@@ -27,6 +27,10 @@ function App() {
       onExportVideo: () => {
         window.dispatchEvent(new CustomEvent('spine:file-export-video'));
       },
+      onToggleBoneIndicators: () => {
+        const editor = useEditorStore.getState();
+        editor.setShowBoneIndicators(!editor.showBoneIndicators);
+      },
     });
   }, []);
 

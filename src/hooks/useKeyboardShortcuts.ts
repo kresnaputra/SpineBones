@@ -6,9 +6,9 @@ import { useHistoryStore } from '../stores/historyStore';
 import { loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
-  const { tool, setTool, mode, selectedBoneId, selectBone } = useEditorStore();
-  const { bones, deleteBone } = useSkeletonStore();
-  const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes } = useAnimationStore();
+  const { tool, setTool, mode, setMode, selectedBoneId, selectBone } = useEditorStore();
+  const { bones, deleteBone, saveSetupPose, restoreSetupPose } = useSkeletonStore();
+  const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
 
   useEffect(() => {
@@ -56,6 +56,44 @@ export const useKeyboardShortcuts = () => {
 
       if (toolMap[key]) {
         setTool(toolMap[key]);
+        return;
+      }
+
+      if (key === 'w') {
+        restoreSetupPose();
+        setMode('setup');
+        return;
+      }
+
+      if (key === 'e') {
+        const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
+        const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
+        let hasDeltas = false;
+
+        if (Object.keys(oldSetupPose).length > 0) {
+          currentBones.forEach((bone) => {
+            const old = oldSetupPose[bone.id];
+            if (!old) return;
+
+            const dx = bone.x - old.x;
+            const dy = bone.y - old.y;
+            const dRot = bone.rotation - old.rotation;
+            const dScaleX = bone.scaleX - old.scaleX;
+            const dScaleY = bone.scaleY - old.scaleY;
+
+            if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0) {
+              deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY };
+              hasDeltas = true;
+            }
+          });
+        }
+
+        if (hasDeltas) {
+          shiftKeyframes(deltas);
+        }
+
+        saveSetupPose();
+        setMode('animate');
         return;
       }
 
@@ -119,11 +157,15 @@ export const useKeyboardShortcuts = () => {
     tool,
     setTool,
     mode,
+    setMode,
     selectedBoneId,
     selectBone,
     bones,
     deleteBone,
+    saveSetupPose,
+    restoreSetupPose,
     insertKeyframe,
+    shiftKeyframes,
     captureSnapshot,
     playing,
     play,
