@@ -1,6 +1,5 @@
 import { Toolbar } from "../toolbar/Toolbar";
 import { BoneTreePanel } from "../panels/BoneTreePanel";
-import { SkinListPanel } from "../panels/SkinListPanel";
 import { SlotListPanel } from "../panels/SlotListPanel";
 import { PropertiesPanel } from "../panels/PropertiesPanel";
 import { MainCanvas } from "../canvas/MainCanvas";
@@ -16,7 +15,6 @@ export const EditorLayout = () => {
         <div className="w-[250px] flex-shrink-0 bg-panel border-r border-border flex flex-col overflow-hidden">
           <BoneTreePanel />
           <SlotListPanel />
-          <SkinListPanel />
         </div>
 
         <MainCanvas />
