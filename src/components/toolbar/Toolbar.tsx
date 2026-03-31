@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle, Eye, EyeOff } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -45,7 +45,16 @@ const IMAGE_FILTERS = [
 ];
 
 export const Toolbar = () => {
-  const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
+  const {
+    tool,
+    mode,
+    setTool,
+    setMode,
+    selectedBoneId,
+    showBoneIndicators,
+    setShowBoneIndicators,
+    setBackgroundImage,
+  } = useEditorStore();
   const { saveSetupPose, restoreSetupPose } = useSkeletonStore();
   const { insertKeyframe, clearKeyframes } = useAnimationStore();
   const { bones } = useSkeletonStore();
@@ -387,6 +396,19 @@ export const Toolbar = () => {
       >
         <XCircle size={14} />
         Remove BG
+      </button>
+
+      <button
+        onClick={() => setShowBoneIndicators(!showBoneIndicators)}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
+          showBoneIndicators
+            ? 'bg-accent/15 text-text border-accent/40 hover:bg-accent/20'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title={showBoneIndicators ? 'Hide bone indicators' : 'Show bone indicators'}
+      >
+        {showBoneIndicators ? <Eye size={14} /> : <EyeOff size={14} />}
+        Bones
       </button>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">

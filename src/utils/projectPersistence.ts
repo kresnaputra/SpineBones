@@ -24,15 +24,46 @@ export const buildProjectData = (): ProjectData => {
   const slotState = useSlotStore.getState();
   const editorState = useEditorStore.getState();
 
+  // Normalize keyframes so the earliest frame across all bones becomes frame 0
+  const originalKeyframes = animationState.keyframes;
+  let minFrame = Infinity;
+  for (const boneId of Object.keys(originalKeyframes)) {
+    for (const frame of Object.keys(originalKeyframes[Number(boneId)])) {
+      minFrame = Math.min(minFrame, Number(frame));
+    }
+  }
+  const normalizedKeyframes: typeof originalKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const boneIdStr of Object.keys(originalKeyframes)) {
+      const boneId = Number(boneIdStr);
+      normalizedKeyframes[boneId] = {};
+      for (const frameStr of Object.keys(originalKeyframes[boneId])) {
+        const frame = Number(frameStr);
+        normalizedKeyframes[boneId][frame - minFrame] = originalKeyframes[boneId][frame];
+      }
+    }
+  } else {
+    Object.assign(normalizedKeyframes, originalKeyframes);
+  }
+
+  // Save bones with their setup pose positions, not current animation positions
+  const savedBones = skeletonState.bones.map((bone) => {
+    const pose = skeletonState.setupPose[bone.id];
+    if (pose) {
+      return { ...bone, ...pose };
+    }
+    return bone;
+  });
+
   return {
     version: '1.1',
-    bones: skeletonState.bones,
+    bones: savedBones,
     skins: skeletonState.skins,
     activeSkinId: skeletonState.activeSkinId,
     setupPose: skeletonState.setupPose,
     slots: slotState.slots,
     attachments: slotState.attachments,
-    keyframes: animationState.keyframes,
+    keyframes: normalizedKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -79,6 +110,9 @@ export const applyProjectData = (
   if (!projectData.setupPose || Object.keys(projectData.setupPose).length === 0) {
     useSkeletonStore.getState().saveSetupPose();
   }
+
+  // Restore bones to setup pose so they display correctly at frame 0
+  useSkeletonStore.getState().restoreSetupPose();
 
   useHistoryStore.getState().clearHistory();
 };

@@ -19,7 +19,7 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectBone, backgroundImage } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectBone, showBoneIndicators, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
@@ -106,16 +106,18 @@ export const MainCanvas = () => {
 
     drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, handleImageLoad);
 
-    bones.forEach((bone) => {
-      const skin = skins.find((s) => s.id === bone.skinId);
-      const isSelected = selectedBoneId === bone.id;
-      const isHovered = hoveredBoneId === bone.id;
-      const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
+    if (showBoneIndicators) {
+      bones.forEach((bone) => {
+        const skin = skins.find((s) => s.id === bone.skinId);
+        const isSelected = selectedBoneId === bone.id;
+        const isHovered = hoveredBoneId === bone.id;
+        const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
 
-      drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
-    });
+        drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
+      });
+    }
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
+  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
