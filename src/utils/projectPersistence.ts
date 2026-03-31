@@ -67,6 +67,10 @@ export const buildProjectData = (): ProjectData => {
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
+    audioData: animationState.audioData,
+    audioName: animationState.audioName,
+    audioVolume: animationState.audioVolume,
+    audioOffsetFrames: animationState.audioOffsetFrames,
   };
 };
 
@@ -99,6 +103,10 @@ export const applyProjectData = (
     fps: projectData.fps ?? 24,
     frame: 0,
     playing: false,
+    audioData: projectData.audioData ?? null,
+    audioName: projectData.audioName ?? null,
+    audioVolume: projectData.audioVolume ?? 0.8,
+    audioOffsetFrames: projectData.audioOffsetFrames ?? 0,
   });
 
   useEditorStore.setState({

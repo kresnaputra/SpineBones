@@ -1,5 +1,13 @@
 import type { Bone, Skin, Keyframes } from '../types';
 
+type AudioTrackRenderData = {
+  enabled: boolean;
+  name: string | null;
+  offsetFrames: number;
+  audioDurationFrames: number;
+  waveformPeaks: number[];
+};
+
 export const drawTimeline = (
   ctx: CanvasRenderingContext2D,
   bones: Bone[],
@@ -8,10 +16,12 @@ export const drawTimeline = (
   frame: number,
   duration: number,
   selectedBoneId: number | null,
+  audioTrack: AudioTrackRenderData,
   width: number,
   height: number
 ): void => {
   const rowH = 28;
+  const audioRowH = audioTrack.enabled ? 36 : 0;
   const headerW = 120;
   const frameW = Math.max(8, (width - headerW) / duration);
 
@@ -44,8 +54,85 @@ export const drawTimeline = (
     }
   }
 
+  if (audioTrack.enabled) {
+    const y = 20;
+    const contentX = headerW;
+    const contentW = width - headerW;
+    const waveformY = y + 4;
+    const waveformH = audioRowH - 8;
+    const audioStartX = headerW + audioTrack.offsetFrames * frameW;
+    const clampedDurationFrames = Math.max(0, Math.min(duration - audioTrack.offsetFrames, audioTrack.audioDurationFrames));
+    const audioEndX = audioStartX + clampedDurationFrames * frameW;
+
+    ctx.fillStyle = 'rgba(124,58,237,0.12)';
+    ctx.fillRect(0, y, width, audioRowH);
+
+    ctx.fillStyle = '#c4b5fd';
+    ctx.font = '10px JetBrains Mono';
+    ctx.fillText('Audio', 8, y + 14);
+
+    ctx.fillStyle = '#7c3aed';
+    ctx.font = '9px JetBrains Mono';
+    ctx.fillText(audioTrack.name ?? 'Track', 8, y + 26);
+
+    ctx.fillStyle = 'rgba(124,58,237,0.18)';
+    ctx.fillRect(contentX, waveformY, contentW, waveformH);
+
+    if (audioTrack.audioDurationFrames > 0 && audioTrack.waveformPeaks.length > 1) {
+      const visibleStartFrame = Math.max(0, audioTrack.offsetFrames);
+      const visibleEndFrame = Math.min(duration, audioTrack.offsetFrames + audioTrack.audioDurationFrames);
+
+      if (visibleEndFrame > visibleStartFrame) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(contentX, waveformY, contentW, waveformH);
+        ctx.clip();
+
+        const centerY = waveformY + waveformH / 2;
+        const amplitude = waveformH / 2 - 3;
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+
+        for (let sample = 0; sample < audioTrack.waveformPeaks.length; sample++) {
+          const ratio = sample / (audioTrack.waveformPeaks.length - 1);
+          const framePos = audioTrack.offsetFrames + ratio * audioTrack.audioDurationFrames;
+          const x = headerW + framePos * frameW;
+          const peak = Math.min(1, Math.max(0, audioTrack.waveformPeaks[sample] ?? 0));
+          const yTop = centerY - peak * amplitude;
+          const yBottom = centerY + peak * amplitude;
+
+          ctx.moveTo(x, yTop);
+          ctx.lineTo(x, yBottom);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    ctx.strokeStyle = '#7c3aed';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(audioStartX, y + 2);
+    ctx.lineTo(audioStartX, y + audioRowH - 2);
+    ctx.stroke();
+
+    if (audioEndX > audioStartX) {
+      ctx.fillStyle = 'rgba(124,58,237,0.1)';
+      ctx.fillRect(audioStartX, waveformY, audioEndX - audioStartX, waveformH);
+    }
+
+    ctx.strokeStyle = 'rgba(42,42,61,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y + audioRowH);
+    ctx.lineTo(width, y + audioRowH);
+    ctx.stroke();
+  }
+
   bones.forEach((bone, i) => {
-    const y = 20 + i * rowH;
+    const y = 20 + audioRowH + i * rowH;
     const skinCol = skins.find((s) => s.id === bone.skinId)?.color || '#7c3aed';
 
     ctx.fillStyle =

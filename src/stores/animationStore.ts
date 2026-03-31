@@ -8,12 +8,20 @@ interface AnimationState {
   duration: number;
   fps: number;
   playing: boolean;
+  audioData: string | null;
+  audioName: string | null;
+  audioVolume: number;
+  audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
   clearKeyframes: (boneId: number) => void;
   setFrame: (frame: number) => void;
   setDuration: (duration: number) => void;
   setFps: (fps: number) => void;
+  setAudioTrack: (audioData: string, audioName: string) => void;
+  clearAudioTrack: () => void;
+  setAudioVolume: (volume: number) => void;
+  setAudioOffsetFrames: (offsetFrames: number) => void;
   play: () => void;
   stop: () => void;
   applyKeyframes: () => void;
@@ -27,6 +35,10 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   duration: 60,
   fps: 24,
   playing: false,
+  audioData: null,
+  audioName: null,
+  audioVolume: 0.8,
+  audioOffsetFrames: 0,
 
   insertKeyframe: (boneId, frameData) => {
     set((state) => ({
@@ -67,6 +79,10 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setFrame: (frame) => set({ frame }),
   setDuration: (duration) => set({ duration }),
   setFps: (fps) => set({ fps }),
+  setAudioTrack: (audioData, audioName) => set({ audioData, audioName, audioOffsetFrames: 0 }),
+  clearAudioTrack: () => set({ audioData: null, audioName: null, audioOffsetFrames: 0 }),
+  setAudioVolume: (audioVolume) => set({ audioVolume }),
+  setAudioOffsetFrames: (audioOffsetFrames) => set({ audioOffsetFrames: Math.max(0, Math.round(audioOffsetFrames)) }),
   play: () => set({ playing: true }),
   stop: () => set({ playing: false }),
 

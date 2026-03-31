@@ -85,4 +85,8 @@ export interface ProjectData {
   duration: number;
   fps: number;
   backgroundImage?: string | null;
+  audioData?: string | null;
+  audioName?: string | null;
+  audioVolume?: number;
+  audioOffsetFrames?: number;
 }

@@ -23,6 +23,10 @@ interface ProjectSnapshot {
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
+    audioData: ReturnType<typeof useAnimationStore.getState>['audioData'];
+    audioName: ReturnType<typeof useAnimationStore.getState>['audioName'];
+    audioVolume: ReturnType<typeof useAnimationStore.getState>['audioVolume'];
+    audioOffsetFrames: ReturnType<typeof useAnimationStore.getState>['audioOffsetFrames'];
   };
   camera: {
     x: ReturnType<typeof useCameraStore.getState>['x'];
@@ -66,6 +70,10 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
+      audioData: animation.audioData,
+      audioName: animation.audioName,
+      audioVolume: animation.audioVolume,
+      audioOffsetFrames: animation.audioOffsetFrames,
     },
     camera: {
       x: camera.x,
@@ -92,6 +100,10 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,
+    audioData: snapshot.animation.audioData,
+    audioName: snapshot.animation.audioName,
+    audioVolume: snapshot.animation.audioVolume,
+    audioOffsetFrames: snapshot.animation.audioOffsetFrames,
     playing: false,
   });
   useCameraStore.setState({

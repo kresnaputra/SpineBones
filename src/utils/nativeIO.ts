@@ -24,6 +24,12 @@ export interface LoadedImageFile {
   dataUrl: string;
 }
 
+export interface LoadedAudioFile {
+  name: string;
+  path: string | null;
+  dataUrl: string;
+}
+
 const IMAGE_MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -31,6 +37,15 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   webp: 'image/webp',
   gif: 'image/gif',
   svg: 'image/svg+xml',
+};
+
+const AUDIO_MIME_TYPES: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  webm: 'audio/webm',
 };
 
 export const isDesktopApp = () => isTauri();
@@ -103,7 +118,7 @@ const pickBrowserFile = async (
 
 const getMimeTypeFromPath = (path: string) => {
   const extension = path.split('.').pop()?.toLowerCase() ?? '';
-  return IMAGE_MIME_TYPES[extension] ?? 'application/octet-stream';
+  return IMAGE_MIME_TYPES[extension] ?? AUDIO_MIME_TYPES[extension] ?? 'application/octet-stream';
 };
 
 const normalizeDialogSelection = (selection: string | string[] | null) => {
@@ -144,6 +159,33 @@ export const openImageFile = async (
 ): Promise<LoadedImageFile | null> => {
   if (!isDesktopApp()) {
     return (await pickBrowserFile('image/*', 'data-url')) as LoadedImageFile | null;
+  }
+
+  const selectedPath = normalizeDialogSelection(
+    await openDialog({
+      multiple: false,
+      directory: false,
+      filters: options?.filters,
+    }),
+  );
+
+  if (!selectedPath) return null;
+
+  const bytes = await readFile(selectedPath);
+  const blob = new Blob([bytes], { type: getMimeTypeFromPath(selectedPath) });
+
+  return {
+    name: getFileNameFromPath(selectedPath),
+    path: selectedPath,
+    dataUrl: await blobToDataUrl(blob),
+  };
+};
+
+export const openAudioFile = async (
+  options?: OpenDialogOptions,
+): Promise<LoadedAudioFile | null> => {
+  if (!isDesktopApp()) {
+    return (await pickBrowserFile('audio/*', 'data-url')) as LoadedAudioFile | null;
   }
 
   const selectedPath = normalizeDialogSelection(

@@ -1,18 +1,75 @@
 import { useRef, useEffect, useState } from 'react';
-import { Play, Pause, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Pause, Square, ChevronLeft, ChevronRight, Music2, X } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { drawTimeline } from '../../engine/timelineRenderer';
+import { openAudioFile } from '../../utils/nativeIO';
+
+const HEADER_H = 20;
+const ROW_H = 28;
+const AUDIO_ROW_H = 36;
+const HEADER_W = 120;
+const MAX_WAVEFORM_SAMPLES = 240;
+
+const AUDIO_FILTERS = [
+  {
+    name: 'Audio',
+    extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'webm'],
+  },
+];
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const dataUrlToArrayBuffer = async (dataUrl: string) => {
+  const response = await fetch(dataUrl);
+  return await response.arrayBuffer();
+};
+
+const getAudioTimelineTime = (frame: number, fps: number, audioOffsetFrames: number) =>
+  frame / fps - audioOffsetFrames / fps;
+
+const isAudioTimelineActive = (timelineTime: number, audioDurationSeconds: number) =>
+  timelineTime >= 0 && timelineTime < audioDurationSeconds;
+
+const extractWaveformPeaks = (channelData: Float32Array, samples: number) => {
+  if (channelData.length === 0 || samples <= 0) {
+    return [];
+  }
+
+  const blockSize = Math.max(1, Math.floor(channelData.length / samples));
+  const peaks: number[] = [];
+
+  for (let sample = 0; sample < samples; sample += 1) {
+    const start = sample * blockSize;
+    const end = Math.min(channelData.length, start + blockSize);
+    let peak = 0;
+
+    for (let i = start; i < end; i += 1) {
+      peak = Math.max(peak, Math.abs(channelData[i] ?? 0));
+    }
+
+    peaks.push(peak);
+  }
+
+  const highestPeak = Math.max(...peaks, 0.0001);
+  return peaks.map((peak) => peak / highestPeak);
+};
 
 export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const wasPlayingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragMode, setDragMode] = useState<'playhead' | 'audio-offset' | null>(null);
   const [hoveredKeyframe, setHoveredKeyframe] = useState<{ boneId: number; frame: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; boneId: number; frame: number } | null>(null);
   const [resizeTick, setResizeTick] = useState(0);
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
 
   const { mode, selectedBoneId, selectBone } = useEditorStore();
   const { bones, skins } = useSkeletonStore();
@@ -23,9 +80,17 @@ export const TimelinePanel = () => {
     duration,
     fps,
     playing,
+    audioData,
+    audioName,
+    audioVolume,
+    audioOffsetFrames,
     setFrame,
     setDuration,
     setFps,
+    setAudioTrack,
+    clearAudioTrack,
+    setAudioVolume,
+    setAudioOffsetFrames,
     play,
     stop,
     applyKeyframes,
@@ -34,12 +99,119 @@ export const TimelinePanel = () => {
   } = useAnimationStore();
 
   useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    if (!audioData) return;
+
+    const audio = new Audio(audioData);
+    audio.preload = 'auto';
+    audio.volume = audioVolume;
+    audio.currentTime = Math.max(0, frame / fps - audioOffsetFrames / fps);
+    audioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, [audioData]);
+
+  useEffect(() => {
+    if (!audioData) {
+      setWaveformPeaks([]);
+      setAudioDurationSeconds(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const decodeWaveform = async () => {
+      try {
+        if (typeof window === 'undefined' || !('AudioContext' in window)) {
+          setWaveformPeaks([]);
+          setAudioDurationSeconds(0);
+          return;
+        }
+
+        audioContextRef.current ??= new AudioContext();
+        const arrayBuffer = await dataUrlToArrayBuffer(audioData);
+        const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer.slice(0));
+        if (cancelled) return;
+
+        const channelData = audioBuffer.getChannelData(0);
+        setAudioDurationSeconds(audioBuffer.duration);
+        setWaveformPeaks(extractWaveformPeaks(channelData, MAX_WAVEFORM_SAMPLES));
+      } catch (error) {
+        console.error('Failed to decode waveform audio:', error);
+        if (!cancelled) {
+          setWaveformPeaks([]);
+          setAudioDurationSeconds(0);
+        }
+      }
+    };
+
+    void decodeWaveform();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [audioData]);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    audioRef.current.volume = audioVolume;
+  }, [audioVolume]);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (playing) return;
+    const timelineTime = getAudioTimelineTime(frame, fps, audioOffsetFrames);
+    const targetTime = clamp(timelineTime, 0, audioDurationSeconds || 0);
+    if (Math.abs(audioRef.current.currentTime - targetTime) > 0.05) {
+      audioRef.current.currentTime = targetTime;
+    }
+  }, [frame, fps, playing, audioOffsetFrames, audioDurationSeconds]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const timelineTime = getAudioTimelineTime(frame, fps, audioOffsetFrames);
+
+    if (playing && mode === 'animate') {
+      if (!isAudioTimelineActive(timelineTime, audioDurationSeconds)) {
+        audio.pause();
+        audio.currentTime = clamp(timelineTime, 0, audioDurationSeconds || 0);
+        wasPlayingRef.current = false;
+        return;
+      }
+
+      const drift = Math.abs(audio.currentTime - timelineTime);
+      if (!wasPlayingRef.current || drift > 0.15) {
+        audio.currentTime = timelineTime;
+      }
+
+      if (!wasPlayingRef.current || audio.paused) {
+        void audio.play().catch((error) => {
+          console.error('Failed to play preview audio:', error);
+        });
+      }
+
+      wasPlayingRef.current = true;
+      return;
+    }
+
+    audio.pause();
+    wasPlayingRef.current = false;
+  }, [playing, mode, frame, fps, audioOffsetFrames, audioDurationSeconds]);
+
+  useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current || !wrapRef.current) return;
       const { clientWidth } = wrapRef.current;
-      const rowH = 28;
-      const headerH = 20;
-      const requiredHeight = headerH + bones.length * rowH;
+      const audioRowH = audioData ? AUDIO_ROW_H : 0;
+      const requiredHeight = HEADER_H + audioRowH + bones.length * ROW_H;
       
       canvasRef.current.width = clientWidth;
       canvasRef.current.height = requiredHeight;
@@ -49,7 +221,19 @@ export const TimelinePanel = () => {
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [bones.length]);
+  }, [bones.length, audioData]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleWindowMouseUp = () => {
+      setIsDragging(false);
+      setDragMode(null);
+    };
+
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  }, [isDragging]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,8 +241,25 @@ export const TimelinePanel = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    drawTimeline(ctx, bones, skins, keyframes, frame, duration, selectedBoneId, canvas.width, canvas.height);
-  }, [bones, skins, keyframes, frame, duration, selectedBoneId, resizeTick]);
+    drawTimeline(
+      ctx,
+      bones,
+      skins,
+      keyframes,
+      frame,
+      duration,
+      selectedBoneId,
+      {
+        enabled: Boolean(audioData),
+        name: audioName,
+        offsetFrames: audioOffsetFrames,
+        audioDurationFrames: Math.max(0, Math.round(audioDurationSeconds * fps)),
+        waveformPeaks,
+      },
+      canvas.width,
+      canvas.height,
+    );
+  }, [bones, skins, keyframes, frame, duration, selectedBoneId, resizeTick, audioData, audioName, audioOffsetFrames, audioDurationSeconds, fps, waveformPeaks]);
 
   useEffect(() => {
     if (!playing) return;
@@ -94,14 +295,12 @@ export const TimelinePanel = () => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return null;
     
-    const headerW = 120;
-    const rowH = 28;
-    const headerH = 20;
-    const frameW = Math.max(8, (rect.width - headerW) / duration);
+    const audioRowH = audioData ? AUDIO_ROW_H : 0;
+    const frameW = Math.max(8, (rect.width - HEADER_W) / duration);
     
-    if (sx < headerW) return null;
+    if (sx < HEADER_W) return null;
     
-    const boneIndex = Math.floor((sy - headerH) / rowH);
+    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
     
     const bone = bones[boneIndex];
@@ -110,8 +309,8 @@ export const TimelinePanel = () => {
     
     for (const kf of Object.keys(boneKeyframes)) {
       const kfFrame = parseInt(kf);
-      const kfX = headerW + kfFrame * frameW;
-      const kfY = headerH + boneIndex * rowH + rowH / 2;
+      const kfX = HEADER_W + kfFrame * frameW;
+      const kfY = HEADER_H + audioRowH + boneIndex * ROW_H + ROW_H / 2;
       
       const dist = Math.hypot(sx - kfX, sy - kfY);
       if (dist < 8) {
@@ -123,12 +322,18 @@ export const TimelinePanel = () => {
   };
 
   const getBoneAtPosition = (sy: number) => {
-    const headerH = 20;
-    const rowH = 28;
-    const boneIndex = Math.floor((sy - headerH) / rowH);
+    const audioRowH = audioData ? AUDIO_ROW_H : 0;
+    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
 
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
     return bones[boneIndex] ?? null;
+  };
+
+  const isAudioTrackHit = (sy: number) => audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
+
+  const getFrameFromX = (sx: number, width: number) => {
+    const frameW = Math.max(8, (width - HEADER_W) / duration);
+    return Math.round(clamp((sx - HEADER_W) / frameW, 0, duration));
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -150,13 +355,18 @@ export const TimelinePanel = () => {
       deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
       return;
     }
-    
-    const headerW = 120;
-    const frameW = Math.max(8, (rect.width - headerW) / duration);
 
-    if (sx > headerW) {
+    if (isAudioTrackHit(sy) && sx > HEADER_W && audioData) {
       setIsDragging(true);
-      const newFrame = Math.round(Math.max(0, Math.min(duration, (sx - headerW) / frameW)));
+      setDragMode('audio-offset');
+      setAudioOffsetFrames(getFrameFromX(sx, rect.width));
+      return;
+    }
+
+    if (sx > HEADER_W) {
+      setIsDragging(true);
+      setDragMode('playhead');
+      const newFrame = getFrameFromX(sx, rect.width);
       setFrame(newFrame);
       if (mode === 'animate') applyKeyframes();
     }
@@ -172,16 +382,20 @@ export const TimelinePanel = () => {
     setHoveredKeyframe(keyframeHit);
     
     if (!isDragging) return;
-    
-    const headerW = 120;
-    const frameW = Math.max(8, (rect.width - headerW) / duration);
-    const newFrame = Math.round(Math.max(0, Math.min(duration, (sx - headerW) / frameW)));
+
+    if (dragMode === 'audio-offset' && audioData) {
+      setAudioOffsetFrames(getFrameFromX(sx, rect.width));
+      return;
+    }
+
+    const newFrame = getFrameFromX(sx, rect.width);
     setFrame(newFrame);
     if (mode === 'animate') applyKeyframes();
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
+    setDragMode(null);
   };
 
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -249,6 +463,20 @@ export const TimelinePanel = () => {
     stop();
     setFrame(0);
     applyKeyframes();
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+    }
+  };
+
+  const handleAudioImport = async () => {
+    try {
+      const audioFile = await openAudioFile({ filters: AUDIO_FILTERS });
+      if (!audioFile) return;
+      setAudioTrack(audioFile.dataUrl, audioFile.name);
+    } catch (error) {
+      console.error('Failed to load audio file:', error);
+      alert('Failed to load audio file. Check console for details.');
+    }
   };
 
   return (
@@ -282,6 +510,53 @@ export const TimelinePanel = () => {
           {frame}
         </div>
         <span className="text-text-dim text-[10px]">/ {duration} frames</span>
+        <div className="w-px h-4 bg-border mx-1" />
+        <button
+          onClick={() => void handleAudioImport()}
+          className="px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-xs"
+          title="Import preview audio"
+        >
+          <Music2 size={12} />
+        </button>
+        <button
+          onClick={clearAudioTrack}
+          disabled={!audioData}
+          className="px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-red-500 hover:border-red-500 transition-all text-xs disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
+          title="Remove preview audio"
+        >
+          <X size={12} />
+        </button>
+        <span className="max-w-[160px] truncate text-[10px] text-text-dim">
+          {audioName ?? 'No audio'}
+        </span>
+        {audioData && (
+          <>
+            <span className="text-text-dim text-[10px]">Start:</span>
+            <input
+              type="number"
+              value={audioOffsetFrames}
+              onChange={(e) => setAudioOffsetFrames(parseInt(e.target.value) || 0)}
+              className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
+              min="0"
+              max={duration}
+              title="Audio start frame offset"
+            />
+            <span className="text-text-dim text-[10px]">
+              {audioDurationSeconds.toFixed(2)}s
+            </span>
+          </>
+        )}
+        <span className="text-text-dim text-[10px]">Vol:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={audioVolume}
+          onChange={(e) => setAudioVolume(parseFloat(e.target.value))}
+          className="w-20 accent-accent"
+          title="Preview audio volume"
+        />
         <div className="flex-1" />
         <span className="text-text-dim text-[10px]">FPS:</span>
         <input
@@ -316,7 +591,7 @@ export const TimelinePanel = () => {
           onMouseUp={handleMouseUp}
           onContextMenu={handleContextMenu}
           className="block"
-          style={{ cursor: hoveredKeyframe ? 'pointer' : 'default' }}
+          style={{ cursor: dragMode === 'audio-offset' ? 'grabbing' : hoveredKeyframe ? 'pointer' : 'default' }}
         />
         
         {contextMenu && (
