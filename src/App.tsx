@@ -21,11 +21,11 @@ function App() {
       onOpen: async () => {
         void (await loadProject());
       },
-      onExportSpine: () => {
-        window.dispatchEvent(new CustomEvent('spine:file-export-spine'));
-      },
       onExportVideo: () => {
         window.dispatchEvent(new CustomEvent('spine:file-export-video'));
+      },
+      onExportSpriteSheet: () => {
+        window.dispatchEvent(new CustomEvent('spine:file-export-spritesheet'));
       },
       onToggleBoneIndicators: () => {
         const editor = useEditorStore.getState();

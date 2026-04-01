@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "pixi:test": "python3 -m http.server 4175 --directory pixi-export-test",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "eslint .",

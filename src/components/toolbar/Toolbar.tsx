@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -8,9 +8,8 @@ import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
 import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
 import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
-import { exportSpineJSON, createTextureAtlas } from '../../utils/spineExporter';
 import { exportVideo } from '../../utils/videoExporter';
-import JSZip from 'jszip';
+import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -129,40 +128,6 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportSpine = async () => {
-    const skeletonState = useSkeletonStore.getState();
-    const animationState = useAnimationStore.getState();
-    const slotState = useSlotStore.getState();
-
-    const skeletonJSON = exportSpineJSON(
-      skeletonState.bones,
-      slotState.slots,
-      slotState.attachments,
-      animationState.keyframes,
-      animationState.fps
-    );
-
-    const { atlas, images } = createTextureAtlas(slotState.attachments);
-
-    const zip = new JSZip();
-    zip.file('skeleton.json', skeletonJSON);
-    zip.file('atlas.atlas', atlas);
-
-    images.forEach((imageData, name) => {
-      const base64Data = imageData.split(',')[1];
-      zip.file(`${name}.png`, base64Data, { base64: true });
-    });
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-export.zip`;
-    await saveBlobFile(suggestedName, blob, [
-      {
-        name: 'ZIP Archive',
-        extensions: ['zip'],
-      },
-    ]);
-  };
-
   const handleExportVideo = async () => {
     try {
       console.log('Starting video export...');
@@ -200,21 +165,55 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportSpineMenuEvent = useEffectEvent(() => {
-    void handleExportSpine();
-  });
+  const handleExportSpriteSheet = async () => {
+    try {
+      const skeletonState = useSkeletonStore.getState();
+      const animationState = useAnimationStore.getState();
+      const slotState = useSlotStore.getState();
+      const cameraState = useCameraStore.getState();
+
+      const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
+
+      const blob = await exportSpriteSheet({
+        bones: bonesCopy,
+        slots: slotState.slots,
+        attachments: slotState.attachments,
+        keyframes: animationState.keyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+        camX: cameraState.x,
+        camY: cameraState.y,
+        camZoom: cameraState.zoom,
+      });
+
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'ZIP Archive',
+          extensions: ['zip'],
+        },
+      ]);
+    } catch (error) {
+      console.error('Sprite sheet export failed:', error);
+      alert('Sprite sheet export failed. Check console for details.');
+    }
+  };
 
   const handleExportVideoMenuEvent = useEffectEvent(() => {
     void handleExportVideo();
   });
 
+  const handleExportSpriteSheetMenuEvent = useEffectEvent(() => {
+    void handleExportSpriteSheet();
+  });
+
   useEffect(() => {
-    window.addEventListener('spine:file-export-spine', handleExportSpineMenuEvent);
     window.addEventListener('spine:file-export-video', handleExportVideoMenuEvent);
+    window.addEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
 
     return () => {
-      window.removeEventListener('spine:file-export-spine', handleExportSpineMenuEvent);
       window.removeEventListener('spine:file-export-video', handleExportVideoMenuEvent);
+      window.removeEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
     };
   }, []);
 
@@ -409,21 +408,21 @@ export const Toolbar = () => {
           </button>
 
           <button
-            onClick={handleExportSpine}
-            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Export for PixiJS (@pixi/spine)"
-          >
-            <Download size={14} />
-            Export Spine
-          </button>
-
-          <button
             onClick={handleExportVideo}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
             title="Export animation as video (WebM)"
           >
             <Video size={14} />
             Export Video
+          </button>
+
+          <button
+            onClick={handleExportSpriteSheet}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as sprite sheet PNG + JSON"
+          >
+            <Grid2x2 size={14} />
+            Sprite Sheet
           </button>
 
           <div className="w-px h-6 bg-border mx-1" />

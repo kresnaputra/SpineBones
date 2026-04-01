@@ -5,8 +5,8 @@ type DesktopMenuHandlers = {
   onSave: () => void | Promise<void>;
   onSaveAs: () => void | Promise<void>;
   onOpen: () => void | Promise<void>;
-  onExportSpine: () => void | Promise<void>;
   onExportVideo: () => void | Promise<void>;
+  onExportSpriteSheet: () => void | Promise<void>;
   onToggleBoneIndicators: () => void | Promise<void>;
 };
 
@@ -45,14 +45,14 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
         },
         await buildPredefined('Separator'),
         {
-          id: 'file-export-spine',
-          text: 'Export Spine',
-          action: () => void handlers.onExportSpine(),
-        },
-        {
           id: 'file-export-video',
           text: 'Export Video',
           action: () => void handlers.onExportVideo(),
+        },
+        {
+          id: 'file-export-spritesheet',
+          text: 'Export Sprite Sheet',
+          action: () => void handlers.onExportSpriteSheet(),
         },
         await buildPredefined('Separator'),
         await buildPredefined('CloseWindow'),
