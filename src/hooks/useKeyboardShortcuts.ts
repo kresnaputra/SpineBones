@@ -4,11 +4,12 @@ import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSlotStore } from '../stores/slotStore';
+import { getIkRootForBone } from '../utils/ik';
 import { createNewProject, loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
   const { tool, setTool, mode, setMode, selectedBoneId, selectedBoneIds, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
-  const { bones, deleteBone, saveSetupPose, restoreSetupPose } = useSkeletonStore();
+  const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
   const { slots } = useSlotStore();
@@ -133,6 +134,15 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (!isModifierPressed && key === 'c') {
+        if (selectedBoneId === null) return;
+        const ikRoot = getIkRootForBone(selectedBoneId, bones);
+        if (!ikRoot) return;
+        captureSnapshot();
+        toggleIkChain(ikRoot.id);
+        return;
+      }
+
       if (key === 'delete' || key === 'backspace') {
         if (selectedBoneIds.length > 0) {
           captureSnapshot();
@@ -189,6 +199,7 @@ export const useKeyboardShortcuts = () => {
     deleteBone,
     saveSetupPose,
     restoreSetupPose,
+    toggleIkChain,
     insertKeyframe,
     shiftKeyframes,
     captureSnapshot,

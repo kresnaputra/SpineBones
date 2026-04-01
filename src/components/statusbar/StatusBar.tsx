@@ -1,5 +1,5 @@
-import { useEditorStore } from '../../stores/editorStore';
-import { getFileNameFromPath, isDesktopApp, openPathWithDefaultApp } from '../../utils/nativeIO';
+import { useEditorStore } from "../../stores/editorStore";
+import { getFileNameFromPath } from "../../utils/nativeIO";
 
 export const StatusBar = () => {
   const { currentProjectPath } = useEditorStore();
@@ -9,26 +9,12 @@ export const StatusBar = () => {
       <span>SpineBones v0.1.1</span>
       <span>|</span>
       <span>
-        <strong className="text-white">Project:</strong>{' '}
-        {currentProjectPath ? getFileNameFromPath(currentProjectPath) : 'Untitled'}
+        <strong className="text-white">Project:</strong>{" "}
+        {currentProjectPath
+          ? getFileNameFromPath(currentProjectPath)
+          : "Untitled"}
       </span>
-      {isDesktopApp() && currentProjectPath ? (
-        <>
-          <span>|</span>
-          <button
-            type="button"
-            onClick={() => void openPathWithDefaultApp(currentProjectPath)}
-            className="hover:text-white transition-colors"
-            title={currentProjectPath}
-          >
-            Open File
-          </button>
-        </>
-      ) : null}
-      <span>|</span>
-      <span>
-        <strong className="text-white">Bone tool:</strong> click to create
-      </span>
+
       <span>|</span>
       <span>
         <strong className="text-white">RMB</strong> pan
@@ -44,6 +30,14 @@ export const StatusBar = () => {
       <span>|</span>
       <span>
         <strong className="text-white">K</strong> keyframe
+      </span>
+      <span>|</span>
+      <span>
+        <strong className="text-white">C</strong> toggle IK
+      </span>
+      <span>|</span>
+      <span>
+        <strong className="text-white">D</strong> canvas drag
       </span>
       <span>|</span>
       <span>
