@@ -16,6 +16,7 @@ interface ProjectSnapshot {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
     skins: ReturnType<typeof useSkeletonStore.getState>['skins'];
     activeSkinId: ReturnType<typeof useSkeletonStore.getState>['activeSkinId'];
+    ikChainRootIds: ReturnType<typeof useSkeletonStore.getState>['ikChainRootIds'];
     boneIdCounter: ReturnType<typeof useSkeletonStore.getState>['boneIdCounter'];
     skinIdCounter: ReturnType<typeof useSkeletonStore.getState>['skinIdCounter'];
   };
@@ -64,6 +65,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       bones: skeleton.bones,
       skins: skeleton.skins,
       activeSkinId: skeleton.activeSkinId,
+      ikChainRootIds: skeleton.ikChainRootIds,
       boneIdCounter: skeleton.boneIdCounter,
       skinIdCounter: skeleton.skinIdCounter,
     },
@@ -95,6 +97,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     bones: cloneSnapshot(snapshot.skeleton.bones),
     skins: cloneSnapshot(snapshot.skeleton.skins),
     activeSkinId: snapshot.skeleton.activeSkinId,
+    ikChainRootIds: cloneSnapshot(snapshot.skeleton.ikChainRootIds),
     boneIdCounter: snapshot.skeleton.boneIdCounter,
     skinIdCounter: snapshot.skeleton.skinIdCounter,
   });

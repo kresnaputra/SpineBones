@@ -78,6 +78,7 @@ export interface ProjectData {
   bones: Bone[];
   skins: Skin[];
   activeSkinId?: number;
+  ikChainRootIds?: number[];
   setupPose?: SetupPose;
   slots: Slot[];
   attachments: Attachment[];

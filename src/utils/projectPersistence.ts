@@ -61,6 +61,10 @@ export const buildProjectData = (): ProjectData => {
     bones: savedBones,
     skins: skeletonState.skins,
     activeSkinId: skeletonState.activeSkinId,
+    ikChainRootIds: skeletonState.ikChainRootIds.filter((rootId) =>
+      savedBones.some((bone) => bone.id === rootId) &&
+      savedBones.filter((bone) => bone.parentId === rootId).length === 1,
+    ),
     setupPose: skeletonState.setupPose,
     slots: slotState.slots,
     attachments: slotState.attachments,
@@ -87,6 +91,7 @@ export const applyProjectData = (
     bones,
     skins,
     activeSkinId: projectData.activeSkinId ?? skins[0]?.id ?? 0,
+    ikChainRootIds: projectData.ikChainRootIds ?? [],
     setupPose: projectData.setupPose ?? {},
     boneIdCounter: Math.max(...bones.map((bone) => bone.id), 0) + 1,
     skinIdCounter: Math.max(...skins.map((skin) => skin.id), 0) + 1,
@@ -132,6 +137,7 @@ export const createNewProject = () => {
     bones: [],
     skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
     activeSkinId: 0,
+    ikChainRootIds: [],
     setupPose: {},
     boneIdCounter: 0,
     skinIdCounter: 1,

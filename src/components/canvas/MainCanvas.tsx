@@ -9,8 +9,10 @@ import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone } from '../../engine/renderer';
 import { drawAttachmentOutline, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
+import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 
 export const MainCanvas = () => {
+  const IK_HANDLE_RADIUS = 10;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
@@ -20,7 +22,7 @@ export const MainCanvas = () => {
   const [resizeTick, setResizeTick] = useState(0);
   
   const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, attachmentDragEnabled, backgroundImage } = useEditorStore();
-  const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
+  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds } = useSkeletonStore();
   const { keyframes, frame, insertKeyframe } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments } = useSlotStore();
@@ -67,6 +69,7 @@ export const MainCanvas = () => {
     startSy: number;
     totalRotation: number;
   } | null>(null);
+  const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -158,7 +161,31 @@ export const MainCanvas = () => {
       });
     }
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick]);
+    const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
+
+    if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
+      const ikChain = getIkChain(activeIkRootId, bones);
+      if (ikChain) {
+        const handle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.18)';
+        ctx.fill();
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(handle.x - 6, handle.y);
+        ctx.lineTo(handle.x + 6, handle.y);
+        ctx.moveTo(handle.x, handle.y - 6);
+        ctx.lineTo(handle.x, handle.y + 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -183,6 +210,20 @@ export const MainCanvas = () => {
       useSlotStore.getState().updateAttachment(attachmentDragStart.slotId, attachmentDragStart.attachmentName, {
         x: attachmentDragStart.initialX + localDx,
         y: attachmentDragStart.initialY + localDy,
+      });
+      return;
+    }
+
+    if (ikDragStart) {
+      const world = screenToWorld(sx, sy);
+      const solution = solveTwoBoneIk(ikDragStart.rootId, world, bones);
+      if (!solution) return;
+
+      updateBone(ikDragStart.rootId, { rotation: solution.rootRotation });
+      updateBone(ikDragStart.childId, {
+        rotation: solution.childRotation,
+        ...(solution.childX !== undefined ? { x: solution.childX } : {}),
+        ...(solution.childY !== undefined ? { y: solution.childY } : {}),
       });
       return;
     }
@@ -277,6 +318,32 @@ export const MainCanvas = () => {
 
     const world = screenToWorld(sx, sy);
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
+    const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
+
+    if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
+      const ikChain = getIkChain(activeIkRootId, bones);
+      if (ikChain) {
+        const ikHandle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        if (Math.hypot(sx - ikHandle.x, sy - ikHandle.y) <= IK_HANDLE_RADIUS + 2) {
+          captureSnapshot();
+          setIkDragStart({ rootId: ikChain.root.id, childId: ikChain.child.id });
+          return;
+        }
+
+        const ikTargetBoneId = ikChain.end?.id ?? ikChain.child.id;
+        const canDragIkTarget = tool === 'move' || tool === 'pose';
+        if (
+          canDragIkTarget &&
+          hit?.id === ikTargetBoneId &&
+          selectedBoneId === ikTargetBoneId
+        ) {
+          captureSnapshot();
+          setIkDragStart({ rootId: ikChain.root.id, childId: ikChain.child.id });
+          return;
+        }
+      }
+    }
 
     if (attachmentDragEnabled && selectedBoneId !== null) {
       computeAllWorldTransforms(bones);
@@ -407,6 +474,22 @@ export const MainCanvas = () => {
     setIsPanning(false);
     setPanStart(null);
 
+    if (ikDragStart && mode === 'animate') {
+      const affectedBoneIds = [ikDragStart.rootId, ikDragStart.childId];
+      affectedBoneIds.forEach((boneId) => {
+        const bone = bones.find((item) => item.id === boneId);
+        if (!bone) return;
+
+        insertKeyframe(bone.id, {
+          x: bone.x,
+          y: bone.y,
+          rotation: bone.rotation,
+          scaleX: bone.scaleX,
+          scaleY: bone.scaleY,
+        });
+      });
+    }
+
     if (isDragging && selectedBoneIds.length > 0 && mode === 'animate') {
       selectedBoneIds.forEach((boneId) => {
         const bone = bones.find((b) => b.id === boneId);
@@ -423,6 +506,7 @@ export const MainCanvas = () => {
     }
 
     setAttachmentDragStart(null);
+    setIkDragStart(null);
     setIsDragging(false);
     setDragStart(null);
   };

@@ -4,14 +4,18 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { AttachmentPropertiesPanel } from './AttachmentPropertiesPanel';
 import { computeAllWorldTransforms } from '../../engine/transforms';
+import { getIkChain, getIkRootForBone } from '../../utils/ik';
 
 export const PropertiesPanel = () => {
   const { selectedBoneId, mode } = useEditorStore();
-  const { bones, updateBone } = useSkeletonStore();
+  const { bones, updateBone, ikChainRootIds, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe } = useAnimationStore();
   const { captureSnapshot } = useHistoryStore();
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
+  const ikRootBone = selectedBone ? getIkRootForBone(selectedBone.id, bones) : null;
+  const ikChain = ikRootBone ? getIkChain(ikRootBone.id, bones) : null;
+  const ikEnabled = ikRootBone ? ikChainRootIds.includes(ikRootBone.id) : false;
 
   const handleChange = (key: string, value: string | number | null) => {
     if (!selectedBone) return;
@@ -165,6 +169,26 @@ export const PropertiesPanel = () => {
               ))}
           </select>
         </PropRow>
+
+        {ikRootBone && ikChain ? (
+          <PropRow label="2-Bone IK">
+            <label className="flex items-center gap-2 text-[11px] text-text min-w-0">
+              <input
+                type="checkbox"
+                checked={ikEnabled}
+                onChange={() => {
+                  captureSnapshot();
+                  toggleIkChain(ikRootBone.id);
+                }}
+              />
+              <span className="truncate">
+                {ikChain.end
+                  ? `Target on ${ikChain.root.name} -> ${ikChain.child.name} -> ${ikChain.end.name}`
+                  : `Target on ${ikChain.root.name} -> ${ikChain.child.name}`}
+              </span>
+            </label>
+          </PropRow>
+        ) : null}
       </div>
     </div>
   );

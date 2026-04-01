@@ -6,6 +6,7 @@ interface SkeletonState {
   setupPose: SetupPose;
   skins: Skin[];
   activeSkinId: number;
+  ikChainRootIds: number[];
   boneIdCounter: number;
   skinIdCounter: number;
   addBone: (bone: Omit<Bone, 'id'>) => Bone;
@@ -14,6 +15,7 @@ interface SkeletonState {
   reorderBones: (fromIndex: number, toIndex: number) => void;
   addSkin: (name: string, color: string) => void;
   setActiveSkin: (id: number) => void;
+  toggleIkChain: (rootId: number) => void;
   getBoneById: (id: number) => Bone | undefined;
   saveSetupPose: () => void;
   restoreSetupPose: () => void;
@@ -24,6 +26,7 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   setupPose: {},
   skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
   activeSkinId: 0,
+  ikChainRootIds: [],
   boneIdCounter: 0,
   skinIdCounter: 1,
 
@@ -54,6 +57,7 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   deleteBone: (id) => {
     set((state) => ({
       bones: state.bones.filter((bone) => bone.id !== id && bone.parentId !== id),
+      ikChainRootIds: state.ikChainRootIds.filter((rootId) => rootId !== id),
     }));
   },
 
@@ -74,6 +78,13 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   },
 
   setActiveSkin: (id) => set({ activeSkinId: id }),
+
+  toggleIkChain: (rootId) =>
+    set((state) => ({
+      ikChainRootIds: state.ikChainRootIds.includes(rootId)
+        ? state.ikChainRootIds.filter((id) => id !== rootId)
+        : [...state.ikChainRootIds, rootId],
+    })),
 
   getBoneById: (id) => get().bones.find((bone) => bone.id === id),
 
