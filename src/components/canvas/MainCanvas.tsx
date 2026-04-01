@@ -392,6 +392,13 @@ export const MainCanvas = () => {
         bones: dragBones,
       });
     } else {
+      const hasSelection = selectedBoneId !== null || selectedBoneIds.length > 0;
+      if (!hasSelection) {
+        setIsPanning(true);
+        setPanStart({ x: sx, y: sy });
+        return;
+      }
+
       selectBone(null);
     }
   };

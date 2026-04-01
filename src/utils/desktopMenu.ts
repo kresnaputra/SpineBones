@@ -2,6 +2,7 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from '@tauri-apps/api/men
 import { isDesktopApp } from './nativeIO';
 
 type DesktopMenuHandlers = {
+  onNewProject: () => void | Promise<void>;
   onSave: () => void | Promise<void>;
   onSaveAs: () => void | Promise<void>;
   onOpen: () => void | Promise<void>;
@@ -25,6 +26,13 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
     const fileMenu = await Submenu.new({
       text: 'File',
       items: [
+        {
+          id: 'file-new-project',
+          text: 'New Project',
+          accelerator: 'CmdOrCtrl+N',
+          action: () => void handlers.onNewProject(),
+        },
+        await buildPredefined('Separator'),
         {
           id: 'file-save',
           text: 'Save',
@@ -55,7 +63,7 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
           action: () => void handlers.onExportSpriteSheet(),
         },
         await buildPredefined('Separator'),
-        await buildPredefined('CloseWindow'),
+        await buildPredefined('Quit'),
       ],
     });
 
@@ -96,8 +104,6 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
       items: [
         await buildPredefined('Minimize'),
         await buildPredefined('Maximize'),
-        await buildPredefined('Separator'),
-        await buildPredefined('CloseWindow'),
       ],
     });
 

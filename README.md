@@ -20,6 +20,7 @@ This README is written as a practical user guide so someone new to the project c
 - Scrub and play animation in the timeline
 - Insert, clear, delete, and loop keyframes
 - Undo and redo edits
+- Create a new empty project
 - Save and load project JSON files
 - Export a Spine-like ZIP package
 - Export animation as WebM video
@@ -479,6 +480,7 @@ When a project is loaded:
 
 In the desktop app, the File menu includes:
 
+- `File > New Project`
 - `File > Save`
 - `File > Save As…`
 - `File > Open…`
@@ -518,6 +520,7 @@ Video export behavior:
 - `M`: Move
 - `R`: Rotate
 - `S`: Scale
+- `Cmd/Ctrl+N`: New project
 - `W`: switch to `SETUP`
 - `E`: switch to `ANIMATE`
 

@@ -4,7 +4,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useEditorStore } from './stores/editorStore';
 import { ensureDesktopMenu } from './utils/desktopMenu';
 import { getFileNameFromPath } from './utils/nativeIO';
-import { loadProject, saveProject } from './utils/projectPersistence';
+import { createNewProject, loadProject, saveProject } from './utils/projectPersistence';
 
 function App() {
   useKeyboardShortcuts();
@@ -12,6 +12,9 @@ function App() {
 
   useEffect(() => {
     void ensureDesktopMenu({
+      onNewProject: () => {
+        createNewProject();
+      },
       onSave: async () => {
         void (await saveProject());
       },

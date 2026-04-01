@@ -4,7 +4,7 @@ import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSlotStore } from '../stores/slotStore';
-import { loadProject, saveProject } from '../utils/projectPersistence';
+import { createNewProject, loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
   const { tool, setTool, mode, setMode, selectedBoneId, selectedBoneIds, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
@@ -45,6 +45,12 @@ export const useKeyboardShortcuts = () => {
       if (isModifierPressed && key === 'o') {
         e.preventDefault();
         void loadProject();
+        return;
+      }
+
+      if (isModifierPressed && key === 'n') {
+        e.preventDefault();
+        createNewProject();
         return;
       }
 

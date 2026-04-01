@@ -1,4 +1,5 @@
 import { useAnimationStore } from '../stores/animationStore';
+import { useCameraStore } from '../stores/cameraStore';
 import { useEditorStore } from '../stores/editorStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
@@ -122,6 +123,56 @@ export const applyProjectData = (
 
   // Restore bones to setup pose so they display correctly at frame 0
   useSkeletonStore.getState().restoreSetupPose();
+
+  useHistoryStore.getState().clearHistory();
+};
+
+export const createNewProject = () => {
+  useSkeletonStore.setState({
+    bones: [],
+    skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
+    activeSkinId: 0,
+    setupPose: {},
+    boneIdCounter: 0,
+    skinIdCounter: 1,
+  });
+
+  useSlotStore.setState({
+    slots: [],
+    attachments: [],
+    nextSlotId: 1,
+  });
+
+  useAnimationStore.setState({
+    keyframes: {},
+    frame: 0,
+    duration: 60,
+    fps: 24,
+    playing: false,
+    audioData: null,
+    audioName: null,
+    audioVolume: 0.8,
+    audioOffsetFrames: 0,
+  });
+
+  useEditorStore.setState((state) => ({
+    tool: 'pose',
+    mode: 'setup',
+    selectedBoneId: null,
+    selectedBoneIds: [],
+    showBoneIndicators: state.showBoneIndicators,
+    attachmentDragEnabled: false,
+    backgroundImage: null,
+    currentProjectPath: null,
+  }));
+
+  useCameraStore.setState((state) => ({
+    x: 0,
+    y: 0,
+    zoom: 1,
+    canvasWidth: state.canvasWidth,
+    canvasHeight: state.canvasHeight,
+  }));
 
   useHistoryStore.getState().clearHistory();
 };
