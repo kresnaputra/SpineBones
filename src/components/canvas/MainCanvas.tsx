@@ -6,7 +6,7 @@ import { useCameraStore } from '../../stores/cameraStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
-import { drawGrid, drawOriginCross, drawBone } from '../../engine/renderer';
+import { drawGrid, drawOriginCross, drawBone, drawBoneRelation } from '../../engine/renderer';
 import { drawAttachmentOutline, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
@@ -151,6 +151,21 @@ export const MainCanvas = () => {
     }
 
     if (showBoneIndicators) {
+      bones.forEach((bone) => {
+        if (bone.parentId === null) return;
+
+        const parent = bones.find((item) => item.id === bone.parentId);
+        if (!parent) return;
+
+        const isHighlighted =
+          selectedBoneIds.includes(bone.id) ||
+          selectedBoneIds.includes(parent.id) ||
+          hoveredBoneId === bone.id ||
+          hoveredBoneId === parent.id;
+
+        drawBoneRelation(ctx, parent, bone, isHighlighted, worldToScreen);
+      });
+
       bones.forEach((bone) => {
         const skin = skins.find((s) => s.id === bone.skinId);
         const isSelected = selectedBoneIds.includes(bone.id);

@@ -90,6 +90,31 @@ export const drawBoneSegment = (
   ctx.restore();
 };
 
+export const drawBoneRelation = (
+  ctx: CanvasRenderingContext2D,
+  parent: Bone,
+  child: Bone,
+  isHighlighted: boolean,
+  worldToScreen: (x: number, y: number) => { x: number; y: number }
+): void => {
+  const from = worldToScreen(parent._wx, parent._wy);
+  const to = worldToScreen(child._wx, child._wy);
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+
+  if (distance < 4) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.setLineDash(isHighlighted ? [5, 4] : [4, 5]);
+  ctx.strokeStyle = isHighlighted ? 'rgba(124,58,237,0.8)' : 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = isHighlighted ? 2 : 1.25;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+};
+
 export const drawBone = (
   ctx: CanvasRenderingContext2D,
   bone: Bone,
