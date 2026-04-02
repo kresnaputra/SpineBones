@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Bone as BoneIcon, ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import { useAnimationStore } from "../../stores/animationStore";
 import { useEditorStore } from "../../stores/editorStore";
 import { useHistoryStore } from "../../stores/historyStore";
@@ -291,11 +292,13 @@ export const BoneTreePanel = () => {
         style={{ paddingLeft: nested ? 28 : 12 }}
       >
         <div className="w-3 flex-shrink-0" />
-        <div
-          className={`w-2 h-2 rounded-full flex-shrink-0 ${
-            selectedBoneIds.includes(bone.id) ? "bg-bone-sel" : "bg-bone-col"
+        <span
+          className={`flex-shrink-0 ${
+            selectedBoneIds.includes(bone.id) ? "text-bone-sel" : "text-bone-col"
           }`}
-        />
+        >
+          <BoneIcon size={14} />
+        </span>
         <span className="flex-1 text-text text-[11px] truncate">{bone.name}</span>
         <button
           draggable={false}
@@ -362,9 +365,11 @@ export const BoneTreePanel = () => {
             }
             className="w-3 text-[9px] flex-shrink-0 text-text-dim hover:text-text"
           >
-            {collapsed ? "▸" : "▾"}
+            {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
           </button>
-          <div className="w-2 h-2 rounded-sm bg-sky-400/80 flex-shrink-0" />
+          <span className="flex-shrink-0 text-sky-400">
+            {collapsed ? <Folder size={14} /> : <FolderOpen size={14} />}
+          </span>
           {editingGroupId === group.id ? (
             <input
               autoFocus
@@ -444,8 +449,9 @@ export const BoneTreePanel = () => {
             isUngroupedDropActive ? "border-accent bg-accent/10" : "border-border/50 bg-panel2/30"
           }`}
         >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
-            Ungrouped
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-text-dim">
+            <Folder size={12} className="text-sky-400" />
+            <span>Ungrouped</span>
           </div>
           {ungroupedBones.length === 0 ? (
             <div className="px-1 py-1 text-[10px] text-text-dim">Drop bones here</div>

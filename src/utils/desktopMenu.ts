@@ -9,6 +9,7 @@ type DesktopMenuHandlers = {
   onExportVideo: () => void | Promise<void>;
   onExportSpriteSheet: () => void | Promise<void>;
   onToggleBoneIndicators: () => void | Promise<void>;
+  onOpenHelp: () => void | Promise<void>;
 };
 
 let menuSetupPromise: Promise<void> | null = null;
@@ -107,8 +108,20 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
       ],
     });
 
+    const helpMenu = await Submenu.new({
+      text: 'Help',
+      items: [
+        await MenuItem.new({
+          id: 'help-user-guide',
+          text: 'SpineBones Guide',
+          accelerator: 'CmdOrCtrl+/',
+          action: () => void handlers.onOpenHelp(),
+        }),
+      ],
+    });
+
     const appMenu = await Menu.new({
-      items: [fileMenu, editMenu, viewMenu, windowMenu],
+      items: [fileMenu, editMenu, viewMenu, windowMenu, helpMenu],
     });
 
     await appMenu.setAsAppMenu();

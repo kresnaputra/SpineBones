@@ -8,7 +8,7 @@ import { createNewProject, loadProject, saveProject } from './utils/projectPersi
 
 function App() {
   useKeyboardShortcuts();
-  const { currentProjectPath } = useEditorStore();
+  const { currentProjectPath, setShowHelpDialog } = useEditorStore();
 
   useEffect(() => {
     void ensureDesktopMenu({
@@ -34,8 +34,11 @@ function App() {
         const editor = useEditorStore.getState();
         editor.setShowBoneIndicators(!editor.showBoneIndicators);
       },
+      onOpenHelp: () => {
+        setShowHelpDialog(true);
+      },
     });
-  }, []);
+  }, [setShowHelpDialog]);
 
   useEffect(() => {
     document.title = currentProjectPath

@@ -6,6 +6,7 @@ interface EditorState {
   mode: Mode;
   selectedBoneId: number | null;
   selectedBoneIds: number[];
+  showHelpDialog: boolean;
   showBoneIndicators: boolean;
   attachmentDragEnabled: boolean;
   backgroundImage: string | null;
@@ -14,6 +15,7 @@ interface EditorState {
   setMode: (mode: Mode) => void;
   selectBone: (id: number | null) => void;
   toggleBoneSelection: (id: number) => void;
+  setShowHelpDialog: (show: boolean) => void;
   setShowBoneIndicators: (show: boolean) => void;
   setAttachmentDragEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
@@ -25,6 +27,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   mode: 'setup',
   selectedBoneId: null,
   selectedBoneIds: [],
+  showHelpDialog: false,
   showBoneIndicators: true,
   attachmentDragEnabled: false,
   backgroundImage: null,
@@ -51,6 +54,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedBoneIds: [...state.selectedBoneIds, id],
       };
     }),
+  setShowHelpDialog: (showHelpDialog) => set({ showHelpDialog }),
   setShowBoneIndicators: (showBoneIndicators) => set({ showBoneIndicators }),
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),

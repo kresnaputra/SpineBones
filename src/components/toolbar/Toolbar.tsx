@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2 } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -49,38 +49,14 @@ export const Toolbar = () => {
     mode,
     setTool,
     setMode,
-    selectedBoneId,
     selectedBoneIds,
     setBackgroundImage,
   } = useEditorStore();
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
-  const { insertKeyframe, clearKeyframes } = useAnimationStore();
+  const { insertKeyframe } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
-
-  const handleInsertKeyframe = () => {
-    if (selectedBoneIds.length === 0) return;
-    captureSnapshot();
-    selectedBoneIds.forEach((boneId) => {
-      const bone = bones.find((b) => b.id === boneId);
-      if (!bone) return;
-
-      insertKeyframe(bone.id, {
-        x: bone.x,
-        y: bone.y,
-        rotation: bone.rotation,
-        scaleX: bone.scaleX,
-        scaleY: bone.scaleY,
-      });
-    });
-  };
-
-  const handleClearKeyframes = () => {
-    if (selectedBoneIds.length === 0) return;
-    captureSnapshot();
-    selectedBoneIds.forEach((boneId) => clearKeyframes(boneId));
-  };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -296,93 +272,6 @@ export const Toolbar = () => {
       >
         <Redo2 size={14} />
         Redo
-      </button>
-
-      <div className="w-px h-6 bg-border mx-1" />
-
-      <button
-        onClick={handleInsertKeyframe}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Insert Keyframe (K)"
-      >
-        <Diamond size={14} fill="currentColor" />
-        Key
-      </button>
-
-      <button
-        onClick={handleClearKeyframes}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Clear Keyframes"
-      >
-        <X size={14} />
-        Clear
-      </button>
-
-      <button
-        onClick={() => {
-          const animState = useAnimationStore.getState();
-          const allKeyframes = animState.keyframes;
-          const boneIds = Object.keys(allKeyframes).map(Number);
-          if (boneIds.length === 0) return;
-
-          captureSnapshot();
-
-          // Find the global last keyframe across all bones
-          let globalMax = 0;
-          for (const boneId of boneIds) {
-            const frames = Object.keys(allKeyframes[boneId]).map(Number);
-            const max = Math.max(...frames);
-            if (max > globalMax) globalMax = max;
-          }
-
-          // For each bone, mirror keyframes in reverse after the last keyframe
-          for (const boneId of boneIds) {
-            const boneKfs = allKeyframes[boneId];
-            const frames = Object.keys(boneKfs).map(Number).sort((a, b) => a - b);
-            if (frames.length < 2) continue;
-
-            const lastFrame = frames[frames.length - 1];
-            // Reverse all frames except the last one (already exists)
-            const reversed = frames.slice(0, -1).reverse();
-
-            for (const srcFrame of reversed) {
-              const gap = lastFrame - srcFrame;
-              const destFrame = globalMax + gap;
-              // Use setFrame then insertKeyframe via getState to ensure frame is set before insert
-              useAnimationStore.getState().setFrame(destFrame);
-              useAnimationStore.getState().insertKeyframe(boneId, { ...boneKfs[srcFrame] });
-            }
-          }
-
-          // Restore frame position to 0
-          useAnimationStore.getState().setFrame(0);
-        }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Mirror keyframes in reverse to create a seamless loop"
-      >
-        <Diamond size={14} />
-        Loop
-      </button>
-
-      <button
-        onClick={() => {
-          if (selectedBoneId === null) return;
-          const animState = useAnimationStore.getState();
-          const boneKeyframes = animState.keyframes[selectedBoneId];
-          if (!boneKeyframes) return;
-          const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
-          if (frames.length === 0) return;
-          const firstKey = boneKeyframes[frames[0]];
-          if (!firstKey) return;
-          captureSnapshot();
-          insertKeyframe(selectedBoneId, { ...firstKey });
-        }}
-        disabled={selectedBoneId === null}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40"
-        title="Copy first keyframe to current frame"
-      >
-        <Diamond size={14} />
-        1st Key
       </button>
 
       {showToolbarFileActions ? (

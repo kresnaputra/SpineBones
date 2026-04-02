@@ -13,6 +13,7 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
   clearKeyframes: (boneId: number) => void;
   setFrame: (frame: number) => void;
@@ -50,6 +51,27 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  moveKeyframe: (boneId, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const boneKeyframes = state.keyframes[boneId];
+      const sourceKeyframe = boneKeyframes?.[fromFrame];
+      if (!boneKeyframes || !sourceKeyframe) return state;
+
+      const nextBoneKeyframes = { ...boneKeyframes };
+      delete nextBoneKeyframes[fromFrame];
+      nextBoneKeyframes[toFrame] = sourceKeyframe;
+
+      return {
+        keyframes: {
+          ...state.keyframes,
+          [boneId]: nextBoneKeyframes,
+        },
+      };
+    });
   },
 
   deleteKeyframe: (boneId, frame) => {

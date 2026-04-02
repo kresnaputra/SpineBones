@@ -13,6 +13,7 @@ export const drawTimeline = (
   bones: Bone[],
   skins: Skin[],
   keyframes: Keyframes,
+  selectedKeyframes: Array<{ boneId: number; frame: number }>,
   frame: number,
   duration: number,
   selectedBoneId: number | null,
@@ -25,6 +26,10 @@ export const drawTimeline = (
   const audioRowH = audioTrack.enabled ? 36 : 0;
   const headerW = 120;
   const frameW = Math.max(8, (width - headerW) / duration);
+  const selectedKeyframeSet = new Set(
+    selectedKeyframes.map((keyframe) => `${keyframe.boneId}:${keyframe.frame}`),
+  );
+  const selectedFrameSet = new Set(selectedKeyframes.map((keyframe) => keyframe.frame));
 
   ctx.fillStyle = '#13131a';
   ctx.fillRect(0, 0, width, height);
@@ -154,12 +159,19 @@ export const drawTimeline = (
 
     if (keyframes[bone.id]) {
       Object.keys(keyframes[bone.id]).forEach((kf) => {
-        const fx = headerW + parseInt(kf) * frameW;
+        const frameNumber = parseInt(kf);
+        const fx = headerW + frameNumber * frameW;
+        const isSelectedKeyframe = selectedKeyframeSet.has(`${bone.id}:${frameNumber}`);
         ctx.save();
         ctx.translate(fx, y + rowH / 2);
         ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fillRect(-4, -4, 8, 8);
+        ctx.fillStyle = isSelectedKeyframe ? '#7c3aed' : '#f59e0b';
+        ctx.fillRect(-5, -5, 10, 10);
+        if (isSelectedKeyframe) {
+          ctx.strokeStyle = '#f5f3ff';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-5, -5, 10, 10);
+        }
         ctx.restore();
       });
     }
@@ -178,6 +190,16 @@ export const drawTimeline = (
   ctx.moveTo(headerW, 0);
   ctx.lineTo(headerW, height);
   ctx.stroke();
+
+  selectedFrameSet.forEach((selectedFrame) => {
+    const selectedX = headerW + selectedFrame * frameW;
+    ctx.strokeStyle = 'rgba(124,58,237,0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(selectedX, 0);
+    ctx.lineTo(selectedX, height);
+    ctx.stroke();
+  });
 
   const px = headerW + frame * frameW;
   ctx.fillStyle = '#7c3aed';
