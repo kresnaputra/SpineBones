@@ -85,6 +85,7 @@ const sections: HelpSection[] = [
         Use Export Sprite Sheet <InlineIcon icon={Grid2x2} /> to generate a
         sprite sheet archive for game workflows.
       </>,
+      "Use Export PNG Sequence to generate one PNG per frame inside a ZIP archive.",
     ],
   },
   {

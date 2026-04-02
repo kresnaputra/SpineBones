@@ -30,6 +30,9 @@ function App() {
       onExportSpriteSheet: () => {
         window.dispatchEvent(new CustomEvent('spine:file-export-spritesheet'));
       },
+      onExportPngSequence: () => {
+        window.dispatchEvent(new CustomEvent('spine:file-export-png-sequence'));
+      },
       onToggleBoneIndicators: () => {
         const editor = useEditorStore.getState();
         editor.setShowBoneIndicators(!editor.showBoneIndicators);
