@@ -1,6 +1,13 @@
 import type { Slot, Attachment, Bone } from '../types';
 
+type AttachmentOutlineOptions = {
+  strokeStyle?: string;
+  lineWidth?: number;
+  dash?: number[];
+};
+
 const imageCache = new Map<string, HTMLImageElement>();
+const outlineCache = new Map<string, HTMLCanvasElement>();
 
 export const loadImage = (imageData: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
@@ -19,12 +26,56 @@ export const loadImage = (imageData: string): Promise<HTMLImageElement> => {
   });
 };
 
+const getOutlineCanvas = (
+  imageData: string,
+  color: string,
+  lineWidth: number,
+): HTMLCanvasElement | null => {
+  const key = `${imageData}::${color}::${lineWidth}`;
+  if (outlineCache.has(key)) {
+    return outlineCache.get(key) ?? null;
+  }
+
+  const image = imageCache.get(imageData);
+  if (!image) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const steps = 16;
+  const radius = Math.max(1.5, lineWidth * 1.2);
+
+  for (let index = 0; index < steps; index += 1) {
+    const angle = (Math.PI * 2 * index) / steps;
+    const dx = Math.cos(angle) * radius;
+    const dy = Math.sin(angle) * radius;
+    ctx.drawImage(image, dx, dy, canvas.width, canvas.height);
+  }
+
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Punch out the original sprite so only the border remains.
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = 'source-over';
+
+  outlineCache.set(key, canvas);
+  return canvas;
+};
+
 export const drawAttachment = (
   ctx: CanvasRenderingContext2D,
   attachment: Attachment,
   bone: Bone,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
+  alpha = 1,
   onImageLoad?: () => void
 ): void => {
   if (!attachment.imageData) return;
@@ -54,7 +105,7 @@ export const drawAttachment = (
   const offsetX = attachment.x * zoom;
   const offsetY = attachment.y * zoom;
 
-  ctx.globalAlpha = 1.0;
+  ctx.globalAlpha = alpha;
   ctx.scale(flipX, flipY);
   ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
 
@@ -96,8 +147,10 @@ export const drawAttachmentOutline = (
   attachment: Attachment,
   bone: Bone,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
-  zoom: number
+  zoom: number,
+  options?: AttachmentOutlineOptions,
 ): void => {
+  const image = attachment.imageData ? imageCache.get(attachment.imageData) : null;
   const screenPos = worldToScreen(bone._wx, bone._wy);
   const totalRotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
   const totalScaleX = attachment.scaleX * bone.scaleX;
@@ -113,9 +166,30 @@ export const drawAttachmentOutline = (
   ctx.translate(screenPos.x, screenPos.y);
   ctx.rotate(totalRotation);
   ctx.scale(flipX, flipY);
-  ctx.strokeStyle = 'rgba(124,58,237,0.95)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 4]);
+  const strokeStyle = options?.strokeStyle ?? 'rgba(124,58,237,0.95)';
+  const lineWidth = options?.lineWidth ?? 2;
+
+  if (image && attachment.imageData) {
+    const outline = getOutlineCanvas(attachment.imageData, strokeStyle, lineWidth);
+    if (outline) {
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(
+        outline,
+        offsetX - width / 2,
+        offsetY - height / 2,
+        width,
+        height,
+      );
+      ctx.restore();
+      ctx.restore();
+      return;
+    }
+  }
+
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash(options?.dash ?? [6, 4]);
   ctx.strokeRect(offsetX - width / 2, offsetY - height / 2, width, height);
   ctx.restore();
 };
@@ -127,6 +201,7 @@ export const drawSlots = (
   bones: Bone[],
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
+  alpha = 1,
   onImageLoad?: () => void
 ): void => {
   bones.forEach((bone) => {
@@ -140,7 +215,32 @@ export const drawSlots = (
       );
       if (!attachment) return;
 
-      drawAttachment(ctx, attachment, bone, worldToScreen, zoom, onImageLoad);
+      drawAttachment(ctx, attachment, bone, worldToScreen, zoom, alpha, onImageLoad);
+    });
+  });
+};
+
+export const drawSlotOutlines = (
+  ctx: CanvasRenderingContext2D,
+  slots: Slot[],
+  attachments: Attachment[],
+  bones: Bone[],
+  worldToScreen: (x: number, y: number) => { x: number; y: number },
+  zoom: number,
+  options?: AttachmentOutlineOptions,
+): void => {
+  bones.forEach((bone) => {
+    const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
+
+    boneSlots.forEach((slot) => {
+      if (!slot.attachmentName) return;
+
+      const attachment = attachments.find(
+        (item) => item.slotId === slot.id && item.name === slot.attachmentName,
+      );
+      if (!attachment) return;
+
+      drawAttachmentOutline(ctx, attachment, bone, worldToScreen, zoom, options);
     });
   });
 };

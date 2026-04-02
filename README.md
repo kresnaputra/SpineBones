@@ -19,6 +19,7 @@ This README is written as a practical user guide so someone new to the project c
 - Use `SETUP` and `ANIMATE` modes
 - Scrub and play animation in the timeline
 - Insert, clear, delete, and loop keyframes
+- Preview previous and next moving sprite poses with onion skin overlays
 - Undo and redo edits
 - Create a new empty project
 - Save and load project JSON files
@@ -162,6 +163,7 @@ The timeline is used for:
 
 - frame scrubbing
 - animation playback
+- onion skin preview of the nearest previous and next moving poses
 - previous and next keyframe navigation
 - stopping and returning to frame 0
 - editing FPS
@@ -358,6 +360,64 @@ In the desktop app, this toggle is available under:
 Desktop shortcut:
 
 - `Cmd/Ctrl + B`
+
+## 9. Animation Playback and Onion Skin
+
+The timeline is where you preview and refine motion.
+
+Available tools include:
+
+- `Play`, `Pause`, and `Stop`
+- `Previous Key` and `Next Key`
+- frame scrubbing
+- FPS and duration editing
+- onion skin preview for nearby motion comparison
+
+Onion skin behavior:
+
+- click the `Onion` button in the toolbar or press `O` while in `ANIMATE` mode
+- the previous moving pose is outlined in cyan
+- the next moving pose is outlined in magenta
+- only bones and sprite attachments that actually change are shown as ghost overlays
+- ghost sprite outlines are drawn on top of the canvas so they stay visible while posing
+
+This is useful for:
+
+- checking arcs and spacing
+- comparing silhouettes between nearby poses
+- spotting unwanted pops between keyframes
+
+## 10. Timeline Keyframes
+
+In the timeline you can:
+
+- click a keyframe to select it
+- Shift+click to multi-select keyframes
+- drag selected keyframes together
+- double-click or delete a hovered keyframe
+- delete all selected frame keys at once
+
+Useful animation actions:
+
+- `Key` inserts keyframes for the current selection
+- `Clear` removes keyframes for the current selection
+- `Loop` creates a reversed continuation for cycle work
+- `1st Key` copies the first keyframe to the current frame
+
+## 11. Audio, Playback, and Timing
+
+You can also use the timeline for timing reference:
+
+- import an audio file
+- adjust audio start offset
+- change audio volume
+- scrub while previewing the relationship between motion and sound
+
+Timing notes:
+
+- `FPS` changes playback speed
+- `Duration` changes the visible timeline range
+- `Space` toggles play and pause quickly
 
 ## 9. SETUP and ANIMATE Modes
 

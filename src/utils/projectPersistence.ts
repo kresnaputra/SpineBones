@@ -176,6 +176,7 @@ export const createNewProject = () => {
     selectedBoneId: null,
     selectedBoneIds: [],
     showBoneIndicators: state.showBoneIndicators,
+    onionSkinEnabled: state.onionSkinEnabled,
     attachmentDragEnabled: false,
     backgroundImage: null,
     currentProjectPath: null,

@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2 } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -50,6 +50,8 @@ export const Toolbar = () => {
     setTool,
     setMode,
     selectedBoneIds,
+    onionSkinEnabled,
+    toggleOnionSkin,
     setBackgroundImage,
   } = useEditorStore();
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
@@ -334,6 +336,20 @@ export const Toolbar = () => {
       >
         <XCircle size={14} />
         Remove BG
+      </button>
+
+      <button
+        onClick={toggleOnionSkin}
+        disabled={mode !== 'animate'}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent ${
+          onionSkinEnabled
+            ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle onion skin preview (O)"
+      >
+        <Eye size={14} />
+        Onion
       </button>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
