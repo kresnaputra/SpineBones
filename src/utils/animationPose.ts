@@ -1,5 +1,6 @@
 import type { Bone, KeyframeData, Keyframes, SetupPose } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
+import { applyEasing, normalizeKeyframeData } from './easing';
 
 export const getAdjacentKeyframes = (
   keyframes: Keyframes,
@@ -68,11 +69,11 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === null && next !== null) {
-    return boneKeyframes[next];
+    return normalizeKeyframeData(boneKeyframes[next]);
   }
 
   if (prev !== null && next === null) {
-    return boneKeyframes[prev];
+    return normalizeKeyframeData(boneKeyframes[prev]);
   }
 
   if (prev === null || next === null) {
@@ -80,12 +81,12 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === next) {
-    return boneKeyframes[prev];
+    return normalizeKeyframeData(boneKeyframes[prev]);
   }
 
-  const kp = boneKeyframes[prev];
-  const kn = boneKeyframes[next];
-  const t = (frame - prev) / (next - prev);
+  const kp = normalizeKeyframeData(boneKeyframes[prev]);
+  const kn = normalizeKeyframeData(boneKeyframes[next]);
+  const t = applyEasing(kp.easing, (frame - prev) / (next - prev));
   const lerp = (a: number, b: number) => a + (b - a) * t;
 
   return {
@@ -94,6 +95,7 @@ export const sampleBonePoseAtFrame = (
     rotation: lerp(kp.rotation, kn.rotation),
     scaleX: lerp(kp.scaleX, kn.scaleX),
     scaleY: lerp(kp.scaleY, kn.scaleY),
+    easing: kp.easing,
   };
 };
 

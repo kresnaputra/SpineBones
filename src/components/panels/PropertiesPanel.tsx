@@ -8,8 +8,8 @@ import { getIkChain, getIkRootForBone } from '../../utils/ik';
 
 export const PropertiesPanel = () => {
   const { selectedBoneId, mode } = useEditorStore();
-  const { bones, updateBone, ikChainRootIds, toggleIkChain } = useSkeletonStore();
-  const { insertKeyframe } = useAnimationStore();
+  const { bones, updateBone, ikChainRootIds, toggleIkChain, updateSetupPoseBone } = useSkeletonStore();
+  const { insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { captureSnapshot } = useHistoryStore();
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
@@ -122,12 +122,14 @@ export const PropertiesPanel = () => {
         <PropRow label="Parent">
           <select
             value={selectedBone.parentId ?? ''}
+            disabled={mode !== 'setup'}
             onChange={(e) => {
-              if (!selectedBone) return;
+              if (!selectedBone || mode !== 'setup') return;
               const newParentId = e.target.value === '' ? null : parseInt(e.target.value);
               
               captureSnapshot();
               computeAllWorldTransforms(bones);
+              remapBoneKeyframesForParentChange(selectedBone.id, newParentId);
 
               const worldX = selectedBone._wx;
               const worldY = selectedBone._wy;
@@ -156,8 +158,16 @@ export const PropertiesPanel = () => {
                 y: newY,
                 rotation: newRot,
               });
+              updateSetupPoseBone(selectedBone.id, {
+                x: newX,
+                y: newY,
+                rotation: newRot,
+                scaleX: selectedBone.scaleX,
+                scaleY: selectedBone.scaleY,
+              });
             }}
-            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={mode === 'setup' ? 'Change parent relationship' : 'Parent changes are only available in Setup mode'}
           >
             <option value="">None</option>
             {bones
@@ -169,6 +179,11 @@ export const PropertiesPanel = () => {
               ))}
           </select>
         </PropRow>
+        {mode !== 'setup' ? (
+          <div className="px-3 py-2 text-[10px] text-text-dim border-b border-border/50">
+            Parent relationships can only be changed in Setup mode.
+          </div>
+        ) : null}
 
         {ikRootBone && ikChain ? (
           <PropRow label="2-Bone IK">

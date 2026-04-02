@@ -15,6 +15,7 @@ interface ProjectSnapshot {
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
     boneGroups: ReturnType<typeof useSkeletonStore.getState>['boneGroups'];
+    setupPose: ReturnType<typeof useSkeletonStore.getState>['setupPose'];
     skins: ReturnType<typeof useSkeletonStore.getState>['skins'];
     activeSkinId: ReturnType<typeof useSkeletonStore.getState>['activeSkinId'];
     ikChainRootIds: ReturnType<typeof useSkeletonStore.getState>['ikChainRootIds'];
@@ -66,6 +67,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     skeleton: {
       bones: skeleton.bones,
       boneGroups: skeleton.boneGroups,
+      setupPose: skeleton.setupPose,
       skins: skeleton.skins,
       activeSkinId: skeleton.activeSkinId,
       ikChainRootIds: skeleton.ikChainRootIds,
@@ -100,6 +102,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),
     boneGroups: cloneSnapshot(snapshot.skeleton.boneGroups),
+    setupPose: cloneSnapshot(snapshot.skeleton.setupPose),
     skins: cloneSnapshot(snapshot.skeleton.skins),
     activeSkinId: snapshot.skeleton.activeSkinId,
     ikChainRootIds: cloneSnapshot(snapshot.skeleton.ikChainRootIds),

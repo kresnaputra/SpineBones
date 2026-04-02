@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import type { KeyframeEasing } from "../../types";
 import {
   Play,
   Pause,
@@ -15,6 +16,7 @@ import { useAnimationStore } from "../../stores/animationStore";
 import { useHistoryStore } from "../../stores/historyStore";
 import { drawTimeline } from "../../engine/timelineRenderer";
 import { openAudioFile } from "../../utils/nativeIO";
+import { normalizeKeyframeEasing } from "../../utils/easing";
 
 const HEADER_H = 20;
 const ROW_H = 28;
@@ -27,6 +29,13 @@ const AUDIO_FILTERS = [
     name: "Audio",
     extensions: ["mp3", "wav", "ogg", "m4a", "aac", "webm"],
   },
+];
+
+const EASING_OPTIONS: Array<{ value: KeyframeEasing; label: string }> = [
+  { value: "linear", label: "Linear" },
+  { value: "easeIn", label: "Ease In" },
+  { value: "easeOut", label: "Ease Out" },
+  { value: "easeInOut", label: "Ease In-Out" },
 ];
 
 const clamp = (value: number, min: number, max: number) =>
@@ -132,6 +141,7 @@ export const TimelinePanel = () => {
     applyKeyframes,
     getKeyframesForBone,
     insertKeyframe,
+    updateKeyframeEasing,
     moveKeyframe,
     deleteKeyframe,
     clearKeyframes,
@@ -752,6 +762,32 @@ export const TimelinePanel = () => {
     }
   };
 
+  const selectedKeyframeEasing =
+    selectedKeyframes.length === 0
+      ? ""
+      : (() => {
+          const values = selectedKeyframes
+            .map(
+              ({ boneId, frame: keyframeFrame }) =>
+                keyframes[boneId]?.[keyframeFrame]?.easing,
+            )
+            .filter(Boolean)
+            .map((value) => normalizeKeyframeEasing(value));
+
+          if (values.length === 0) return "linear";
+          const first = values[0];
+          return values.every((value) => value === first) ? first : "";
+        })();
+
+  const handleEasingChange = (value: string) => {
+    if (!value || selectedKeyframes.length === 0) return;
+
+    captureSnapshot();
+    selectedKeyframes.forEach(({ boneId, frame: keyframeFrame }) => {
+      updateKeyframeEasing(boneId, keyframeFrame, value as KeyframeEasing);
+    });
+  };
+
   return (
     <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
@@ -822,6 +858,23 @@ export const TimelinePanel = () => {
         >
           Select Frame Keys
         </button>
+        <span className="text-text-dim text-[10px]">Ease:</span>
+        <select
+          value={selectedKeyframeEasing}
+          onChange={(e) => handleEasingChange(e.target.value)}
+          disabled={selectedKeyframes.length === 0}
+          className="bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[10px] disabled:opacity-40"
+          title="Set easing for selected keyframes"
+        >
+          <option value="">
+            {selectedKeyframes.length === 0 ? "No key" : "Mixed"}
+          </option>
+          {EASING_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <div className="text-[13px] font-bold text-accent2 min-w-[60px] text-center">
           {frame}
         </div>

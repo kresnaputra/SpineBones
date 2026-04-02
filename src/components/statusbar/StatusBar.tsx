@@ -17,7 +17,7 @@ export const StatusBar = () => {
 
       <span>|</span>
       <span>
-        <strong className="text-white">RMB</strong> pan/reparent
+        <strong className="text-white">RMB</strong> pan / parent in setup
       </span>
       <span>|</span>
       <span>

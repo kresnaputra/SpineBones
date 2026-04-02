@@ -2,6 +2,7 @@ import type { Bone, Slot, Attachment, Keyframes } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
+import { applyEasing, normalizeKeyframeData } from './easing';
 
 export const exportVideo = async (
   bones: Bone[],
@@ -95,12 +96,15 @@ export const exportVideo = async (
     if (!bone) return;
 
     if (prevFrame === nextFrame) {
-      const kf = boneKeyframes[prevFrame];
+      const kf = normalizeKeyframeData(boneKeyframes[prevFrame]);
       Object.assign(bone, kf);
     } else {
-      const kf1 = boneKeyframes[prevFrame];
-      const kf2 = boneKeyframes[nextFrame];
-      const t = (frame - prevFrame) / (nextFrame - prevFrame);
+      const kf1 = normalizeKeyframeData(boneKeyframes[prevFrame]);
+      const kf2 = normalizeKeyframeData(boneKeyframes[nextFrame]);
+      const t = applyEasing(
+        kf1.easing,
+        (frame - prevFrame) / (nextFrame - prevFrame),
+      );
 
       bone.x = lerp(kf1.x, kf2.x, t);
       bone.y = lerp(kf1.y, kf2.y, t);

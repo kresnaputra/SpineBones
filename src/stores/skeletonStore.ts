@@ -23,6 +23,7 @@ interface SkeletonState {
   setActiveSkin: (id: number) => void;
   toggleIkChain: (rootId: number) => void;
   getBoneById: (id: number) => Bone | undefined;
+  updateSetupPoseBone: (id: number, updates: Partial<SetupPose[number]>) => void;
   saveSetupPose: () => void;
   restoreSetupPose: () => void;
 }
@@ -147,6 +148,30 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
     })),
 
   getBoneById: (id) => get().bones.find((bone) => bone.id === id),
+
+  updateSetupPoseBone: (id, updates) =>
+    set((state) => ({
+      setupPose: {
+        ...state.setupPose,
+        [id]: {
+          x: state.setupPose[id]?.x ?? state.bones.find((bone) => bone.id === id)?.x ?? 0,
+          y: state.setupPose[id]?.y ?? state.bones.find((bone) => bone.id === id)?.y ?? 0,
+          rotation:
+            state.setupPose[id]?.rotation ??
+            state.bones.find((bone) => bone.id === id)?.rotation ??
+            0,
+          scaleX:
+            state.setupPose[id]?.scaleX ??
+            state.bones.find((bone) => bone.id === id)?.scaleX ??
+            1,
+          scaleY:
+            state.setupPose[id]?.scaleY ??
+            state.bones.find((bone) => bone.id === id)?.scaleY ??
+            1,
+          ...updates,
+        },
+      },
+    })),
 
   saveSetupPose: () => {
     const { bones } = get();

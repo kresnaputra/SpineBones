@@ -58,12 +58,19 @@ export interface BoneGroup {
   boneIds: number[];
 }
 
+export type KeyframeEasing =
+  | 'linear'
+  | 'easeIn'
+  | 'easeOut'
+  | 'easeInOut';
+
 export interface KeyframeData {
   x: number;
   y: number;
   rotation: number;
   scaleX: number;
   scaleY: number;
+  easing?: KeyframeEasing;
 }
 
 export type Keyframes = Record<number, Record<number, KeyframeData>>;

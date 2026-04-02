@@ -24,8 +24,8 @@ export const MainCanvas = () => {
   const [resizeTick, setResizeTick] = useState(0);
   
   const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
-  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose } = useSkeletonStore();
-  const { keyframes, frame, duration, insertKeyframe } = useAnimationStore();
+  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
+  const { keyframes, frame, duration, insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
@@ -41,30 +41,53 @@ export const MainCanvas = () => {
     return false;
   };
 
-  const reparentBone = (childId: number, newParentId: number) => {
+  const setBoneParent = (childId: number, newParentId: number | null) => {
     const child = bones.find((bone) => bone.id === childId);
-    const newParent = bones.find((bone) => bone.id === newParentId);
-    if (!child || !newParent) return false;
-    if (child.id === newParent.id) return false;
-    if (isDescendantOfBone(newParent.id, child.id)) return false;
-    if (child.parentId === newParent.id) return false;
+    if (!child) return false;
+
+    const newParent =
+      newParentId === null
+        ? null
+        : bones.find((bone) => bone.id === newParentId) ?? null;
+    if (newParentId !== null && !newParent) return false;
+    if (newParent && child.id === newParent.id) return false;
+    if (newParent && isDescendantOfBone(newParent.id, child.id)) return false;
+    if (child.parentId === newParentId) return false;
 
     captureSnapshot();
     computeAllWorldTransforms(bones);
+    remapBoneKeyframesForParentChange(child.id, newParentId);
 
     const worldX = child._wx;
     const worldY = child._wy;
     const worldRot = child._wrot;
-    const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
-    const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
-    const dx = worldX - newParent._wx;
-    const dy = worldY - newParent._wy;
+    let nextX = worldX;
+    let nextY = worldY;
+    let nextRotation = worldRot;
+
+    if (newParent) {
+      const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+      const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+      const dx = worldX - newParent._wx;
+      const dy = worldY - newParent._wy;
+
+      nextX = (dx * cos - dy * sin) / newParent.scaleX;
+      nextY = (dx * sin + dy * cos) / newParent.scaleY;
+      nextRotation = worldRot - newParent._wrot;
+    }
 
     updateBone(child.id, {
-      parentId: newParent.id,
-      x: (dx * cos - dy * sin) / newParent.scaleX,
-      y: (dx * sin + dy * cos) / newParent.scaleY,
-      rotation: worldRot - newParent._wrot,
+      parentId: newParent?.id ?? null,
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+    });
+    updateSetupPoseBone(child.id, {
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+      scaleX: child.scaleX,
+      scaleY: child.scaleY,
     });
     return true;
   };
@@ -447,8 +470,16 @@ export const MainCanvas = () => {
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
 
     if (e.button === 2) {
-      if (selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
-        const didReparent = reparentBone(selectedBoneId, hit.id);
+      if (mode !== 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        alert('Parent relationships can only be changed in Setup mode.');
+        return;
+      }
+
+      if (mode === 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+        const nextParentId =
+          selectedBone?.parentId === hit.id ? null : hit.id;
+        const didReparent = setBoneParent(selectedBoneId, nextParentId);
         if (didReparent) return;
       }
 

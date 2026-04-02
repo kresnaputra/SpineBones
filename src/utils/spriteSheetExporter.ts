@@ -3,6 +3,7 @@ import type { Attachment, Bone, Keyframes, Slot } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
+import { applyEasing, normalizeKeyframeData } from './easing';
 
 interface ExportSpriteSheetOptions {
   bones: Bone[];
@@ -124,13 +125,16 @@ const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
     }
 
     if (prevFrame === nextFrame) {
-      Object.assign(bone, boneKeyframes[prevFrame]);
+      Object.assign(bone, normalizeKeyframeData(boneKeyframes[prevFrame]));
       return;
     }
 
-    const from = boneKeyframes[prevFrame];
-    const to = boneKeyframes[nextFrame];
-    const t = (frame - prevFrame) / (nextFrame - prevFrame);
+    const from = normalizeKeyframeData(boneKeyframes[prevFrame]);
+    const to = normalizeKeyframeData(boneKeyframes[nextFrame]);
+    const t = applyEasing(
+      from.easing,
+      (frame - prevFrame) / (nextFrame - prevFrame),
+    );
 
     bone.x = lerp(from.x, to.x, t);
     bone.y = lerp(from.y, to.y, t);
