@@ -2,7 +2,8 @@ import { useEditorStore } from "../../stores/editorStore";
 import { getFileNameFromPath } from "../../utils/nativeIO";
 
 export const StatusBar = () => {
-  const { currentProjectPath } = useEditorStore();
+  const { currentProjectPath, selectedBoneId, selectedBoneIds } = useEditorStore();
+  const hasBoneSelection = selectedBoneId !== null || selectedBoneIds.length > 0;
 
   return (
     <div className="h-[22px] bg-accent flex items-center px-3 gap-4 text-[10px] text-white/80 flex-shrink-0">
@@ -17,8 +18,16 @@ export const StatusBar = () => {
 
       <span>|</span>
       <span>
-        <strong className="text-white">RMB</strong> pan
+        <strong className="text-white">RMB</strong> pan/reparent
       </span>
+      {hasBoneSelection ? (
+        <>
+          <span>|</span>
+          <span>
+            <strong className="text-white">Parent</strong> select child, then RMB target
+          </span>
+        </>
+      ) : null}
       <span>|</span>
       <span>
         <strong className="text-white">Scroll</strong> zoom

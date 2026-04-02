@@ -28,6 +28,45 @@ export const MainCanvas = () => {
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
 
+  const isDescendantOfBone = (boneId: number, ancestorId: number) => {
+    let current = bones.find((bone) => bone.id === boneId) ?? null;
+    while (current) {
+      const parentId = current.parentId;
+      if (parentId === null) return false;
+      if (parentId === ancestorId) return true;
+      current = bones.find((bone) => bone.id === parentId) ?? null;
+    }
+    return false;
+  };
+
+  const reparentBone = (childId: number, newParentId: number) => {
+    const child = bones.find((bone) => bone.id === childId);
+    const newParent = bones.find((bone) => bone.id === newParentId);
+    if (!child || !newParent) return false;
+    if (child.id === newParent.id) return false;
+    if (isDescendantOfBone(newParent.id, child.id)) return false;
+    if (child.parentId === newParent.id) return false;
+
+    captureSnapshot();
+    computeAllWorldTransforms(bones);
+
+    const worldX = child._wx;
+    const worldY = child._wy;
+    const worldRot = child._wrot;
+    const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+    const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+    const dx = worldX - newParent._wx;
+    const dy = worldY - newParent._wy;
+
+    updateBone(child.id, {
+      parentId: newParent.id,
+      x: (dx * cos - dy * sin) / newParent.scaleX,
+      y: (dx * sin + dy * cos) / newParent.scaleY,
+      rotation: worldRot - newParent._wrot,
+    });
+    return true;
+  };
+
   const getTransformTargetIds = () => {
     const selectedSet = new Set(selectedBoneIds);
     if (selectedSet.size === 0) {
@@ -38,6 +77,37 @@ export const MainCanvas = () => {
       const bone = bones.find((item) => item.id === boneId);
       return !selectedSet.has(bone?.parentId ?? -1);
     });
+  };
+
+  const getDescendantBoneIds = (rootId: number) => {
+    const descendantIds: number[] = [];
+    const queue = [rootId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (currentId === undefined) break;
+
+      bones.forEach((bone) => {
+        if (bone.parentId !== currentId) return;
+        descendantIds.push(bone.id);
+        queue.push(bone.id);
+      });
+    }
+
+    return descendantIds;
+  };
+
+  const getAnimatedKeyframeBoneIds = () => {
+    const keyframeIds = new Set<number>();
+
+    getTransformTargetIds().forEach((boneId) => {
+      keyframeIds.add(boneId);
+      getDescendantBoneIds(boneId).forEach((descendantId) => {
+        keyframeIds.add(descendantId);
+      });
+    });
+
+    return Array.from(keyframeIds);
   };
 
   const [isPanning, setIsPanning] = useState(false);
@@ -325,14 +395,20 @@ export const MainCanvas = () => {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
     if (e.button === 2) {
+      if (selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        const didReparent = reparentBone(selectedBoneId, hit.id);
+        if (didReparent) return;
+      }
+
       setIsPanning(true);
       setPanStart({ x: sx, y: sy });
       return;
     }
 
     const world = screenToWorld(sx, sy);
-    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
 
     const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
 
@@ -505,8 +581,8 @@ export const MainCanvas = () => {
       });
     }
 
-    if (isDragging && selectedBoneIds.length > 0 && mode === 'animate') {
-      selectedBoneIds.forEach((boneId) => {
+    if (isDragging && mode === 'animate') {
+      getAnimatedKeyframeBoneIds().forEach((boneId) => {
         const bone = bones.find((b) => b.id === boneId);
         if (!bone) return;
 
