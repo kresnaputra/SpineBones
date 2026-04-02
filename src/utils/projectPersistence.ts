@@ -59,6 +59,11 @@ export const buildProjectData = (): ProjectData => {
   return {
     version: '1.1',
     bones: savedBones,
+    boneGroups: skeletonState.boneGroups
+      .map((group) => ({
+        ...group,
+        boneIds: group.boneIds.filter((boneId) => savedBones.some((bone) => bone.id === boneId)),
+      })),
     skins: skeletonState.skins,
     activeSkinId: skeletonState.activeSkinId,
     ikChainRootIds: skeletonState.ikChainRootIds.filter((rootId) =>
@@ -89,11 +94,13 @@ export const applyProjectData = (
 
   useSkeletonStore.setState({
     bones,
+    boneGroups: projectData.boneGroups ?? [],
     skins,
     activeSkinId: projectData.activeSkinId ?? skins[0]?.id ?? 0,
     ikChainRootIds: projectData.ikChainRootIds ?? [],
     setupPose: projectData.setupPose ?? {},
     boneIdCounter: Math.max(...bones.map((bone) => bone.id), 0) + 1,
+    boneGroupIdCounter: Math.max(...(projectData.boneGroups ?? []).map((group) => group.id), 0) + 1,
     skinIdCounter: Math.max(...skins.map((skin) => skin.id), 0) + 1,
   });
 
@@ -135,11 +142,13 @@ export const applyProjectData = (
 export const createNewProject = () => {
   useSkeletonStore.setState({
     bones: [],
+    boneGroups: [],
     skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
     activeSkinId: 0,
     ikChainRootIds: [],
     setupPose: {},
     boneIdCounter: 0,
+    boneGroupIdCounter: 0,
     skinIdCounter: 1,
   });
 

@@ -1,18 +1,24 @@
 import { create } from 'zustand';
-import type { Bone, Skin, SetupPose } from '../types';
+import type { Bone, BoneGroup, Skin, SetupPose } from '../types';
 
 interface SkeletonState {
   bones: Bone[];
+  boneGroups: BoneGroup[];
   setupPose: SetupPose;
   skins: Skin[];
   activeSkinId: number;
   ikChainRootIds: number[];
   boneIdCounter: number;
+  boneGroupIdCounter: number;
   skinIdCounter: number;
   addBone: (bone: Omit<Bone, 'id'>) => Bone;
   updateBone: (id: number, updates: Partial<Bone>) => void;
   deleteBone: (id: number) => void;
   reorderBones: (fromIndex: number, toIndex: number) => void;
+  addBoneGroup: (name: string) => BoneGroup;
+  renameBoneGroup: (id: number, name: string) => void;
+  deleteBoneGroup: (id: number) => void;
+  assignBoneToGroup: (boneId: number, groupId: number | null) => void;
   addSkin: (name: string, color: string) => void;
   setActiveSkin: (id: number) => void;
   toggleIkChain: (rootId: number) => void;
@@ -23,11 +29,13 @@ interface SkeletonState {
 
 export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   bones: [],
+  boneGroups: [],
   setupPose: {},
   skins: [{ id: 0, name: 'default', color: '#7c3aed' }],
   activeSkinId: 0,
   ikChainRootIds: [],
   boneIdCounter: 0,
+  boneGroupIdCounter: 0,
   skinIdCounter: 1,
 
   addBone: (boneData) => {
@@ -57,6 +65,12 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
   deleteBone: (id) => {
     set((state) => ({
       bones: state.bones.filter((bone) => bone.id !== id && bone.parentId !== id),
+      boneGroups: state.boneGroups
+        .map((group) => ({
+          ...group,
+          boneIds: group.boneIds.filter((boneId) => boneId !== id),
+        }))
+        .filter((group) => group.boneIds.length > 0 || group.name.length > 0),
       ikChainRootIds: state.ikChainRootIds.filter((rootId) => rootId !== id),
     }));
   },
@@ -69,6 +83,52 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
       return { bones: newBones };
     });
   },
+
+  addBoneGroup: (name) => {
+    const id = get().boneGroupIdCounter;
+    const group: BoneGroup = {
+      id,
+      name,
+      boneIds: [],
+    };
+
+    set((state) => ({
+      boneGroups: [...state.boneGroups, group],
+      boneGroupIdCounter: state.boneGroupIdCounter + 1,
+    }));
+
+    return group;
+  },
+
+  deleteBoneGroup: (id) =>
+    set((state) => ({
+      boneGroups: state.boneGroups.filter((group) => group.id !== id),
+    })),
+
+  renameBoneGroup: (id, name) =>
+    set((state) => ({
+      boneGroups: state.boneGroups.map((group) =>
+        group.id === id ? { ...group, name } : group
+      ),
+    })),
+
+  assignBoneToGroup: (boneId, groupId) =>
+    set((state) => ({
+      boneGroups: state.boneGroups.map((group) => {
+        const nextBoneIds = group.boneIds.filter((id) => id !== boneId);
+        if (group.id !== groupId) {
+          return {
+            ...group,
+            boneIds: nextBoneIds,
+          };
+        }
+
+        return {
+          ...group,
+          boneIds: nextBoneIds.includes(boneId) ? nextBoneIds : [...nextBoneIds, boneId],
+        };
+      }),
+    })),
 
   addSkin: (name, color) => {
     set((state) => ({

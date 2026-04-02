@@ -52,6 +52,12 @@ export interface Skin {
   color: string;
 }
 
+export interface BoneGroup {
+  id: number;
+  name: string;
+  boneIds: number[];
+}
+
 export interface KeyframeData {
   x: number;
   y: number;
@@ -76,6 +82,7 @@ export interface Point {
 export interface ProjectData {
   version: string;
   bones: Bone[];
+  boneGroups?: BoneGroup[];
   skins: Skin[];
   activeSkinId?: number;
   ikChainRootIds?: number[];

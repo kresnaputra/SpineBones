@@ -14,10 +14,12 @@ interface ProjectSnapshot {
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
+    boneGroups: ReturnType<typeof useSkeletonStore.getState>['boneGroups'];
     skins: ReturnType<typeof useSkeletonStore.getState>['skins'];
     activeSkinId: ReturnType<typeof useSkeletonStore.getState>['activeSkinId'];
     ikChainRootIds: ReturnType<typeof useSkeletonStore.getState>['ikChainRootIds'];
     boneIdCounter: ReturnType<typeof useSkeletonStore.getState>['boneIdCounter'];
+    boneGroupIdCounter: ReturnType<typeof useSkeletonStore.getState>['boneGroupIdCounter'];
     skinIdCounter: ReturnType<typeof useSkeletonStore.getState>['skinIdCounter'];
   };
   animation: {
@@ -63,10 +65,12 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     },
     skeleton: {
       bones: skeleton.bones,
+      boneGroups: skeleton.boneGroups,
       skins: skeleton.skins,
       activeSkinId: skeleton.activeSkinId,
       ikChainRootIds: skeleton.ikChainRootIds,
       boneIdCounter: skeleton.boneIdCounter,
+      boneGroupIdCounter: skeleton.boneGroupIdCounter,
       skinIdCounter: skeleton.skinIdCounter,
     },
     animation: {
@@ -95,10 +99,12 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),
+    boneGroups: cloneSnapshot(snapshot.skeleton.boneGroups),
     skins: cloneSnapshot(snapshot.skeleton.skins),
     activeSkinId: snapshot.skeleton.activeSkinId,
     ikChainRootIds: cloneSnapshot(snapshot.skeleton.ikChainRootIds),
     boneIdCounter: snapshot.skeleton.boneIdCounter,
+    boneGroupIdCounter: snapshot.skeleton.boneGroupIdCounter,
     skinIdCounter: snapshot.skeleton.skinIdCounter,
   });
   useAnimationStore.setState({
