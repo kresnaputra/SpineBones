@@ -72,14 +72,6 @@ const makePose = (
   easing: updates.easing ?? 'easeInOut',
 });
 
-const makeLinearPose = (
-  base: KeyframeData,
-  updates: Partial<KeyframeData>,
-): KeyframeData => makePose(base, {
-  ...updates,
-  easing: 'linear',
-});
-
 const IDLE_PRESETS: Record<IdlePresetId, IdlePresetDefinition> = {
   calmBreathing: {
     label: 'Calm Breathing',
@@ -212,6 +204,34 @@ const getBaseKeyframe = (bone: Bone, existingBoneKeyframes: Record<number, Keyfr
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+const parsePromptEasing = (normalizedPrompt: string): KeyframeEasing | null => {
+  if (
+    includesAny(normalizedPrompt, [
+      'ease in-out',
+      'ease in out',
+      'in-out',
+      'in out',
+      'easeinout',
+    ])
+  ) {
+    return 'easeInOut';
+  }
+
+  if (includesAny(normalizedPrompt, ['ease out', 'ease-out', 'easeout', 'slow out'])) {
+    return 'easeOut';
+  }
+
+  if (includesAny(normalizedPrompt, ['ease in', 'ease-in', 'easein', 'slow in'])) {
+    return 'easeIn';
+  }
+
+  if (includesAny(normalizedPrompt, ['linear', 'linier'])) {
+    return 'linear';
+  }
+
+  return null;
+};
+
 const analyzePrompt = (prompt: string): PromptIntent => {
   const normalized = prompt.toLowerCase().trim();
 
@@ -308,6 +328,7 @@ const applyAttackPromptToKeyframes = (
   prompt: string,
 ): { keyframes: Keyframes; duration: number; summary: string } => {
   const normalized = prompt.toLowerCase();
+  const easing = parsePromptEasing(normalized) ?? 'easeInOut';
   const fast = includesAny(normalized, ['fast', 'cepat', 'quick']);
   const heavy = includesAny(normalized, ['heavy', 'kuat', 'strong', 'keras']);
   const slow = includesAny(normalized, ['slow', 'pelan', 'dramatic', 'cinematic']);
@@ -339,12 +360,14 @@ const applyAttackPromptToKeyframes = (
             x: base.x - 10 * direction * windup + 14 * direction * strike - 4 * direction * recovery,
             y: base.y - 4 * strike,
             rotation: base.rotation - 6 * direction * windup + 8 * direction * strike - 2 * direction * recovery,
+            easing,
           });
           break;
         case 'head':
           generatedFrames[frame] = makePose(base, {
             x: base.x - 4 * direction * windup + 6 * direction * strike,
             rotation: base.rotation - 3 * direction * windup + 4 * direction * strike,
+            easing,
           });
           break;
         case 'arm': {
@@ -354,10 +377,12 @@ const applyAttackPromptToKeyframes = (
                 x: base.x - 10 * direction * windup + 18 * direction * strike,
                 y: base.y - 8 * windup - 2 * strike,
                 rotation: base.rotation - 28 * direction * windup + 56 * direction * strike - 12 * direction * recovery,
+                easing,
               }
             : {
                 x: base.x - 3 * direction * strike,
                 rotation: base.rotation - 8 * direction * strike + 4 * direction * recovery,
+                easing,
               });
           break;
         }
@@ -368,9 +393,11 @@ const applyAttackPromptToKeyframes = (
                 x: base.x - 14 * direction * windup + 28 * direction * strike,
                 y: base.y - 10 * windup + 4 * strike,
                 rotation: base.rotation - 24 * direction * windup + 88 * direction * strike - 18 * direction * recovery,
+                easing,
               }
             : {
                 rotation: base.rotation - 10 * direction * swing,
+                easing,
               });
           break;
         }
@@ -378,6 +405,7 @@ const applyAttackPromptToKeyframes = (
           generatedFrames[frame] = makePose(base, {
             x: base.x + 3 * direction * windup - 6 * direction * strike,
             rotation: base.rotation + 8 * direction * windup - 14 * direction * strike + 5 * direction * recovery,
+            easing,
           });
           break;
         case 'leg': {
@@ -387,11 +415,13 @@ const applyAttackPromptToKeyframes = (
                 x: base.x - 5 * direction * windup + 8 * direction * strike - 3 * direction * recovery,
                 y: base.y + 4 * windup + 2 * recovery,
                 rotation: base.rotation - 12 * direction * windup + 16 * direction * strike - 5 * direction * recovery,
+                easing,
               }
             : {
                 x: base.x + 4 * direction * windup - 6 * direction * strike,
                 y: base.y + 2 * strike,
                 rotation: base.rotation + 10 * direction * windup - 8 * direction * strike,
+                easing,
               });
           break;
         }
@@ -399,6 +429,7 @@ const applyAttackPromptToKeyframes = (
           generatedFrames[frame] = makePose(base, {
             x: base.x + 4 * direction * strike,
             rotation: base.rotation + 2 * direction * swing,
+            easing,
           });
           break;
       }
@@ -421,6 +452,7 @@ const applyLocomotionPromptToKeyframes = (
   mode: 'walk' | 'run',
 ): { keyframes: Keyframes; duration: number; summary: string } => {
   const normalized = prompt.toLowerCase();
+  const easing = parsePromptEasing(normalized) ?? 'linear';
   const fast = mode === 'run' || includesAny(normalized, ['fast', 'cepat', 'quick']);
   const duration = parseExplicitDuration(prompt) ?? clampDuration(fast ? 72 : 96);
   const stride = fast ? 1.55 : 1;
@@ -442,47 +474,54 @@ const applyLocomotionPromptToKeyframes = (
 
       switch (role) {
         case 'body':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             y: base.y - 5 * bounce * lift,
             x: base.x + 1.5 * stride * wave,
             rotation: base.rotation + 1.8 * wave,
+            easing,
           });
           break;
         case 'head':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             y: base.y - 2.4 * bounce * lift,
             rotation: base.rotation - 1.1 * wave,
+            easing,
           });
           break;
         case 'arm':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             x: base.x + 3 * stride * swing,
             rotation: base.rotation + 18 * stride * swing,
+            easing,
           });
           break;
         case 'hand':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             x: base.x + 4.5 * stride * swing,
             y: base.y + 2 * bounce * lift,
             rotation: base.rotation + 24 * stride * swing,
+            easing,
           });
           break;
         case 'hair':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             y: base.y - 1.5 * bounce * lift,
             rotation: base.rotation - 5.5 * wave,
+            easing,
           });
           break;
         case 'leg':
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             x: base.x + 5.5 * stride * swing,
             y: base.y + 3.5 * bounce * lift,
             rotation: base.rotation - 24 * stride * swing,
+            easing,
           });
           break;
         default:
-          generatedFrames[frame] = makeLinearPose(base, {
+          generatedFrames[frame] = makePose(base, {
             rotation: base.rotation + 3 * swing,
+            easing,
           });
           break;
       }
@@ -504,6 +543,7 @@ const applyJumpPromptToKeyframes = (
   prompt: string,
 ): { keyframes: Keyframes; duration: number; summary: string } => {
   const normalized = prompt.toLowerCase();
+  const easing = parsePromptEasing(normalized) ?? 'easeInOut';
   const soft = includesAny(normalized, ['soft', 'halus', 'gentle']);
   const high = includesAny(normalized, ['high', 'tinggi', 'big']);
   const duration = parseExplicitDuration(prompt) ?? clampDuration(soft ? 108 : 90);
@@ -530,30 +570,35 @@ const applyJumpPromptToKeyframes = (
             scaleX: base.scaleX + 0.03 * compress - 0.02 * apex,
             scaleY: base.scaleY - 0.05 * compress + 0.06 * apex,
             rotation: base.rotation + 2 * landing,
+            easing,
           });
           break;
         case 'head':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 3 * compress - (jumpHeight * 0.75) * apex - 10 * ascent,
             rotation: base.rotation - 3 * compress + 2 * landing,
+            easing,
           });
           break;
         case 'arm':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 4 * compress - 10 * ascent,
             rotation: base.rotation - 18 * compress + 24 * apex - 10 * landing,
+            easing,
           });
           break;
         case 'hand':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 6 * compress - 12 * ascent,
             rotation: base.rotation - 14 * compress + 30 * apex - 12 * landing,
+            easing,
           });
           break;
         case 'hair':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 2 * compress - 4 * ascent,
             rotation: base.rotation + 6 * compress - 12 * landing,
+            easing,
           });
           break;
         case 'leg': {
@@ -563,12 +608,14 @@ const applyJumpPromptToKeyframes = (
             x: base.x + 8 * sideDirection * compress - 6 * sideDirection * landing,
             y: base.y + 12 * compress - 22 * apex - 14 * ascent + 16 * landing,
             rotation: base.rotation + 18 * compress - 30 * apex - 26 * ascent + 24 * landing,
+            easing,
           });
           break;
         }
         default:
           generatedFrames[frame] = makePose(base, {
             y: base.y - 6 * ascent + 3 * landing,
+            easing,
           });
           break;
       }
@@ -590,6 +637,7 @@ const applyLandPromptToKeyframes = (
   prompt: string,
 ): { keyframes: Keyframes; duration: number; summary: string } => {
   const normalized = prompt.toLowerCase();
+  const easing = parsePromptEasing(normalized) ?? 'easeInOut';
   const hard = includesAny(normalized, ['hard', 'keras', 'heavy', 'impact']);
   const duration = parseExplicitDuration(prompt) ?? clampDuration(hard ? 54 : 72);
   const frames = [0, Math.round(duration * 0.25), Math.round(duration * 0.5), duration];
@@ -610,29 +658,34 @@ const applyLandPromptToKeyframes = (
             y: base.y + (hard ? 14 : 10) * impact + 4 * settle,
             scaleX: base.scaleX + 0.04 * impact,
             scaleY: base.scaleY - 0.06 * impact + 0.02 * settle,
+            easing,
           });
           break;
         case 'head':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 5 * impact + 2 * settle,
             rotation: base.rotation + 3 * impact - 1.5 * settle,
+            easing,
           });
           break;
         case 'arm':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 5 * impact,
             rotation: base.rotation + 16 * impact - 8 * settle,
+            easing,
           });
           break;
         case 'hand':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 7 * impact,
             rotation: base.rotation + 20 * impact - 10 * settle,
+            easing,
           });
           break;
         case 'hair':
           generatedFrames[frame] = makePose(base, {
             rotation: base.rotation - 16 * impact + 8 * settle,
+            easing,
           });
           break;
         case 'leg': {
@@ -642,12 +695,14 @@ const applyLandPromptToKeyframes = (
             x: base.x + 4 * sideDirection * impact - 2 * sideDirection * settle,
             y: base.y + (hard ? 12 : 9) * impact + 3 * settle,
             rotation: base.rotation + (hard ? 20 : 14) * impact - 9 * settle,
+            easing,
           });
           break;
         }
         default:
           generatedFrames[frame] = makePose(base, {
             y: base.y + 3 * impact,
+            easing,
           });
           break;
       }
@@ -703,6 +758,7 @@ export const applyIdlePromptToKeyframes = (
   prompt: string,
 ): { keyframes: Keyframes; duration: number; summary: string } => {
   const intent = analyzePrompt(prompt);
+  const easing = parsePromptEasing(prompt.toLowerCase()) ?? 'easeInOut';
   const frames = getPromptFrames(intent.duration);
   const nextKeyframes: Keyframes = JSON.parse(JSON.stringify(keyframes));
 
@@ -724,42 +780,49 @@ export const applyIdlePromptToKeyframes = (
             scaleX: base.scaleX + 0.006 * intent.breathing * lift,
             scaleY: base.scaleY + 0.018 * intent.breathing * lift,
             rotation: base.rotation + 0.25 * settle * (intent.speaking ? 1.2 : 0.5),
+            easing,
           });
           break;
         case 'head':
           generatedFrames[frame] = makePose(base, {
             y: base.y - 3.2 * intent.headBob * lift,
             rotation: base.rotation + 1.1 * intent.headBob * settle,
+            easing,
           });
           break;
         case 'arm':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 2.3 * intent.handSway * lift,
             rotation: base.rotation + 2.1 * intent.handSway * settle,
+            easing,
           });
           break;
         case 'hand':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 4.1 * intent.handSway * lift,
             rotation: base.rotation + 3.4 * intent.handSway * settle,
+            easing,
           });
           break;
         case 'hair':
           generatedFrames[frame] = makePose(base, {
             y: base.y - 2.4 * intent.hairSway * lift,
             rotation: base.rotation - 2.8 * intent.hairSway * settle,
+            easing,
           });
           break;
         case 'leg':
           generatedFrames[frame] = makePose(base, {
             y: base.y + 2.2 * intent.breathing * lift,
             rotation: base.rotation - 1.6 * settle,
+            easing,
           });
           break;
         default:
           generatedFrames[frame] = makePose(base, {
             y: base.y - 1.2 * intent.breathing * lift,
             rotation: base.rotation + 0.35 * settle,
+            easing,
           });
           break;
       }
