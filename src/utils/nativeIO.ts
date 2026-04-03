@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -56,6 +56,11 @@ const AUDIO_MIME_TYPES: Record<string, string> = {
 };
 
 export const isDesktopApp = () => isTauri();
+
+export const getLaunchProjectPath = async (): Promise<string | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<string | null>('get_launch_project_path');
+};
 
 export const getFileNameFromPath = (path: string) => {
   const parts = path.split(/[\\/]/);
@@ -202,7 +207,13 @@ export const readBinaryFileAtPath = async (path: string): Promise<Uint8Array> =>
     throw new Error('Reading arbitrary local paths is only supported in the desktop app');
   }
 
-  return readFile(path);
+  try {
+    return await readFile(path);
+  } catch (error) {
+    console.warn('Falling back to native project file read:', error);
+    const bytes = await invoke<number[]>('read_project_file', { path });
+    return Uint8Array.from(bytes);
+  }
 };
 
 export const openImageFile = async (
@@ -322,7 +333,12 @@ export const saveBlobFile = async (
   if (!targetPath) return null;
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  await writeFile(targetPath, bytes);
+  try {
+    await writeFile(targetPath, bytes);
+  } catch (error) {
+    console.warn('Falling back to native project file write:', error);
+    await invoke('write_project_file', { path: targetPath, bytes: Array.from(bytes) });
+  }
   return targetPath;
 };
 

@@ -82,7 +82,7 @@ export const ProjectBrowserDialog = () => {
 
           <button
             onClick={() => setShowProjectBrowser(false)}
-            className="rounded-lg border border-transparent p-2 text-text-dim transition hover:border-border hover:bg-panel2 hover:text-text panel-padding-right"
+            className="rounded-lg border border-transparent p-2 text-text-dim transition hover:border-border hover:bg-panel2 hover:text-text margin-right-lg"
             title="Close"
           >
             <X size={16} />
