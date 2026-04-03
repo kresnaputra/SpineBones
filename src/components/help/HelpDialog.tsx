@@ -24,6 +24,7 @@ import {
   FilePlus2,
   Video,
   Grid2x2,
+  Bot,
   Link2,
   FolderTree,
   Keyboard,
@@ -242,6 +243,15 @@ const sections: HelpSection[] = [
     ],
   },
   {
+    title: "AI / MCP Panel",
+    icon: Bot,
+    items: [
+      "Use the MCP Server panel on the right to inspect the live editor bridge URL and local port.",
+      "Start or stop the local MCP server from inside the editor, then connect external MCP clients to the running SpineBones session.",
+      "Use Copy Run as a fallback if you want to launch the MCP server manually with the exact bridge URL.",
+    ],
+  },
+  {
     title: "Keyboard Shortcuts",
     icon: Diamond,
     items: [
@@ -281,6 +291,7 @@ const iconLegend = [
   { label: "Audio", icon: Music2 },
   { label: "Background", icon: Image },
   { label: "Remove BG", icon: XCircle },
+  { label: "MCP Server", icon: Bot },
   { label: "Parent / IK", icon: Link2 },
   { label: "Groups", icon: FolderTree },
   { label: "Shortcuts", icon: Keyboard },

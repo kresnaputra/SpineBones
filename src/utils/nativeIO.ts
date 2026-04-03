@@ -37,6 +37,24 @@ export interface LoadedBinaryFile {
   bytes: Uint8Array;
 }
 
+export interface McpBridgeInfo {
+  port: number;
+  url: string;
+  externalClientActive: boolean;
+  lastClientPath: string | null;
+  lastClientSeenSecondsAgo: number | null;
+}
+
+export interface McpServerStatus {
+  running: boolean;
+  pid: number | null;
+  command: string;
+  serverPath: string;
+  serverSource: string;
+  serverUrl: string;
+  lastError: string | null;
+}
+
 const IMAGE_MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -60,6 +78,33 @@ export const isDesktopApp = () => isTauri();
 export const getLaunchProjectPath = async (): Promise<string | null> => {
   if (!isDesktopApp()) return null;
   return invoke<string | null>('get_launch_project_path');
+};
+
+export const getMcpBridgeInfo = async (): Promise<McpBridgeInfo | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpBridgeInfo>('get_mcp_bridge_info');
+};
+
+export const updateMcpEditorState = async (snapshot: unknown) => {
+  if (!isDesktopApp()) return;
+  await invoke('update_mcp_editor_state', {
+    snapshotJson: JSON.stringify(snapshot),
+  });
+};
+
+export const getMcpServerStatus = async (): Promise<McpServerStatus | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpServerStatus>('get_mcp_server_status');
+};
+
+export const startMcpServer = async (): Promise<McpServerStatus | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpServerStatus>('start_mcp_server');
+};
+
+export const stopMcpServer = async () => {
+  if (!isDesktopApp()) return;
+  await invoke('stop_mcp_server');
 };
 
 export const getFileNameFromPath = (path: string) => {

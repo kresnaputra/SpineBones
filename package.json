@@ -10,11 +10,14 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "eslint .",
+    "mcp:server": "node scripts/spinebones-mcp-server.mjs",
+    "mcp:build-binary": "mkdir -p dist-mcp && bun build --compile --outfile=dist-mcp/spinebones-mcp-server scripts/spinebones-mcp-server.mjs",
     "preview": "bun run build && wrangler dev",
     "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.30.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
