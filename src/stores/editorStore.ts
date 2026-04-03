@@ -7,6 +7,7 @@ interface EditorState {
   selectedBoneId: number | null;
   selectedBoneIds: number[];
   showHelpDialog: boolean;
+  showProjectBrowser: boolean;
   showBoneIndicators: boolean;
   onionSkinEnabled: boolean;
   attachmentDragEnabled: boolean;
@@ -17,6 +18,7 @@ interface EditorState {
   selectBone: (id: number | null) => void;
   toggleBoneSelection: (id: number) => void;
   setShowHelpDialog: (show: boolean) => void;
+  setShowProjectBrowser: (show: boolean) => void;
   setShowBoneIndicators: (show: boolean) => void;
   setOnionSkinEnabled: (enabled: boolean) => void;
   toggleOnionSkin: () => void;
@@ -31,6 +33,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedBoneId: null,
   selectedBoneIds: [],
   showHelpDialog: false,
+  showProjectBrowser: false,
   showBoneIndicators: true,
   onionSkinEnabled: false,
   attachmentDragEnabled: false,
@@ -59,6 +62,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       };
     }),
   setShowHelpDialog: (showHelpDialog) => set({ showHelpDialog }),
+  setShowProjectBrowser: (showProjectBrowser) => set({ showProjectBrowser }),
   setShowBoneIndicators: (showBoneIndicators) => set({ showBoneIndicators }),
   setOnionSkinEnabled: (onionSkinEnabled) => set({ onionSkinEnabled }),
   toggleOnionSkin: () => set((state) => ({ onionSkinEnabled: !state.onionSkinEnabled })),

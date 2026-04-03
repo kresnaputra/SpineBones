@@ -1,14 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { EditorLayout } from './components/layout/EditorLayout';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useEditorStore } from './stores/editorStore';
 import { ensureDesktopMenu } from './utils/desktopMenu';
-import { getFileNameFromPath } from './utils/nativeIO';
+import { getFileNameFromPath, isDesktopApp } from './utils/nativeIO';
 import { createNewProject, loadProject, saveProject } from './utils/projectPersistence';
 
 function App() {
   useKeyboardShortcuts();
-  const { currentProjectPath, setShowHelpDialog } = useEditorStore();
+  const { currentProjectPath, setShowHelpDialog, setShowProjectBrowser } = useEditorStore();
+  const didOpenProjectBrowserRef = useRef(false);
 
   useEffect(() => {
     void ensureDesktopMenu({
@@ -23,6 +24,9 @@ function App() {
       },
       onOpen: async () => {
         void (await loadProject());
+      },
+      onOpenProjectBrowser: () => {
+        setShowProjectBrowser(true);
       },
       onExportVideo: () => {
         window.dispatchEvent(new CustomEvent('spine:file-export-video'));
@@ -41,7 +45,13 @@ function App() {
         setShowHelpDialog(true);
       },
     });
-  }, [setShowHelpDialog]);
+  }, [setShowHelpDialog, setShowProjectBrowser]);
+
+  useEffect(() => {
+    if (!isDesktopApp() || currentProjectPath || didOpenProjectBrowserRef.current) return;
+    didOpenProjectBrowserRef.current = true;
+    setShowProjectBrowser(true);
+  }, [currentProjectPath, setShowProjectBrowser]);
 
   useEffect(() => {
     document.title = currentProjectPath

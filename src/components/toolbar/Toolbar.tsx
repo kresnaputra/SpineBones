@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -54,12 +54,14 @@ export const Toolbar = () => {
     onionSkinEnabled,
     toggleOnionSkin,
     setBackgroundImage,
+    setShowProjectBrowser,
   } = useEditorStore();
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
   const { insertKeyframe } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
+  const showProjectBrowserButton = isDesktopApp();
 
   const getExportFrameSize = () => {
     if (isDesktopApp()) {
@@ -336,6 +338,17 @@ export const Toolbar = () => {
 
       <div className="w-px h-6 bg-border mx-1" />
 
+      {showProjectBrowserButton ? (
+        <button
+          onClick={() => setShowProjectBrowser(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+          title="Open project browser"
+        >
+          <FolderOpen size={14} />
+          Browser
+        </button>
+      ) : null}
+
       <button
         onClick={undo}
         disabled={past.length === 0}
@@ -363,19 +376,19 @@ export const Toolbar = () => {
           <button
             onClick={handleSave}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Save Project"
+            title="Save project package (.sbn)"
           >
             <Save size={14} />
-            Save
+            Save Package
           </button>
 
           <button
             onClick={handleLoad}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Load Project"
+            title="Import or open project package (.sbn) or legacy JSON"
           >
             <Upload size={14} />
-            Load
+            Import Project
           </button>
 
           <button

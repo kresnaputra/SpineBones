@@ -59,7 +59,7 @@ const sections: HelpSection[] = [
       </>,
       "Build the default rig in Setup mode first, because Setup becomes the base pose for your animation workflow.",
       "When the rig feels correct, switch to Animate mode to start adding keyframes on the timeline.",
-      "Save the project as JSON so bones, slots, groups, IK, timeline data, audio, and background settings stay preserved.",
+      "Save the project as a .sbn file so bones, slots, groups, IK, keyframes, audio, images, and background settings stay preserved in one package.",
     ],
   },
   {
@@ -72,8 +72,10 @@ const sections: HelpSection[] = [
       </>,
       <>
         Use Save or Save As <InlineIcon icon={Save} /> to write the current
-        project to disk as a SpineBones JSON file.
+        project to disk as a SpineBones .sbn package. Legacy .json projects can still be opened and will be converted to .sbn when saved.
       </>,
+      "Each .sbn package now stores a manifest, project data, a generated thumbnail preview, and bundled assets for images/audio.",
+      "Use Project Browser on desktop to reopen recent .sbn packages with thumbnail previews.",
       <>
         Use Open <InlineIcon icon={FolderOpen} /> to load an existing project.
       </>,
