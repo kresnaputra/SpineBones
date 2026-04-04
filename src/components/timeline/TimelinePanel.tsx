@@ -22,6 +22,7 @@ const HEADER_H = 20;
 const ROW_H = 28;
 const AUDIO_ROW_H = 36;
 const HEADER_W = 120;
+const TIMELINE_PADDING_RIGHT = 50;
 const MAX_WAVEFORM_SAMPLES = 240;
 
 const AUDIO_FILTERS = [
@@ -404,7 +405,10 @@ export const TimelinePanel = () => {
     if (!rect) return null;
 
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const frameW = Math.max(8, (rect.width - HEADER_W) / duration);
+    const frameW = Math.max(
+      8,
+      (rect.width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
+    );
 
     if (sx < HEADER_W) return null;
 
@@ -441,7 +445,10 @@ export const TimelinePanel = () => {
     audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
-    const frameW = Math.max(8, (width - HEADER_W) / duration);
+    const frameW = Math.max(
+      8,
+      (width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
+    );
     return Math.round(clamp((sx - HEADER_W) / frameW, 0, duration));
   };
 
