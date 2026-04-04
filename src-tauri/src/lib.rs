@@ -232,24 +232,8 @@ fn start_mcp_server(
     .clone();
   let launch_command =
     build_mcp_launch_command(&server_script_path, bridge_state.0, server_port_state.0);
-  let mut command = if server_script_path
-    .extension()
-    .and_then(|value| value.to_str())
-    .is_some_and(|ext| ext.eq_ignore_ascii_case("mjs"))
-  {
-    let mut shell_command = Command::new("/bin/zsh");
-    shell_command.arg("-lc").arg(&launch_command);
-    shell_command
-  } else {
-    let mut binary_command = Command::new(&server_script_path);
-    binary_command.env(
-      "SPINEBONES_MCP_URL",
-      format!("http://127.0.0.1:{}", bridge_state.0),
-    );
-    binary_command.env("SPINEBONES_MCP_TRANSPORT", "http");
-    binary_command.env("SPINEBONES_MCP_PORT", server_port_state.0.to_string());
-    binary_command
-  };
+  let mut command = Command::new("/bin/zsh");
+  command.arg("-lc").arg(&launch_command);
 
   command
     .stdin(Stdio::null())
@@ -352,15 +336,9 @@ fn build_text_response(status: &str, body: &str) -> Vec<u8> {
 
 fn build_mcp_launch_command(script_path: &PathBuf, bridge_port: u16, server_port: u16) -> String {
   let path = script_path.to_string_lossy();
-  if path.ends_with(".mjs") {
-    format!(
-      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} bun \"{path}\""
-    )
-  } else {
-    format!(
-      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} \"{path}\""
-    )
-  }
+  format!(
+    "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
+  )
 }
 
 fn pick_bridge_port() -> u16 {
@@ -505,28 +483,18 @@ fn start_mcp_bridge_server(
 
 fn resolve_mcp_server_path(app: &AppHandle, workspace_root: &PathBuf) -> (PathBuf, String) {
   if let Ok(resource_dir) = app.path().resource_dir() {
-    let bundled_binary = resource_dir.join("dist-mcp").join("spinebones-mcp-server");
-    if bundled_binary.exists() {
-      return (bundled_binary, "bundled binary".to_string());
-    }
-
     let bundled_script = resource_dir.join("scripts").join("spinebones-mcp-server.mjs");
     if bundled_script.exists() {
-      return (bundled_script, "bundled script fallback".to_string());
+      return (bundled_script, "bundled script".to_string());
     }
-  }
-
-  let dev_binary = workspace_root.join("dist-mcp").join("spinebones-mcp-server");
-  if dev_binary.exists() {
-    return (dev_binary, "development binary".to_string());
   }
 
   let dev_script = workspace_root.join("scripts").join("spinebones-mcp-server.mjs");
   if dev_script.exists() {
-    return (dev_script, "development script fallback".to_string());
+    return (dev_script, "development script".to_string());
   }
 
-  (workspace_root.join("dist-mcp").join("spinebones-mcp-server"), "unresolved".to_string())
+  (workspace_root.join("scripts").join("spinebones-mcp-server.mjs"), "unresolved".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -553,7 +521,7 @@ pub fn run() {
     .manage(McpProcessState {
       child: Mutex::new(None),
       last_error: Mutex::new(None),
-      server_path: Mutex::new(PathBuf::from("dist-mcp/spinebones-mcp-server")),
+      server_path: Mutex::new(PathBuf::from("scripts/spinebones-mcp-server.mjs")),
       server_source: Mutex::new("unresolved".to_string()),
     })
     .plugin(tauri_plugin_dialog::init())
@@ -580,7 +548,7 @@ pub fn run() {
           None
         } else {
           Some(format!(
-            "MCP server binary/script not found at {}",
+            "MCP server script not found at {}",
             server_path.to_string_lossy()
           ))
         };
