@@ -12,16 +12,12 @@ import {
 
 export const AiMcpPanel = () => {
   const [bridgeUrl, setBridgeUrl] = useState<string | null>(null);
-  const [bridgeInfo, setBridgeInfo] = useState<McpBridgeInfo | null>(null);
+  const [, setBridgeInfo] = useState<McpBridgeInfo | null>(null);
   const [bridgeHealth, setBridgeHealth] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
   const [bridgeMessage, setBridgeMessage] = useState('Bridge not checked.');
   const [serverStatus, setServerStatus] = useState<McpServerStatus | null>(null);
   const [serverBusy, setServerBusy] = useState(false);
   const [showCodexConfig, setShowCodexConfig] = useState(false);
-  const launchCommand = useMemo(() => {
-    if (serverStatus?.command) return serverStatus.command;
-    return serverStatus?.serverUrl || 'http://127.0.0.1:<mcp-port>/mcp';
-  }, [bridgeUrl, serverStatus]);
   const codexConfigSummary = useMemo(() => {
     return [
       'Transport: Streamable HTTP',
@@ -83,12 +79,13 @@ export const AiMcpPanel = () => {
   };
 
   const handleCopyLaunchCommand = async () => {
+    const url = serverStatus?.serverUrl ?? bridgeUrl ?? '';
     try {
-      await navigator.clipboard.writeText(launchCommand);
+      await navigator.clipboard.writeText(url);
       setBridgeMessage('MCP URL copied.');
     } catch (error) {
-      console.error('Failed to copy MCP command:', error);
-      setBridgeMessage(`Copy failed. MCP URL: ${launchCommand}`);
+      console.error('Failed to copy MCP URL:', error);
+      setBridgeMessage(`Copy failed. MCP URL: ${url}`);
     }
   };
 

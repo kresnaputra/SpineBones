@@ -243,12 +243,104 @@ const sections: HelpSection[] = [
     ],
   },
   {
-    title: "AI / MCP Panel",
+    title: "AI / MCP — Setup",
     icon: Bot,
     items: [
-      "Use the MCP Server panel on the right to inspect the live editor bridge URL and local port.",
-      "Start or stop the local MCP server from inside the editor, then connect external MCP clients to the running SpineBones session.",
-      "Use Copy Run as a fallback if you want to launch the MCP server manually with the exact bridge URL.",
+      <>
+        Open the <span className="text-text">MCP Server</span> panel on the
+        right sidebar. It shows the bridge URL and the current server status.
+      </>,
+      <>
+        Click <span className="text-text">Start MCP</span> to launch the
+        local MCP server. The status indicator turns green when it is running.
+        Click <span className="text-text">Stop MCP</span> to shut it down.
+      </>,
+      <>
+        Click <span className="text-text">Check Bridge</span> to verify that
+        the internal bridge is reachable, then click{" "}
+        <span className="text-text">Copy URL</span> to copy the MCP server
+        URL to the clipboard.
+      </>,
+      <>
+        Click <span className="text-text">MCP Config</span> to see the
+        connection settings. Use those details when adding SpineBones as an MCP
+        server in your AI client — transport is{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          Streamable HTTP
+        </code>
+        , authentication is none.
+      </>,
+      "The MCP server starts automatically on a free port each time SpineBones launches, so the port number may change between sessions — always copy the URL from the panel.",
+    ],
+  },
+  {
+    title: "AI / MCP — Connecting Claude Code",
+    icon: Bot,
+    items: [
+      <>
+        In your terminal, run{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          claude mcp add spinebones --transport http --url &lt;paste URL&gt;
+        </code>{" "}
+        using the URL copied from the MCP Config panel.
+      </>,
+      "Once registered, Claude Code can read and drive the live editor — bones, keyframes, skins, slots, attachments, IK, timeline, and playback are all accessible as MCP tools.",
+      <>
+        Verify the connection by asking Claude:{" "}
+        <em className="text-text">"List all bones in the current SpineBones project."</em>{" "}
+        It will call{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          spinebones_list_bones
+        </code>{" "}
+        and return the live bone data.
+      </>,
+      "Any other MCP-compatible client (Cursor, Continue, Windsurf, etc.) can connect the same way using the Streamable HTTP URL.",
+    ],
+  },
+  {
+    title: "AI / MCP — What You Can Do",
+    icon: Bot,
+    items: [
+      <>
+        <span className="text-text">Read state —</span> list bones,
+        keyframes, skins, slots, attachments, IK roots, bone groups, camera, and
+        timeline summary at any time.
+      </>,
+      <>
+        <span className="text-text">Edit bones —</span> add, rename, delete,
+        reorder, reparent, mirror, and set transforms, all from a prompt.
+      </>,
+      <>
+        <span className="text-text">Keyframe animation —</span> set or
+        overwrite individual keyframes, batch multiple keyframes in one call,
+        duplicate or remove keyframes, and clear a frame range.
+      </>,
+      <>
+        <span className="text-text">Timeline control —</span> change FPS,
+        duration, current frame, playback range, and trigger play or stop.
+      </>,
+      <>
+        <span className="text-text">Slots and attachments —</span> add
+        slots, create image attachments from local paths, update attachment
+        transforms, and set the active attachment per slot.
+      </>,
+      <>
+        <span className="text-text">Skins, groups, and IK —</span> create
+        and switch skins, manage bone groups, and toggle IK chains or set IK
+        targets.
+      </>,
+    ],
+  },
+  {
+    title: "AI / MCP — Example Prompts",
+    icon: Bot,
+    items: [
+      <><em className="text-text">"Create a breathing animation for the body and breast bones over 120 frames at 50 fps using easeInOut keyframes."</em></>,
+      <><em className="text-text">"List all bones, then add keyframe at frame 0 and frame 30 for each bone using their current transforms."</em></>,
+      <><em className="text-text">"Set the timeline to 60 frames and 24 fps, then play the animation."</em></>,
+      <><em className="text-text">"Mirror all selected bones horizontally and save the new setup pose."</em></>,
+      <><em className="text-text">"Add a slot to the body bone, create an attachment from ~/Downloads/body.png, and set it as active."</em></>,
+      "Be specific with bone names or IDs when prompting — the AI will use the exact names returned by the list tools to avoid ambiguity.",
     ],
   },
   {
@@ -259,6 +351,7 @@ const sections: HelpSection[] = [
       "W switches to Setup mode and E switches to Animate mode.",
       "O toggles onion skin preview while you are in Animate mode.",
       "K inserts keyframes for the current bone selection.",
+      "F copies the first keyframe of the selected bone to the current frame. With nothing selected, it copies the first keyframe of every bone at once.",
       "C toggles IK for the selected valid chain.",
       "Delete or Backspace deletes selected bones or selected timeline keyframes.",
       "Cmd/Ctrl+N creates a new project, Cmd/Ctrl+O opens a project, and Cmd/Ctrl+S saves.",
