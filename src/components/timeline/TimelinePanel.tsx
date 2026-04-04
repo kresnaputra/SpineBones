@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useEffectEvent } from "react";
 import type { KeyframeEasing } from "../../types";
 import {
   Play,
@@ -787,6 +787,30 @@ export const TimelinePanel = () => {
       updateKeyframeEasing(boneId, keyframeFrame, value as KeyframeEasing);
     });
   };
+
+  const handlePrevKeyUiEvent = useEffectEvent(() => {
+    handlePrevKey();
+  });
+
+  const handleNextKeyUiEvent = useEffectEvent(() => {
+    handleNextKey();
+  });
+
+  const handleSelectFrameKeysUiEvent = useEffectEvent(() => {
+    handleSelectFrameKeyframes();
+  });
+
+  useEffect(() => {
+    window.addEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
+    window.addEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
+    window.addEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+
+    return () => {
+      window.removeEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
+      window.removeEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
+      window.removeEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+    };
+  }, []);
 
   return (
     <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">

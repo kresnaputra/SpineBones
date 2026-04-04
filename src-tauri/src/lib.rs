@@ -8,7 +8,7 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 struct LaunchProjectPath(Mutex<Option<String>>);
@@ -21,13 +21,6 @@ struct McpProcessState {
   last_error: Mutex<Option<String>>,
   server_path: Mutex<PathBuf>,
   server_source: Mutex<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct McpEditorCommand {
-  command_type: String,
-  prompt: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -462,9 +455,13 @@ fn start_mcp_bridge_server(
           .unwrap_or_default()
           .to_string();
 
-        match serde_json::from_str::<McpEditorCommand>(&body) {
+        match serde_json::from_str::<serde_json::Value>(&body) {
           Ok(command) => {
-            let command_type = command.command_type.clone();
+            let command_type = command
+              .get("commandType")
+              .and_then(|value| value.as_str())
+              .unwrap_or("unknown")
+              .to_string();
             if let Err(error) = app.emit("spine:mcp-command", command) {
               build_http_response(
                 "500 Internal Server Error",

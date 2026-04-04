@@ -261,6 +261,26 @@ export const readBinaryFileAtPath = async (path: string): Promise<Uint8Array> =>
   }
 };
 
+export const loadImageFileFromPath = async (path: string): Promise<LoadedImageFile> => {
+  const bytes = await readBinaryFileAtPath(path);
+  const blob = new Blob([bytes.slice().buffer], { type: getMimeTypeFromPath(path) });
+  return {
+    name: getFileNameFromPath(path),
+    path,
+    dataUrl: await blobToDataUrl(blob),
+  };
+};
+
+export const loadAudioFileFromPath = async (path: string): Promise<LoadedAudioFile> => {
+  const bytes = await readBinaryFileAtPath(path);
+  const blob = new Blob([bytes.slice().buffer], { type: getMimeTypeFromPath(path) });
+  return {
+    name: getFileNameFromPath(path),
+    path,
+    dataUrl: await blobToDataUrl(blob),
+  };
+};
+
 export const openImageFile = async (
   options?: OpenDialogOptions,
 ): Promise<LoadedImageFile | null> => {
@@ -385,6 +405,17 @@ export const saveBlobFile = async (
     await invoke('write_project_file', { path: targetPath, bytes: Array.from(bytes) });
   }
   return targetPath;
+};
+
+export const saveBlobToPath = async (path: string, blob: Blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  try {
+    await writeFile(path, bytes);
+  } catch (error) {
+    console.warn('Falling back to native project file write:', error);
+    await invoke('write_project_file', { path, bytes: Array.from(bytes) });
+  }
+  return path;
 };
 
 export const openPathWithDefaultApp = async (path: string) => {
