@@ -19,6 +19,8 @@ export const useKeyboardShortcuts = () => {
     attachmentDragEnabled,
     setAttachmentDragEnabled,
     toggleOnionSkin,
+    showBoneIndicators,
+    setShowBoneIndicators,
   } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
@@ -63,6 +65,12 @@ export const useKeyboardShortcuts = () => {
       if (isModifierPressed && key === 'n') {
         e.preventDefault();
         createNewProject();
+        return;
+      }
+
+      if (isModifierPressed && key === 'b') {
+        e.preventDefault();
+        setShowBoneIndicators(!showBoneIndicators);
         return;
       }
 
@@ -229,5 +237,7 @@ export const useKeyboardShortcuts = () => {
     applyKeyframes,
     undo,
     redo,
+    showBoneIndicators,
+    setShowBoneIndicators,
   ]);
 };

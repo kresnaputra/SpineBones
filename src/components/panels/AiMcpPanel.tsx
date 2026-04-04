@@ -27,7 +27,6 @@ export const AiMcpPanel = () => {
       'Transport: Streamable HTTP',
       `URL: ${serverStatus?.serverUrl || 'http://127.0.0.1:<mcp-port>/mcp'}`,
       'Authentication: none',
-      `Source: ${serverStatus?.serverSource || 'runtime unresolved'}`,
     ].join('\n');
   }, [serverStatus]);
 
@@ -198,17 +197,6 @@ export const AiMcpPanel = () => {
             {serverStatus?.pid ? ` | PID ${serverStatus.pid}` : ''}
           </div>
 
-          <div className="mt-2 rounded border border-border/70 bg-panel px-2 py-2 text-[10px] leading-5 text-text-dim">
-            External client:{' '}
-            <span className={bridgeInfo?.externalClientActive ? 'text-cyan-300' : 'text-text'}>
-              {bridgeInfo?.externalClientActive ? 'Detected' : 'Idle'}
-            </span>
-            {bridgeInfo?.lastClientPath ? ` | ${bridgeInfo.lastClientPath}` : ''}
-            {bridgeInfo?.lastClientSeenSecondsAgo !== null && bridgeInfo?.lastClientSeenSecondsAgo !== undefined
-              ? ` | ${bridgeInfo.lastClientSeenSecondsAgo}s ago`
-              : ''}
-          </div>
-
           <div className="mt-2 flex gap-2">
             <button
               onClick={handleStartServer}
@@ -258,7 +246,7 @@ export const AiMcpPanel = () => {
 
             <div className="space-y-2 p-3">
               <div className="rounded border border-border/70 bg-panel2/70 px-2 py-2 text-[10px] leading-5 text-text-dim">
-                Use this when adding the MCP server in Codex.
+                Use this when adding the MCP server.
               </div>
 
               <div className="rounded border border-border/70 bg-panel px-2 py-2 font-mono text-[10px] leading-5 text-text-dim whitespace-pre-wrap break-all">

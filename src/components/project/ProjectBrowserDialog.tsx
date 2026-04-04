@@ -126,7 +126,7 @@ export const ProjectBrowserDialog = () => {
           </button>
         </div>
 
-        <div className="grid flex-1 gap-4 overflow-y-auto p-5 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+        <div className="grid flex-1 gap-4 overflow-y-auto p-5 pr-6 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
           {loading ? (
             <div className="col-span-full rounded-xl border border-border bg-panel2 p-6 text-sm text-text-dim">
               Reading recent projects...
@@ -142,10 +142,10 @@ export const ProjectBrowserDialog = () => {
             </div>
           ) : null}
 
-          {items.map((preview) => (
+          {items.map((preview, index) => (
             <div
               key={preview.path}
-              className="overflow-hidden rounded-xl border border-border bg-panel2 margin-top-lg margin-bottom-lg margin-left-lg "
+              className={`overflow-hidden rounded-xl border border-border bg-panel2 margin-top-lg margin-bottom-lg margin-left-lg ${index === 4 ? '' : 'margin-right-lg'}`}
             >
               <button
                 onClick={() => void handleOpenRecent(preview.path)}
