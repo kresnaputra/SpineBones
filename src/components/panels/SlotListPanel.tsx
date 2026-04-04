@@ -23,6 +23,7 @@ export const SlotListPanel = () => {
 
   const handleAddSlot = () => {
     if (!selectedBone) return;
+    if (boneSlots.length >= 1) return;
     captureSnapshot();
     addSlot(selectedBone.id, `${selectedBone.name}_slot_${boneSlots.length}`);
   };
@@ -85,8 +86,9 @@ export const SlotListPanel = () => {
         <span>📎 Slots ({selectedBone.name})</span>
         <button
           onClick={handleAddSlot}
-          className="p-0.5 rounded hover:bg-accent transition-colors"
-          title="Add Slot"
+          disabled={boneSlots.length >= 1}
+          className="p-0.5 rounded hover:bg-accent transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          title={boneSlots.length >= 1 ? 'Only one slot per bone allowed' : 'Add Slot'}
         >
           <Plus size={12} />
         </button>

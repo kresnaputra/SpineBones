@@ -36,10 +36,10 @@ export const PropertiesPanel = () => {
   if (!selectedBone) {
     return (
       <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 ">
           ⚙️ Properties
         </div>
-        <div className="p-4 text-[10px] text-text-dim panel-padding-left">
+        <div className="p-4 text-[10px] text-text-dim ">
           Select a bone to edit its properties
         </div>
       </div>
@@ -48,17 +48,18 @@ export const PropertiesPanel = () => {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 ">
         ⚙️ Properties
       </div>
       
       <AttachmentPropertiesPanel />
-      <div className="overflow-y-auto scrollbar-thin panel-padding-left">
+      <div className="overflow-y-auto scrollbar-thin ">
         <PropRow label="Name">
           <input
             type="text"
             value={selectedBone.name}
             onChange={(e) => handleChange('name', e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
             className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
           />
         </PropRow>

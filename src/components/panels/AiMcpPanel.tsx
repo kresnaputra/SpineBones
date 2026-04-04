@@ -142,12 +142,12 @@ export const AiMcpPanel = () => {
 
   return (
     <div className="relative flex flex-col border-t border-border">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider bg-panel2 panel-padding-left flex items-center gap-2">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider bg-panel2  flex items-center gap-2">
         <Bot size={12} />
         MCP Server
       </div>
 
-      <div className="panel-padding-left p-3 flex flex-col gap-3 text-[11px] text-text-dim">
+      <div className=" p-3 flex flex-col gap-3 text-[11px] text-text-dim">
         <div className="rounded border border-border bg-panel2/70 p-3">
           <div className="flex items-center gap-2 text-text text-[11px] font-semibold">
             <Activity size={13} className="text-accent2" />

@@ -114,6 +114,8 @@ export const TimelinePanel = () => {
   const [resizeTick, setResizeTick] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [fpsInput, setFpsInput] = useState<string>('');
+  const [durationInput, setDurationInput] = useState<string>('');
 
   const { mode, selectedBoneId, selectedBoneIds, selectBone } =
     useEditorStore();
@@ -146,6 +148,25 @@ export const TimelinePanel = () => {
     deleteKeyframe,
     clearKeyframes,
   } = useAnimationStore();
+
+  useEffect(() => { setFpsInput(String(fps)); }, [fps]);
+  useEffect(() => { setDurationInput(String(duration)); }, [duration]);
+
+  const commitFps = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(120, parsed)) : 1;
+    captureSnapshot();
+    setFps(clamped);
+    setFpsInput(String(clamped));
+  };
+
+  const commitDuration = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed) ? Math.max(10, Math.min(300, parsed)) : 10;
+    captureSnapshot();
+    setDuration(clamped);
+    setDurationInput(String(clamped));
+  };
 
   useEffect(() => {
     if (audioRef.current) {
@@ -870,7 +891,7 @@ export const TimelinePanel = () => {
           onClick={handleCopyFirstKeyframe}
           disabled={selectedBoneId === null}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-[10px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Copy first keyframe to current frame"
+          title="Copy first keyframe to current frame — no selection copies all bones (F)"
         >
           <Diamond size={12} />
           1st Key
@@ -956,11 +977,10 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">FPS:</span>
         <input
           type="number"
-          value={fps}
-          onChange={(e) => {
-            captureSnapshot();
-            setFps(Math.max(1, Math.min(120, parseInt(e.target.value) || 24)));
-          }}
+          value={fpsInput}
+          onChange={(e) => setFpsInput(e.target.value)}
+          onBlur={(e) => commitFps(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { commitFps((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
           className="w-10 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="1"
           max="120"
@@ -968,13 +988,10 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">Duration:</span>
         <input
           type="number"
-          value={duration}
-          onChange={(e) => {
-            captureSnapshot();
-            setDuration(
-              Math.max(10, Math.min(300, parseInt(e.target.value) || 60)),
-            );
-          }}
+          value={durationInput}
+          onChange={(e) => setDurationInput(e.target.value)}
+          onBlur={(e) => commitDuration(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { commitDuration((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
           className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="10"
           max="300"

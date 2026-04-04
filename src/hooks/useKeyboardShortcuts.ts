@@ -143,6 +143,24 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (key === 'f') {
+        const animState = useAnimationStore.getState();
+        const targetBoneIds = selectedBoneId !== null ? [selectedBoneId] : bones.map((b) => b.id);
+        const entries = targetBoneIds.flatMap((boneId) => {
+          const boneKeyframes = animState.keyframes[boneId];
+          if (!boneKeyframes) return [];
+          const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+          if (frames.length === 0) return [];
+          const firstKey = boneKeyframes[frames[0]];
+          if (!firstKey) return [];
+          return [{ boneId, firstKey }];
+        });
+        if (entries.length === 0) return;
+        captureSnapshot();
+        entries.forEach(({ boneId, firstKey }) => insertKeyframe(boneId, { ...firstKey }));
+        return;
+      }
+
       if (key === 'd') {
         if (selectedBoneId === null) return;
         const hasActiveAttachment = slots.some(

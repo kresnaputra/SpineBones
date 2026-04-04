@@ -32,7 +32,8 @@ export const drawTimeline = (
   const rowH = 28;
   const audioRowH = audioTrack.enabled ? 36 : 0;
   const headerW = 120;
-  const frameW = Math.max(8, (width - headerW) / duration);
+  const paddingRight = 50;
+  const frameW = Math.max(8, (width - headerW - paddingRight) / duration);
   const selectedKeyframeSet = new Set(
     selectedKeyframes.map((keyframe) => `${keyframe.boneId}:${keyframe.frame}`),
   );
