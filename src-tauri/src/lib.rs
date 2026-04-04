@@ -2,6 +2,7 @@ use std::{
   io::{Read, Write},
   net::TcpListener,
   path::PathBuf,
+  io::ErrorKind,
   process::{Child, Command, Stdio},
   sync::{Arc, Mutex},
   thread,
@@ -232,8 +233,8 @@ fn start_mcp_server(
     .clone();
   let launch_command =
     build_mcp_launch_command(&server_script_path, bridge_state.0, server_port_state.0);
-  let mut command = Command::new("/bin/zsh");
-  command.arg("-lc").arg(&launch_command);
+  let mut command =
+    create_mcp_process_command(&server_script_path, bridge_state.0, server_port_state.0);
 
   command
     .stdin(Stdio::null())
@@ -267,7 +268,15 @@ fn start_mcp_server(
       })
     }
     Err(error) => {
-      let message = format!("Failed to start MCP server process: {error}");
+      let message = if cfg!(target_os = "windows") && error.kind() == ErrorKind::NotFound {
+        "Failed to start MCP server process: Node.js was not found in PATH. Please install Node.js and restart SpineBones."
+          .to_string()
+      } else if !cfg!(target_os = "windows") && error.kind() == ErrorKind::NotFound {
+        "Failed to start MCP server process: no supported runtime was found. Please install Node.js or Bun and restart SpineBones."
+          .to_string()
+      } else {
+        format!("Failed to start MCP server process: {error}")
+      };
       *process_state
         .last_error
         .lock()
@@ -336,9 +345,33 @@ fn build_text_response(status: &str, body: &str) -> Vec<u8> {
 
 fn build_mcp_launch_command(script_path: &PathBuf, bridge_port: u16, server_port: u16) -> String {
   let path = script_path.to_string_lossy();
-  format!(
-    "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
-  )
+  if cfg!(target_os = "windows") {
+    format!(
+      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} node \"{path}\""
+    )
+  } else {
+    format!(
+      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
+    )
+  }
+}
+
+fn create_mcp_process_command(script_path: &PathBuf, bridge_port: u16, server_port: u16) -> Command {
+  let bridge_url = format!("http://127.0.0.1:{bridge_port}");
+
+  if cfg!(target_os = "windows") {
+    let mut command = Command::new("node");
+    command.arg(script_path);
+    command.env("SPINEBONES_MCP_URL", bridge_url);
+    command.env("SPINEBONES_MCP_TRANSPORT", "http");
+    command.env("SPINEBONES_MCP_PORT", server_port.to_string());
+    command
+  } else {
+    let launch_command = build_mcp_launch_command(script_path, bridge_port, server_port);
+    let mut command = Command::new("/bin/zsh");
+    command.arg("-lc").arg(launch_command);
+    command
+  }
 }
 
 fn pick_bridge_port() -> u16 {
