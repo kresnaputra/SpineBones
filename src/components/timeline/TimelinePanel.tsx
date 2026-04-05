@@ -509,6 +509,14 @@ export const TimelinePanel = () => {
 
     if (boneHit) {
       selectBone(boneHit.id);
+      if (sx < HEADER_W) {
+        const boneKeyframes = keyframes[boneHit.id];
+        if (boneKeyframes) {
+          const allFrames = Object.keys(boneKeyframes).map(Number);
+          setSelectedKeyframes(allFrames.map((f) => ({ boneId: boneHit.id, frame: f })));
+        }
+        return;
+      }
     }
 
     if (e.detail === 2 && keyframeHit) {
@@ -669,6 +677,7 @@ export const TimelinePanel = () => {
         selectedKeyframes.length > 0
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         captureSnapshot();
         selectedKeyframes.forEach((keyframe) => {
           deleteKeyframe(keyframe.boneId, keyframe.frame);
@@ -682,6 +691,7 @@ export const TimelinePanel = () => {
         hoveredKeyframe
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         deleteKeyframe(hoveredKeyframe.boneId, hoveredKeyframe.frame);
       }
     };
@@ -690,11 +700,11 @@ export const TimelinePanel = () => {
       setContextMenu(null);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("click", handleClickOutside);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("click", handleClickOutside);
     };
   }, [hoveredKeyframe, selectedKeyframes, captureSnapshot, deleteKeyframe]);
