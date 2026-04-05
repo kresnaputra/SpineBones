@@ -19,6 +19,7 @@ interface ExportSpriteSheetOptions {
   frameHeight?: number;
   includeBackground?: boolean;
   backgroundImage?: string | null;
+  maxFramesPerSheet?: number;
 }
 
 interface SpriteSheetFrameData {
@@ -62,7 +63,7 @@ interface SpriteSheetArchiveManifest {
 
 const MAX_SPRITESHEET_SIDE = 8192;
 const MAX_SPRITESHEET_PIXELS = 16_000_000;
-const MAX_FRAMES_PER_SHEET = 10;
+const MAX_FRAMES_PER_SHEET = 15;
 
 const getMaxFramesPerSheet = (frameWidth: number, frameHeight: number) => {
   const maxByPixels = Math.max(
@@ -345,13 +346,15 @@ export const exportSpriteSheet = async ({
   frameHeight = 512,
   includeBackground = false,
   backgroundImage = null,
+  maxFramesPerSheet: userMaxFramesPerSheet,
 }: ExportSpriteSheetOptions): Promise<Blob> => {
   const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
     const frames = Object.keys(boneKfs).map(Number);
     return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
   }, -1);
   const totalFrames = Math.max(1, lastKeyframe >= 0 ? lastKeyframe + 1 : duration);
-  const maxFramesPerSheet = getMaxFramesPerSheet(frameWidth, frameHeight);
+  const calculatedMaxFrames = getMaxFramesPerSheet(frameWidth, frameHeight);
+  const maxFramesPerSheet = userMaxFramesPerSheet ?? calculatedMaxFrames;
   const sheetRanges = Array.from(
     { length: Math.ceil(totalFrames / maxFramesPerSheet) },
     (_, index) => {

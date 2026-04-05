@@ -1,5 +1,7 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen } from 'lucide-react';
+import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
+import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -45,6 +47,8 @@ const IMAGE_FILTERS = [
 ];
 
 export const Toolbar = () => {
+  const [showSpriteSheetDialog, setShowSpriteSheetDialog] = useState(false);
+  const [showPngSequenceDialog, setShowPngSequenceDialog] = useState(false);
   const {
     tool,
     mode,
@@ -63,33 +67,6 @@ export const Toolbar = () => {
   const showToolbarFileActions = !isDesktopApp();
   const showProjectBrowserButton = isDesktopApp();
 
-  const getExportFrameSize = () => {
-    if (isDesktopApp()) {
-      return {
-        width: 1024,
-        height: 1024,
-      };
-    }
-
-    const response = window.prompt(
-      'Frame resolution for export (square, in pixels).\nExamples: 512, 1024, 1536',
-      '1024',
-    );
-
-    if (response === null) return null;
-
-    const parsed = Number.parseInt(response.trim(), 10);
-    if (!Number.isFinite(parsed) || parsed < 64) {
-      alert('Please enter a valid resolution of at least 64 pixels.');
-      return null;
-    }
-
-    const clamped = Math.min(4096, parsed);
-    return {
-      width: clamped,
-      height: clamped,
-    };
-  };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -174,14 +151,13 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportSpriteSheet = async () => {
+  const handleExportSpriteSheet = async (settings: { resolution: number; maxFramesPerSheet: number }) => {
     try {
+      setShowSpriteSheetDialog(false);
       const skeletonState = useSkeletonStore.getState();
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
-      const frameSize = getExportFrameSize();
-      if (!frameSize) return;
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -195,8 +171,9 @@ export const Toolbar = () => {
         camX: cameraState.x,
         camY: cameraState.y,
         camZoom: cameraState.zoom,
-        frameWidth: frameSize.width,
-        frameHeight: frameSize.height,
+        frameWidth: settings.resolution,
+        frameHeight: settings.resolution,
+        maxFramesPerSheet: settings.maxFramesPerSheet,
       });
 
       const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
@@ -212,15 +189,17 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportPngSequence = async () => {
+  const handleExportPngSequence = async (settings: { resolution: number }) => {
     try {
+      setShowPngSequenceDialog(false);
+      const clamped = Math.min(4096, settings.resolution);
+      const frameSize = { width: clamped, height: clamped };
+
       const skeletonState = useSkeletonStore.getState();
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
       const editorState = useEditorStore.getState();
-      const frameSize = getExportFrameSize();
-      if (!frameSize) return;
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -238,6 +217,7 @@ export const Toolbar = () => {
         frameHeight: frameSize.height,
         backgroundImage: editorState.backgroundImage,
         includeBackground: false,
+        crop: true,
       });
 
       const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
@@ -258,11 +238,11 @@ export const Toolbar = () => {
   });
 
   const handleExportSpriteSheetMenuEvent = useEffectEvent(() => {
-    void handleExportSpriteSheet();
+    setShowSpriteSheetDialog(true);
   });
 
   const handleExportPngSequenceMenuEvent = useEffectEvent(() => {
-    void handleExportPngSequence();
+    setShowPngSequenceDialog(true);
   });
 
   useEffect(() => {
@@ -401,7 +381,7 @@ export const Toolbar = () => {
           </button>
 
           <button
-            onClick={handleExportSpriteSheet}
+            onClick={() => setShowSpriteSheetDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
             title="Export animation as sprite sheet PNG + JSON"
           >
@@ -410,7 +390,7 @@ export const Toolbar = () => {
           </button>
 
           <button
-            onClick={handleExportPngSequence}
+            onClick={() => setShowPngSequenceDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
             title="Export animation as PNG sequence ZIP"
           >
@@ -510,6 +490,20 @@ export const Toolbar = () => {
           ANIMATE
         </button>
       </div>
+
+      {showSpriteSheetDialog && (
+        <SpriteSheetExportDialog
+          onExport={handleExportSpriteSheet}
+          onClose={() => setShowSpriteSheetDialog(false)}
+        />
+      )}
+
+      {showPngSequenceDialog && (
+        <PngSequenceExportDialog
+          onExport={handleExportPngSequence}
+          onClose={() => setShowPngSequenceDialog(false)}
+        />
+      )}
     </div>
   );
 };
