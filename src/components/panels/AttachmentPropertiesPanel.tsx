@@ -2,16 +2,16 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useSlotStore } from '../../stores/slotStore';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId } = useEditorStore();
+  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
 
-  if (!selectedBoneId) {
+  if (selectedBoneId === null) {
     return (
       <div className="border-b border-border">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
           🖼️ Attachment
         </div>
-        <div className="p-3 text-[10px] text-text-dim">
+        <div className="p-3 text-[10px] text-text-dim panel-padding-left">
           Select a bone with an active attachment
         </div>
       </div>
@@ -25,7 +25,7 @@ export const AttachmentPropertiesPanel = () => {
     return (
       <div className="border-b border-border">
         <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-          🖼️ Attachment
+          Attachment
         </div>
         <div className="p-3 text-[10px] text-text-dim">
           No active attachment for this bone
@@ -47,9 +47,21 @@ export const AttachmentPropertiesPanel = () => {
   };
 
   return (
-    <div className="border-b border-border">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
-        🖼️ Attachment: {attachment.name}
+    <div className="border-b border-border panel-padding-left">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 flex items-center justify-between gap-2">
+        <span>Attachment: {attachment.name}</span>
+        <button
+          type="button"
+          onClick={() => setAttachmentDragEnabled(!attachmentDragEnabled)}
+          className={`min-w-[88px] rounded-md border px-3 py-1 text-[10px] font-bold uppercase tracking-wide shadow-sm transition-all ${
+            attachmentDragEnabled
+              ? 'border-accent bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_14px_rgba(124,58,237,0.35)]'
+              : 'border-border bg-panel text-text-dim hover:border-accent/60 hover:text-text'
+          }`}
+          title={attachmentDragEnabled ? 'Disable canvas drag for this attachment' : 'Enable canvas drag for this attachment'}
+        >
+          {attachmentDragEnabled ? 'Drag On' : 'Canvas Drag'}
+        </button>
       </div>
       <div className="p-3 space-y-2">
         <div className="text-[9px] text-text-dim mb-2">

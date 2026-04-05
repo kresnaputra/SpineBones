@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import type { Keyframes, KeyframeData } from '../types';
+import type { Bone, Keyframes, KeyframeData, KeyframeEasing } from '../types';
 import { useSkeletonStore } from './skeletonStore';
+import { applyEasing, normalizeKeyframeData } from '../utils/easing';
+import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
   keyframes: Keyframes;
@@ -8,18 +10,52 @@ interface AnimationState {
   duration: number;
   fps: number;
   playing: boolean;
+  audioData: string | null;
+  audioName: string | null;
+  audioVolume: number;
+  audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
+  updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
   clearKeyframes: (boneId: number) => void;
   setFrame: (frame: number) => void;
   setDuration: (duration: number) => void;
   setFps: (fps: number) => void;
+  setAudioTrack: (audioData: string, audioName: string) => void;
+  clearAudioTrack: () => void;
+  setAudioVolume: (volume: number) => void;
+  setAudioOffsetFrames: (offsetFrames: number) => void;
   play: () => void;
   stop: () => void;
   applyKeyframes: () => void;
   getKeyframesForBone: (boneId: number) => number[];
   shiftKeyframes: (deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }>) => void;
+  remapBoneKeyframesForParentChange: (boneId: number, newParentId: number | null) => void;
 }
+
+const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: KeyframeData): KeyframeData => {
+  if (!parentBone) {
+    return {
+      ...sourcePose,
+      x: worldBone._wx,
+      y: worldBone._wy,
+      rotation: worldBone._wrot,
+    };
+  }
+
+  const dx = worldBone._wx - parentBone._wx;
+  const dy = worldBone._wy - parentBone._wy;
+  const cos = Math.cos((-parentBone._wrot * Math.PI) / 180);
+  const sin = Math.sin((-parentBone._wrot * Math.PI) / 180);
+
+  return {
+    ...sourcePose,
+    x: (dx * cos - dy * sin) / parentBone.scaleX,
+    y: (dx * sin + dy * cos) / parentBone.scaleY,
+    rotation: worldBone._wrot - parentBone._wrot,
+  };
+};
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
@@ -27,6 +63,10 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   duration: 60,
   fps: 24,
   playing: false,
+  audioData: null,
+  audioName: null,
+  audioVolume: 0.8,
+  audioOffsetFrames: 0,
 
   insertKeyframe: (boneId, frameData) => {
     set((state) => ({
@@ -34,10 +74,51 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         ...state.keyframes,
         [boneId]: {
           ...state.keyframes[boneId],
-          [state.frame]: frameData,
+          [state.frame]: normalizeKeyframeData(frameData),
         },
       },
     }));
+  },
+
+  moveKeyframe: (boneId, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const boneKeyframes = state.keyframes[boneId];
+      const sourceKeyframe = boneKeyframes?.[fromFrame];
+      if (!boneKeyframes || !sourceKeyframe) return state;
+
+      const nextBoneKeyframes = { ...boneKeyframes };
+      delete nextBoneKeyframes[fromFrame];
+      nextBoneKeyframes[toFrame] = sourceKeyframe;
+
+      return {
+        keyframes: {
+          ...state.keyframes,
+          [boneId]: nextBoneKeyframes,
+        },
+      };
+    });
+  },
+
+  updateKeyframeEasing: (boneId, frame, easing) => {
+    set((state) => {
+      const existing = state.keyframes[boneId]?.[frame];
+      if (!existing) return state;
+
+      return {
+        keyframes: {
+          ...state.keyframes,
+          [boneId]: {
+            ...state.keyframes[boneId],
+            [frame]: {
+              ...existing,
+              easing,
+            },
+          },
+        },
+      };
+    });
   },
 
   deleteKeyframe: (boneId, frame) => {
@@ -67,6 +148,10 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setFrame: (frame) => set({ frame }),
   setDuration: (duration) => set({ duration }),
   setFps: (fps) => set({ fps }),
+  setAudioTrack: (audioData, audioName) => set({ audioData, audioName, audioOffsetFrames: 0 }),
+  clearAudioTrack: () => set({ audioData: null, audioName: null, audioOffsetFrames: 0 }),
+  setAudioVolume: (audioVolume) => set({ audioVolume }),
+  setAudioOffsetFrames: (audioOffsetFrames) => set({ audioOffsetFrames: Math.max(0, Math.round(audioOffsetFrames)) }),
   play: () => set({ playing: true }),
   stop: () => set({ playing: false }),
 
@@ -107,22 +192,22 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         if (f >= frame && next === null) next = f;
       }
 
-      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
       if (prev === null && next !== null) {
-        updateBone(bone.id, boneKeyframes[next]);
+        updateBone(bone.id, normalizeKeyframeData(boneKeyframes[next]));
       } else if (prev !== null && next === null) {
-        updateBone(bone.id, boneKeyframes[prev]);
+        updateBone(bone.id, normalizeKeyframeData(boneKeyframes[prev]));
       } else if (prev !== null && next !== null) {
         const t = prev === next ? 1 : (frame - prev) / (next - prev);
-        const kp = boneKeyframes[prev];
-        const kn = boneKeyframes[next];
+        const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
+        const kp = normalizeKeyframeData(boneKeyframes[prev]);
+        const kn = normalizeKeyframeData(boneKeyframes[next]);
+        const lerp = (a: number, b: number, ratio: number) => a + (b - a) * ratio;
         updateBone(bone.id, {
-          x: lerp(kp.x, kn.x, t),
-          y: lerp(kp.y, kn.y, t),
-          rotation: lerp(kp.rotation, kn.rotation, t),
-          scaleX: lerp(kp.scaleX, kn.scaleX, t),
-          scaleY: lerp(kp.scaleY, kn.scaleY, t),
+          x: lerp(kp.x, kn.x, easedT),
+          y: lerp(kp.y, kn.y, easedT),
+          rotation: lerp(kp.rotation, kn.rotation, easedT),
+          scaleX: lerp(kp.scaleX, kn.scaleX, easedT),
+          scaleY: lerp(kp.scaleY, kn.scaleY, easedT),
         });
       }
     });
@@ -152,11 +237,45 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
             rotation: kf.rotation + delta.dRot,
             scaleX: kf.scaleX + delta.dScaleX,
             scaleY: kf.scaleY + delta.dScaleY,
+            easing: kf.easing,
           };
         }
         newKeyframes[boneId] = boneFrames;
       }
       return { keyframes: newKeyframes };
+    });
+  },
+
+  remapBoneKeyframesForParentChange: (boneId, newParentId) => {
+    set((state) => {
+      const boneKeyframes = state.keyframes[boneId];
+      if (!boneKeyframes) return state;
+
+      const { bones, setupPose } = useSkeletonStore.getState();
+      const frames = Object.keys(boneKeyframes).map(Number);
+      if (frames.length === 0) return state;
+
+      const nextBoneKeyframes = { ...boneKeyframes };
+
+      frames.forEach((frame) => {
+        const sampledBones = sampleBonesAtFrame(bones, state.keyframes, setupPose, frame);
+        const sampledBone = sampledBones.find((bone) => bone.id === boneId);
+        if (!sampledBone) return;
+
+        const sampledParent =
+          newParentId === null
+            ? null
+            : sampledBones.find((bone) => bone.id === newParentId) ?? null;
+        const sourcePose = normalizeKeyframeData(boneKeyframes[frame]);
+        nextBoneKeyframes[frame] = toLocalPose(sampledBone, sampledParent, sourcePose);
+      });
+
+      return {
+        keyframes: {
+          ...state.keyframes,
+          [boneId]: nextBoneKeyframes,
+        },
+      };
     });
   },
 }));

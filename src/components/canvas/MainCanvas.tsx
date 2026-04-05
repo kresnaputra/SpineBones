@@ -6,37 +6,165 @@ import { useCameraStore } from '../../stores/cameraStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
-import { drawGrid, drawOriginCross, drawBone } from '../../engine/renderer';
-import { drawSlots } from '../../engine/imageRenderer';
+import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
+import { drawAttachmentOutline, drawSlotOutlines, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
+import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
+import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
 
 export const MainCanvas = () => {
+  const IK_HANDLE_RADIUS = 10;
+  const GHOST_MOVEMENT_EPSILON = 0.01;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const [backgroundLoaded, setBackgroundLoaded] = useState(0);
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
+  const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectBone, backgroundImage } = useEditorStore();
-  const { bones, skins, activeSkinId, addBone, updateBone } = useSkeletonStore();
-  const { keyframes, frame, insertKeyframe } = useAnimationStore();
+  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
+  const { keyframes, frame, duration, insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
+
+  const isDescendantOfBone = (boneId: number, ancestorId: number) => {
+    let current = bones.find((bone) => bone.id === boneId) ?? null;
+    while (current) {
+      const parentId = current.parentId;
+      if (parentId === null) return false;
+      if (parentId === ancestorId) return true;
+      current = bones.find((bone) => bone.id === parentId) ?? null;
+    }
+    return false;
+  };
+
+  const setBoneParent = (childId: number, newParentId: number | null) => {
+    const child = bones.find((bone) => bone.id === childId);
+    if (!child) return false;
+
+    const newParent =
+      newParentId === null
+        ? null
+        : bones.find((bone) => bone.id === newParentId) ?? null;
+    if (newParentId !== null && !newParent) return false;
+    if (newParent && child.id === newParent.id) return false;
+    if (newParent && isDescendantOfBone(newParent.id, child.id)) return false;
+    if (child.parentId === newParentId) return false;
+
+    captureSnapshot();
+    computeAllWorldTransforms(bones);
+    remapBoneKeyframesForParentChange(child.id, newParentId);
+
+    const worldX = child._wx;
+    const worldY = child._wy;
+    const worldRot = child._wrot;
+    let nextX = worldX;
+    let nextY = worldY;
+    let nextRotation = worldRot;
+
+    if (newParent) {
+      const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+      const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+      const dx = worldX - newParent._wx;
+      const dy = worldY - newParent._wy;
+
+      nextX = (dx * cos - dy * sin) / newParent.scaleX;
+      nextY = (dx * sin + dy * cos) / newParent.scaleY;
+      nextRotation = worldRot - newParent._wrot;
+    }
+
+    updateBone(child.id, {
+      parentId: newParent?.id ?? null,
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+    });
+    updateSetupPoseBone(child.id, {
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+      scaleX: child.scaleX,
+      scaleY: child.scaleY,
+    });
+    return true;
+  };
+
+  const getTransformTargetIds = () => {
+    const selectedSet = new Set(selectedBoneIds);
+    if (selectedSet.size === 0) {
+      return selectedBoneId === null ? [] : [selectedBoneId];
+    }
+
+    return selectedBoneIds.filter((boneId) => {
+      const bone = bones.find((item) => item.id === boneId);
+      return !selectedSet.has(bone?.parentId ?? -1);
+    });
+  };
+
+  const getDescendantBoneIds = (rootId: number) => {
+    const descendantIds: number[] = [];
+    const queue = [rootId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (currentId === undefined) break;
+
+      bones.forEach((bone) => {
+        if (bone.parentId !== currentId) return;
+        descendantIds.push(bone.id);
+        queue.push(bone.id);
+      });
+    }
+
+    return descendantIds;
+  };
+
+  const getAnimatedKeyframeBoneIds = () => {
+    const keyframeIds = new Set<number>();
+
+    getTransformTargetIds().forEach((boneId) => {
+      keyframeIds.add(boneId);
+      getDescendantBoneIds(boneId).forEach((descendantId) => {
+        keyframeIds.add(descendantId);
+      });
+    });
+
+    return Array.from(keyframeIds);
+  };
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{
-    dx: number;
-    dy: number;
+    startWorldX: number;
+    startWorldY: number;
     sx: number;
     sy: number;
-    initSX: number;
-    initSY: number;
-    initRot: number;
+    anchorBoneId: number;
+    bones: Record<number, {
+      x: number;
+      y: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+      wx: number;
+      wy: number;
+      parentId: number | null;
+    }>;
   } | null>(null);
+  const [attachmentDragStart, setAttachmentDragStart] = useState<{
+    slotId: number;
+    attachmentName: string;
+    initialX: number;
+    initialY: number;
+    startSx: number;
+    startSy: number;
+    totalRotation: number;
+  } | null>(null);
+  const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -44,7 +172,6 @@ export const MainCanvas = () => {
       if (backgroundImageRef.current) {
         console.log('Clearing background ref and triggering re-render');
         backgroundImageRef.current = null;
-        setBackgroundLoaded(prev => prev + 1);
       }
       return;
     }
@@ -68,6 +195,7 @@ export const MainCanvas = () => {
       canvasRef.current.width = clientWidth;
       canvasRef.current.height = clientHeight;
       setCanvasSize(clientWidth, clientHeight);
+      setResizeTick((tick) => tick + 1);
     };
 
     handleResize();
@@ -103,18 +231,118 @@ export const MainCanvas = () => {
       setImageLoadTrigger(prev => prev + 1);
     };
 
-    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, handleImageLoad);
+    const getMovedGhostBones = (ghostBones: typeof bones) =>
+      ghostBones.filter((ghostBone) => {
+        const currentBone = bones.find((bone) => bone.id === ghostBone.id);
+        if (!currentBone) return false;
 
-    bones.forEach((bone) => {
-      const skin = skins.find((s) => s.id === bone.skinId);
-      const isSelected = selectedBoneId === bone.id;
-      const isHovered = hoveredBoneId === bone.id;
-      const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
+        return (
+          Math.abs(currentBone._wx - ghostBone._wx) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone._wy - ghostBone._wy) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone._wrot - ghostBone._wrot) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone.scaleX - ghostBone.scaleX) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone.scaleY - ghostBone.scaleY) > GHOST_MOVEMENT_EPSILON
+        );
+      });
 
-      drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
-    });
+    const { previous, next } =
+      mode === 'animate' && onionSkinEnabled
+        ? getAdjacentKeyframes(keyframes, frame)
+        : { previous: null, next: null };
+    const previousFrame = previous !== null ? sampleBonesAtFrame(bones, keyframes, setupPose, previous) : null;
+    const nextFrame = next !== null ? sampleBonesAtFrame(bones, keyframes, setupPose, next) : null;
+    const previousMovedBones = previousFrame ? getMovedGhostBones(previousFrame) : [];
+    const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
 
-  }, [bones, skins, selectedBoneId, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, backgroundLoaded, imageLoadTrigger]);
+    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
+
+    if (attachmentDragEnabled && selectedBoneId !== null) {
+      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
+      const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+      const activeAttachment = activeSlot
+        ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
+        : null;
+
+      if (activeSlot && selectedBone && activeAttachment) {
+        drawAttachmentOutline(ctx, activeAttachment, selectedBone, worldToScreen, camZoom);
+      }
+    }
+
+    if (showBoneIndicators) {
+      bones.forEach((bone) => {
+        if (bone.parentId === null) return;
+
+        const parent = bones.find((item) => item.id === bone.parentId);
+        if (!parent) return;
+
+        const isHighlighted =
+          selectedBoneIds.includes(bone.id) ||
+          selectedBoneIds.includes(parent.id) ||
+          hoveredBoneId === bone.id ||
+          hoveredBoneId === parent.id;
+
+        drawBoneRelation(ctx, parent, bone, isHighlighted, worldToScreen);
+      });
+
+      bones.forEach((bone) => {
+        const skin = skins.find((s) => s.id === bone.skinId);
+        const isSelected = selectedBoneIds.includes(bone.id);
+        const isHovered = hoveredBoneId === bone.id;
+        const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
+
+        drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
+      });
+    }
+
+    const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
+
+    if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
+      const ikChain = getIkChain(activeIkRootId, bones);
+      if (ikChain) {
+        const handle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.18)';
+        ctx.fill();
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(handle.x - 6, handle.y);
+        ctx.lineTo(handle.x + 6, handle.y);
+        ctx.moveTo(handle.x, handle.y - 6);
+        ctx.lineTo(handle.x, handle.y + 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    if (previousMovedBones.length > 0) {
+      drawSlots(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, {
+        strokeStyle: 'rgba(8,145,178,0.9)',
+        lineWidth: 2,
+        dash: [6, 4],
+      });
+      previousMovedBones.forEach((bone) => {
+        drawGhostBone(ctx, bone, '#0891b2', 0.4, worldToScreen);
+      });
+    }
+
+    if (nextMovedBones.length > 0) {
+      drawSlots(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, {
+        strokeStyle: 'rgba(219,39,119,0.9)',
+        lineWidth: 2,
+        dash: [6, 4],
+      });
+      nextMovedBones.forEach((bone) => {
+        drawGhostBone(ctx, bone, '#db2777', 0.4, worldToScreen);
+      });
+    }
+
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -128,52 +356,101 @@ export const MainCanvas = () => {
       return;
     }
 
+    if (attachmentDragStart) {
+      const dx = sx - attachmentDragStart.startSx;
+      const dy = sy - attachmentDragStart.startSy;
+      const cos = Math.cos(-attachmentDragStart.totalRotation);
+      const sin = Math.sin(-attachmentDragStart.totalRotation);
+      const localDx = (dx * cos - dy * sin) / camZoom;
+      const localDy = (dx * sin + dy * cos) / camZoom;
+
+      useSlotStore.getState().updateAttachment(attachmentDragStart.slotId, attachmentDragStart.attachmentName, {
+        x: attachmentDragStart.initialX + localDx,
+        y: attachmentDragStart.initialY + localDy,
+      });
+      return;
+    }
+
+    if (ikDragStart) {
+      const world = screenToWorld(sx, sy);
+      const solution = solveTwoBoneIk(ikDragStart.rootId, world, bones);
+      if (!solution) return;
+
+      updateBone(ikDragStart.rootId, { rotation: solution.rootRotation });
+      updateBone(ikDragStart.childId, {
+        rotation: solution.childRotation,
+        ...(solution.childX !== undefined ? { x: solution.childX } : {}),
+        ...(solution.childY !== undefined ? { y: solution.childY } : {}),
+      });
+      return;
+    }
+
     if (isDragging && dragStart) {
       const world = screenToWorld(sx, sy);
-      const selectedBone = bones.find((b) => b.id === selectedBoneId);
-      if (!selectedBone) return;
+      const transformTargetIds = getTransformTargetIds();
+      const anchorBone = bones.find((b) => b.id === dragStart.anchorBoneId);
+      if (!anchorBone || transformTargetIds.length === 0) return;
 
       if (tool === 'move' || tool === 'pose') {
-        let newX = world.x - dragStart.dx;
-        let newY = world.y - dragStart.dy;
-        
-        if (selectedBone.parentId !== null) {
-          computeAllWorldTransforms(bones);
-          const parent = bones.find((b) => b.id === selectedBone.parentId);
-          if (parent) {
-            const cos = Math.cos((-parent._wrot * Math.PI) / 180);
-            const sin = Math.sin((-parent._wrot * Math.PI) / 180);
-            const dx = newX - parent._wx;
-            const dy = newY - parent._wy;
-            newX = dx * cos - dy * sin;
-            newY = dx * sin + dy * cos;
-            newX /= parent.scaleX;
-            newY /= parent.scaleY;
+        const deltaX = world.x - dragStart.startWorldX;
+        const deltaY = world.y - dragStart.startWorldY;
+
+        computeAllWorldTransforms(bones);
+
+        transformTargetIds.forEach((boneId) => {
+          const initialState = dragStart.bones[boneId];
+          if (!initialState) return;
+
+          let nextX = initialState.wx + deltaX;
+          let nextY = initialState.wy + deltaY;
+
+          if (initialState.parentId !== null) {
+            const parent = bones.find((b) => b.id === initialState.parentId);
+            if (parent) {
+              const cos = Math.cos((-parent._wrot * Math.PI) / 180);
+              const sin = Math.sin((-parent._wrot * Math.PI) / 180);
+              const localDx = nextX - parent._wx;
+              const localDy = nextY - parent._wy;
+              nextX = (localDx * cos - localDy * sin) / parent.scaleX;
+              nextY = (localDx * sin + localDy * cos) / parent.scaleY;
+            }
           }
-        }
-        
-        updateBone(selectedBone.id, {
-          x: newX,
-          y: newY,
+
+          updateBone(boneId, {
+            x: nextX,
+            y: nextY,
+          });
         });
       } else if (tool === 'rotate') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(selectedBone._wx, selectedBone._wy);
+        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
         const angle = (Math.atan2(sy - bs.y, sx - bs.x) * 180) / Math.PI;
         const initAngle = (Math.atan2(dragStart.sy - bs.y, dragStart.sx - bs.x) * 180) / Math.PI;
-        updateBone(selectedBone.id, {
-          rotation: dragStart.initRot + (angle - initAngle),
+        const rotationDelta = angle - initAngle;
+
+        transformTargetIds.forEach((boneId) => {
+          const initialState = dragStart.bones[boneId];
+          if (!initialState) return;
+
+          updateBone(boneId, {
+            rotation: initialState.rotation + rotationDelta,
+          });
         });
       } else if (tool === 'scale') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(selectedBone._wx, selectedBone._wy);
+        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
         const dist = Math.hypot(sx - bs.x, sy - bs.y);
         const initDist = Math.hypot(dragStart.sx - bs.x, dragStart.sy - bs.y);
         if (initDist > 0) {
           const factor = dist / initDist;
-          updateBone(selectedBone.id, {
-            scaleX: dragStart.initSX * factor,
-            scaleY: dragStart.initSY * factor,
+          transformTargetIds.forEach((boneId) => {
+            const initialState = dragStart.bones[boneId];
+            if (!initialState) return;
+
+            updateBone(boneId, {
+              scaleX: initialState.scaleX * factor,
+              scaleY: initialState.scaleY * factor,
+            });
           });
         }
       }
@@ -190,14 +467,82 @@ export const MainCanvas = () => {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
     if (e.button === 2) {
+      if (mode !== 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        alert('Parent relationships can only be changed in Setup mode.');
+        return;
+      }
+
+      if (mode === 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+        const nextParentId =
+          selectedBone?.parentId === hit.id ? null : hit.id;
+        const didReparent = setBoneParent(selectedBoneId, nextParentId);
+        if (didReparent) return;
+      }
+
       setIsPanning(true);
       setPanStart({ x: sx, y: sy });
       return;
     }
 
     const world = screenToWorld(sx, sy);
-    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
+    const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
+
+    if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
+      const ikChain = getIkChain(activeIkRootId, bones);
+      if (ikChain) {
+        const ikHandle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        if (Math.hypot(sx - ikHandle.x, sy - ikHandle.y) <= IK_HANDLE_RADIUS + 2) {
+          captureSnapshot();
+          setIkDragStart({ rootId: ikChain.root.id, childId: ikChain.child.id });
+          return;
+        }
+
+        const ikTargetBoneId = ikChain.end?.id ?? ikChain.child.id;
+        const canDragIkTarget = tool === 'move' || tool === 'pose';
+        if (
+          canDragIkTarget &&
+          hit?.id === ikTargetBoneId &&
+          selectedBoneId === ikTargetBoneId
+        ) {
+          captureSnapshot();
+          setIkDragStart({ rootId: ikChain.root.id, childId: ikChain.child.id });
+          return;
+        }
+      }
+    }
+
+    if (attachmentDragEnabled && selectedBoneId !== null) {
+      computeAllWorldTransforms(bones);
+      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
+      const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+      const activeAttachment = activeSlot
+        ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
+        : null;
+
+      if (
+        activeSlot &&
+        selectedBone &&
+        activeAttachment &&
+        hitTestAttachment(sx, sy, activeAttachment, selectedBone, worldToScreen, camZoom)
+      ) {
+        captureSnapshot();
+        setAttachmentDragStart({
+          slotId: activeSlot.id,
+          attachmentName: activeAttachment.name,
+          initialX: activeAttachment.x,
+          initialY: activeAttachment.y,
+          startSx: sx,
+          startSy: sy,
+          totalRotation: ((selectedBone._wrot + activeAttachment.rotation) * Math.PI) / 180,
+        });
+        return;
+      }
+    }
 
     if (tool === 'bone') {
       captureSnapshot();
@@ -236,24 +581,62 @@ export const MainCanvas = () => {
     }
 
     const target = hit || (tool !== 'pose' ? bones.find((b) => b.id === selectedBoneId) : null);
+    const transformTargetIds = getTransformTargetIds();
 
     if (target) {
       captureSnapshot();
       if (hit && hit.id !== selectedBoneId) selectBone(hit.id);
       
       computeAllWorldTransforms(bones);
+      const dragBones = Object.fromEntries(
+        transformTargetIds
+          .map((boneId) => {
+            const bone = bones.find((item) => item.id === boneId);
+            if (!bone) return null;
+
+            return [
+              boneId,
+              {
+                x: bone.x,
+                y: bone.y,
+                rotation: bone.rotation,
+                scaleX: bone.scaleX,
+                scaleY: bone.scaleY,
+                wx: bone._wx,
+                wy: bone._wy,
+                parentId: bone.parentId,
+              },
+            ];
+          })
+          .filter((entry): entry is [number, {
+            x: number;
+            y: number;
+            rotation: number;
+            scaleX: number;
+            scaleY: number;
+            wx: number;
+            wy: number;
+            parentId: number | null;
+          }] => entry !== null),
+      );
       
       setIsDragging(true);
       setDragStart({
-        dx: world.x - target._wx,
-        dy: world.y - target._wy,
+        startWorldX: world.x,
+        startWorldY: world.y,
         sx,
         sy,
-        initSX: target.scaleX,
-        initSY: target.scaleY,
-        initRot: target.rotation,
+        anchorBoneId: target.id,
+        bones: dragBones,
       });
     } else {
+      const hasSelection = selectedBoneId !== null || selectedBoneIds.length > 0;
+      if (!hasSelection) {
+        setIsPanning(true);
+        setPanStart({ x: sx, y: sy });
+        return;
+      }
+
       selectBone(null);
     }
   };
@@ -262,9 +645,12 @@ export const MainCanvas = () => {
     setIsPanning(false);
     setPanStart(null);
 
-    if (isDragging && selectedBoneId !== null && mode === 'animate') {
-      const bone = bones.find((b) => b.id === selectedBoneId);
-      if (bone) {
+    if (ikDragStart && mode === 'animate') {
+      const affectedBoneIds = [ikDragStart.rootId, ikDragStart.childId];
+      affectedBoneIds.forEach((boneId) => {
+        const bone = bones.find((item) => item.id === boneId);
+        if (!bone) return;
+
         insertKeyframe(bone.id, {
           x: bone.x,
           y: bone.y,
@@ -272,9 +658,26 @@ export const MainCanvas = () => {
           scaleX: bone.scaleX,
           scaleY: bone.scaleY,
         });
-      }
+      });
     }
 
+    if (isDragging && mode === 'animate') {
+      getAnimatedKeyframeBoneIds().forEach((boneId) => {
+        const bone = bones.find((b) => b.id === boneId);
+        if (!bone) return;
+
+        insertKeyframe(bone.id, {
+          x: bone.x,
+          y: bone.y,
+          rotation: bone.rotation,
+          scaleX: bone.scaleX,
+          scaleY: bone.scaleY,
+        });
+      });
+    }
+
+    setAttachmentDragStart(null);
+    setIkDragStart(null);
     setIsDragging(false);
     setDragStart(null);
   };
@@ -318,6 +721,7 @@ export const MainCanvas = () => {
         <div>Mode: <span className="text-text">{mode.charAt(0).toUpperCase() + mode.slice(1)}</span></div>
         <div>Bones: <span className="text-text">{bones.length}</span></div>
         <div>Frame: <span className="text-text">{frame}</span></div>
+        <div>Attachment Drag: <span className="text-text">{attachmentDragEnabled ? 'On' : 'Off'}</span></div>
       </div>
     </div>
   );

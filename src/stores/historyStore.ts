@@ -10,12 +10,17 @@ interface ProjectSnapshot {
   editor: {
     mode: ReturnType<typeof useEditorStore.getState>['mode'];
     selectedBoneId: ReturnType<typeof useEditorStore.getState>['selectedBoneId'];
+    selectedBoneIds: ReturnType<typeof useEditorStore.getState>['selectedBoneIds'];
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
+    boneGroups: ReturnType<typeof useSkeletonStore.getState>['boneGroups'];
+    setupPose: ReturnType<typeof useSkeletonStore.getState>['setupPose'];
     skins: ReturnType<typeof useSkeletonStore.getState>['skins'];
     activeSkinId: ReturnType<typeof useSkeletonStore.getState>['activeSkinId'];
+    ikChainRootIds: ReturnType<typeof useSkeletonStore.getState>['ikChainRootIds'];
     boneIdCounter: ReturnType<typeof useSkeletonStore.getState>['boneIdCounter'];
+    boneGroupIdCounter: ReturnType<typeof useSkeletonStore.getState>['boneGroupIdCounter'];
     skinIdCounter: ReturnType<typeof useSkeletonStore.getState>['skinIdCounter'];
   };
   animation: {
@@ -23,6 +28,10 @@ interface ProjectSnapshot {
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
+    audioData: ReturnType<typeof useAnimationStore.getState>['audioData'];
+    audioName: ReturnType<typeof useAnimationStore.getState>['audioName'];
+    audioVolume: ReturnType<typeof useAnimationStore.getState>['audioVolume'];
+    audioOffsetFrames: ReturnType<typeof useAnimationStore.getState>['audioOffsetFrames'];
   };
   camera: {
     x: ReturnType<typeof useCameraStore.getState>['x'];
@@ -53,12 +62,17 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     editor: {
       mode: editor.mode,
       selectedBoneId: editor.selectedBoneId,
+      selectedBoneIds: editor.selectedBoneIds,
     },
     skeleton: {
       bones: skeleton.bones,
+      boneGroups: skeleton.boneGroups,
+      setupPose: skeleton.setupPose,
       skins: skeleton.skins,
       activeSkinId: skeleton.activeSkinId,
+      ikChainRootIds: skeleton.ikChainRootIds,
       boneIdCounter: skeleton.boneIdCounter,
+      boneGroupIdCounter: skeleton.boneGroupIdCounter,
       skinIdCounter: skeleton.skinIdCounter,
     },
     animation: {
@@ -66,6 +80,10 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
+      audioData: animation.audioData,
+      audioName: animation.audioName,
+      audioVolume: animation.audioVolume,
+      audioOffsetFrames: animation.audioOffsetFrames,
     },
     camera: {
       x: camera.x,
@@ -79,12 +97,17 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   useEditorStore.setState({
     mode: snapshot.editor.mode,
     selectedBoneId: snapshot.editor.selectedBoneId,
+    selectedBoneIds: cloneSnapshot(snapshot.editor.selectedBoneIds),
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),
+    boneGroups: cloneSnapshot(snapshot.skeleton.boneGroups),
+    setupPose: cloneSnapshot(snapshot.skeleton.setupPose),
     skins: cloneSnapshot(snapshot.skeleton.skins),
     activeSkinId: snapshot.skeleton.activeSkinId,
+    ikChainRootIds: cloneSnapshot(snapshot.skeleton.ikChainRootIds),
     boneIdCounter: snapshot.skeleton.boneIdCounter,
+    boneGroupIdCounter: snapshot.skeleton.boneGroupIdCounter,
     skinIdCounter: snapshot.skeleton.skinIdCounter,
   });
   useAnimationStore.setState({
@@ -92,6 +115,10 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,
+    audioData: snapshot.animation.audioData,
+    audioName: snapshot.animation.audioName,
+    audioVolume: snapshot.animation.audioVolume,
+    audioOffsetFrames: snapshot.animation.audioOffsetFrames,
     playing: false,
   });
   useCameraStore.setState({

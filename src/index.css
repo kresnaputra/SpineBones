@@ -52,3 +52,41 @@ body {
   background: var(--color-border);
   border-radius: 2px;
 }
+
+/* Force left padding for panels */
+.panel-padding-left {
+  padding-left: 16px !important;
+}
+
+/* Force right padding for panels */
+.panel-padding-right {
+  padding-right: 16px !important;
+}
+
+/* Force top padding for panels */
+.panel-padding-top {
+  padding-top: 16px !important;
+}
+
+/* Force bottom padding for panels */
+.panel-padding-bottom {
+  padding-bottom: 16px !important;
+}
+
+/* Force larger top padding for panels */
+.panel-padding-top-lg {
+  padding-top: 24px !important;
+}
+
+/* Force larger bottom padding for panels */
+.panel-padding-bottom-lg {
+  padding-bottom: 24px !important;
+}
+
+.margin-top-lg {
+  margin-top: 24px !important;
+}
+
+.margin-bottom-lg {
+  margin-bottom: 24px !important;
+}

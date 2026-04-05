@@ -1,42 +1,63 @@
-# SpineWeb
+# SpineBones
 
-SpineWeb is a web-based 2D skeleton editor for creating simple rigs, attaching images, animating bones with keyframes, and exporting the result as project JSON, a Spine-like package, or video.
+SpineBones is a 2D skeleton editor for building simple rigs, attaching images to bones through slots, animating them with keyframes, and exporting the result as project JSON, a Spine-like package, or WebM video.
+
+This README is written as a practical user guide so someone new to the project can understand what the application already supports and how to use it effectively.
 
 ## Main Features
 
-- Create and arrange bone hierarchies directly on the canvas
-- Edit bone position, rotation, scale, parent, and length
-- Add slots and upload image attachments per bone
-- Manage active skins
-- Animate bones with keyframes on a timeline
-- Undo and redo changes
-- Save and load projects in JSON format
-- Export to a Spine-like package (`.zip` containing `skeleton.json`, `atlas.atlas`, and attachment images)
-- Export animation as `WebM` video
-- Add a background image as animation reference
+- Create bones directly on the canvas
+- Build parent-child bone hierarchies
+- Reorder bones with drag and drop in the Bones panel
+- Edit bone properties such as name, position, length, rotation, scale, and parent
+- Add slots to the selected bone
+- Upload image attachments per slot
+- Switch the active attachment on a slot
+- Manage the active skin
+- Show or hide bone indicators
+- Add a background image as visual reference
+- Use `SETUP` and `ANIMATE` modes
+- Scrub and play animation in the timeline
+- Insert, clear, delete, and loop keyframes
+- Preview previous and next moving sprite poses with onion skin overlays
+- Undo and redo edits
+- Create a new empty project
+- Save and load project JSON files
+- Export a Spine-like ZIP package
+- Export animation as WebM video
+- Use desktop menu actions for file and view controls
 
 ## Tech Stack
 
 - React 19
 - TypeScript
-- Vite
 - Zustand
+- Vite
 - Tailwind CSS 4
+- Tauri 2 for desktop builds
 
 ## Requirements
 
-- Bun or a modern Node.js version
+### Web
+
+- Bun is recommended
 - A modern browser with support for Canvas API, File API, and `MediaRecorder`
+
+### Desktop
+
+- Bun
+- Rust toolchain
+- The Tauri system dependencies required by your operating system
 
 ## Installation
 
-Using Bun is recommended because this repository already includes `bun.lock`.
+Using Bun:
 
 ```bash
 bun install
 ```
 
-If you prefer npm:
+Using npm:
 
 ```bash
 npm install
@@ -44,114 +65,432 @@ npm install
 
 ## Running the App
 
-Development mode:
+### Web Development
 
 ```bash
 bun run dev
 ```
 
-or:
-
-```bash
-npm run dev
-```
-
-Production build:
+### Web Production Build
 
 ```bash
 bun run build
 ```
 
-Preview the production build:
+### Preview the Web Build
 
 ```bash
 bun run preview
 ```
 
-Lint:
+### Desktop Development
 
 ```bash
-bun run lint
+bun run tauri:dev
+```
+
+### Desktop Build
+
+```bash
+bun run tauri:build
+```
+
+### Build macOS DMG
+
+```bash
+bun run tauri:build -- --bundles dmg
 ```
 
 ## Interface Overview
 
-When the app starts, it automatically loads a demo skeleton if the project is still empty.
+When the application starts and the project is empty, SpineBones automatically loads a demo skeleton so there is always something ready to explore.
 
-- Top toolbar: tool selection, undo/redo, keyframe actions, skin actions, save/load, export, and editor mode
-- Left panel: bone list, slots per bone, and skin list
-- Center canvas: main workspace for creating bones, posing, and previewing attachments
-- Right panel: selected bone and active attachment properties
-- Bottom timeline: animation playback, frame control, fps, duration, and bone keyframes
-- Status bar: quick shortcut reference
+### Top Toolbar
 
-## How To Use
+The top toolbar contains:
 
-### 1. Create Bones
+- Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`
+- `Undo` and `Redo`
+- `Key` to insert a keyframe
+- `Clear` to remove all keyframes from the selected bone
+- `Loop` to mirror keyframes into a loop
+- `1st Key` to copy the first keyframe of the selected bone to the current frame
+- `Save`, `Load`, `Export Spine`, and `Export Video` in web or non-desktop mode
+- `Background` to upload a reference image
+- `Remove BG` to clear the background image
+- `SETUP` and `ANIMATE` mode buttons
 
-1. Run the application.
-2. Select the `Bone` tool or press `B`.
-3. Click on the canvas to create a new bone.
-4. Click an existing bone while creating a new one if you want to assign it as the parent.
+### Left Sidebar
+
+The left side contains:
+
+- `Bones`
+- `Slots`
+- `Skins`
+
+This side is used to:
+
+- select bones
+- reorder bones
+- manage slots and attachments
+- switch the active skin
+
+### Center Canvas
+
+The canvas is the main workspace for:
+
+- creating bones
+- selecting bones
+- moving bones
+- rotating bones
+- scaling bones
+- previewing attachments
+- viewing the background reference image
+- panning and zooming the camera
+
+### Right Sidebar
+
+The right side shows:
+
+- active attachment properties for the current slot
+- properties of the selected bone
+
+If no bone is selected, the panel shows a helper message.
+
+### Bottom Timeline
+
+The timeline is used for:
+
+- frame scrubbing
+- animation playback
+- onion skin preview of the nearest previous and next moving poses
+- previous and next keyframe navigation
+- stopping and returning to frame 0
+- editing FPS
+- editing duration
+- selecting bones from timeline rows
+- deleting keyframes with double click, right click, or keyboard shortcuts
+
+### Status Bar
+
+The bottom status bar shows:
+
+- the application name
+- the currently opened project filename
+- an `Open File` button in desktop mode
+- important usage hints such as delete, keyframe, play/pause, setup/animate, and tool shortcuts
+
+## Complete Usage Guide
+
+## 1. Creating Bones
+
+To create a bone:
+
+1. Select the `Bone` tool.
+2. Click on the canvas.
+3. If you click on top of an existing bone while creating a new one, the new bone will use that bone as its parent.
+
+New bone defaults:
+
+- default name: `bone_{index}`
+- default length: `50`
+- default `scaleX` and `scaleY`: `1`
+- the new bone uses the currently active skin
 
 Notes:
 
-- A new bone uses the currently active skin.
-- Bones can be selected from the canvas or from the `Bones` panel.
-- Bone order in the left panel can be changed with drag and drop.
+- bones can be selected from the canvas or from the `Bones` panel
+- bone order in the `Bones` panel can be changed with drag and drop
+- deleting a parent bone also removes child bones that depend on it
 
-### 2. Edit Bones
+## 2. Selecting and Manipulating Bones
 
-Select a bone, then use:
+### Pose Tool
 
-- `Pose` tool (`Q`) for general selection and manipulation
-- `Move` tool (`M`) to move the bone
-- `Rotate` tool (`R`) to rotate the bone
-- `Scale` tool (`S`) to scale the bone
-- `Properties` panel to edit name, position, length, rotation, scale, and parent precisely
+Use `Pose` for general selection and manipulation.
 
-### 3. Add Slots and Attachments
+On the canvas:
 
-1. Select the bone you want to attach an image to.
-2. In the `Slots` panel, click the `+` button.
-3. Enter a slot name.
-4. Click the upload icon on the slot.
-5. Choose an image file from your computer.
+- click a bone to select it
+- click empty space to clear selection
+- drag the selected bone to move it
 
-Once an attachment is active, the right panel will show controls for:
+### Move Tool
 
-- `Offset X`
-- `Offset Y`
+Use `Move` to explicitly reposition a bone.
+
+Behavior:
+
+- click a bone to select it
+- drag to change its position
+- if the bone has a parent, its local position is recalculated relative to that parent
+
+### Rotate Tool
+
+Use `Rotate` to rotate a bone around its pivot.
+
+Behavior:
+
+- click a bone
+- drag around the bone pivot
+- the rotation is updated from the pointer angle relative to the bone position
+
+### Scale Tool
+
+Use `Scale` to change `scaleX` and `scaleY` together.
+
+Behavior:
+
+- click a bone
+- drag farther away or closer to the pivot
+- the scale factor is computed from the pointer distance ratio
+
+## 3. Editing Bones from the Properties Panel
+
+When a bone is selected, the `Properties` panel exposes:
+
+- `Name`
+- `X`
+- `Y`
+- `Length`
 - `Rotation`
 - `Scale X`
 - `Scale Y`
+- `Parent`
 
-These settings help adjust the image pivot and visual placement relative to the bone.
+Important behavior:
 
-### 4. Manage Skins
+- when the current mode is `ANIMATE`, changing numeric values such as position, rotation, or scale automatically writes a keyframe for the selected bone
+- changing `Parent` preserves the world transform of the bone so it does not unexpectedly jump during reparenting
 
-- The skin list is available in the `Skins` panel
-- Click a skin to make it active
-- Use the `Add Skin` button in the toolbar to create a new skin
+## 4. Managing Slots and Attachments
 
-### 5. Create Animation
+### Adding a Slot
 
-1. Click the `ANIMATE` mode button on the right side of the toolbar.
-2. Select the bone you want to animate.
-3. Move the current frame in the timeline.
-4. Change the bone position, rotation, or scale.
-5. Press `K` or click the `Key` button to insert a keyframe.
+1. Select a bone.
+2. In the `Slots` panel, click the `+` button.
+3. A new slot is created using a default name based on the selected bone.
 
-Timeline features:
+### Uploading an Image to a Slot
 
-- `Play/Pause` for animation preview
-- `Stop` to return to frame 0
-- `Prev/Next Key` to jump between keyframes on the selected bone
-- `Clear` to remove all keyframes from the selected bone
-- `Loop` to copy the first keyframe to the current frame for smoother looping
-- Editable `FPS` and `Duration` values directly from the timeline
+1. Click the upload button on a slot.
+2. Choose an image file.
+3. The app creates an image attachment for that slot.
+4. The uploaded attachment becomes the active attachment automatically.
 
-Keyframes are interpolated linearly for:
+Supported image types:
+
+- PNG
+- JPG / JPEG
+- WEBP
+- GIF
+- SVG
+
+When an image is loaded:
+
+- the original image size is read
+- the app automatically applies an initial scale so the image fits the scene more reasonably
+
+### Switching the Active Attachment
+
+If a slot has more than one attachment, all attachments are shown in a list under that slot. Click an attachment name to make it the active one.
+
+### Deleting a Slot
+
+Click the trash icon on the slot row to remove that slot.
+
+## 5. Editing Attachments from the Right Panel
+
+If the active slot has an image attachment, the right panel shows attachment properties such as:
+
+- position offset
+- rotation
+- scale
+
+This panel is used to align the image with the bone, for example:
+
+- moving the image upward so it sits above the bone
+- rotating the image to match the bone direction
+- resizing the image without changing the underlying bone data
+
+## 6. Managing Skins
+
+The `Skins` panel shows all available skins.
+
+Available actions:
+
+- click a skin to make it the active skin
+- every newly created bone uses the active skin
+- the skin color is used as the base color for bone indicators on the canvas
+
+## 7. Background Reference
+
+The toolbar provides:
+
+- `Background`
+- `Remove BG`
+
+Purpose:
+
+- upload a reference image for tracing or pose matching
+- remove the reference image when it is no longer needed
+
+Background behavior:
+
+- it is rendered semi-transparently
+- it stays visible in the canvas as a visual guide
+- it can appear in exported video output
+
+## 8. Bone Indicators
+
+Bone indicators are the visual circles and labels shown on top of bones in the canvas.
+
+Behavior:
+
+- they can be shown or hidden
+- even when hidden, bones can still be hit-tested and edited
+- the toggle only hides the visual indicators, not the actual bone system
+
+### Desktop View Menu
+
+In the desktop app, this toggle is available under:
+
+- `View > Toggle Bone Indicators`
+
+Desktop shortcut:
+
+- `Cmd/Ctrl + B`
+
+## 9. Animation Playback and Onion Skin
+
+The timeline is where you preview and refine motion.
+
+Available tools include:
+
+- `Play`, `Pause`, and `Stop`
+- `Previous Key` and `Next Key`
+- frame scrubbing
+- FPS and duration editing
+- onion skin preview for nearby motion comparison
+
+Onion skin behavior:
+
+- click the `Onion` button in the toolbar or press `O` while in `ANIMATE` mode
+- the previous moving pose is outlined in cyan
+- the next moving pose is outlined in magenta
+- only bones and sprite attachments that actually change are shown as ghost overlays
+- ghost sprite outlines are drawn on top of the canvas so they stay visible while posing
+
+This is useful for:
+
+- checking arcs and spacing
+- comparing silhouettes between nearby poses
+- spotting unwanted pops between keyframes
+
+## 10. Timeline Keyframes
+
+In the timeline you can:
+
+- click a keyframe to select it
+- Shift+click to multi-select keyframes
+- drag selected keyframes together
+- double-click or delete a hovered keyframe
+- delete all selected frame keys at once
+
+Useful animation actions:
+
+- `Key` inserts keyframes for the current selection
+- `Clear` removes keyframes for the current selection
+- `Loop` creates a reversed continuation for cycle work
+- `1st Key` copies the first keyframe to the current frame
+
+## 11. Audio, Playback, and Timing
+
+You can also use the timeline for timing reference:
+
+- import an audio file
+- adjust audio start offset
+- change audio volume
+- scrub while previewing the relationship between motion and sound
+
+Timing notes:
+
+- `FPS` changes playback speed
+- `Duration` changes the visible timeline range
+- `Space` toggles play and pause quickly
+
+## 9. SETUP and ANIMATE Modes
+
+### SETUP
+
+Use this mode to prepare the base rig:
+
+- set the default pose
+- organize parent relationships
+- align attachments
+
+When entering `SETUP`:
+
+- the app restores the stored setup pose
+
+### ANIMATE
+
+Use this mode to create frame-based animation with keyframes.
+
+When switching to `ANIMATE`:
+
+- the app compares the current pose against the previous setup pose
+- if there are deltas in position, rotation, or scale, existing keyframes are shifted so the animation remains aligned with the updated setup pose
+- the new setup pose is then saved
+
+This allows you to refine the setup rig without immediately breaking existing animation.
+
+## 10. Timeline and Animation
+
+### Selecting Frames
+
+You can select a frame by:
+
+- clicking the timeline
+- dragging across the timeline to scrub
+- using `Arrow Left` and `Arrow Right`
+
+When the current mode is `ANIMATE`, changing the frame applies keyframes to the skeleton.
+
+### Playback
+
+Timeline controls:
+
+- `Play/Pause`
+- `Stop`
+- `Prev Key`
+- `Next Key`
+
+Playback behavior:
+
+- playback uses the currently configured `fps`
+- the timeline automatically loops back to frame `0` after the last global keyframe is reached
+
+### Editing FPS and Duration
+
+Timeline fields:
+
+- `FPS` can be set from `1` to `120`
+- `Duration` can be set from `10` to `300`
+
+### Keyframe Actions
+
+Available actions:
+
+- `K` or the `Key` button inserts a keyframe on the current frame
+- `Clear` removes all keyframes from the selected bone
+- `Loop` mirrors existing keyframes to help create a looping animation
+- `1st Key` copies the first keyframe of the selected bone to the current frame
+- double click a keyframe to delete it
+- hover a keyframe and press `X` or `Delete` to delete it
+- right click a keyframe to delete it
+
+Animated properties:
 
 - `x`
 - `y`
@@ -159,76 +498,140 @@ Keyframes are interpolated linearly for:
 - `scaleX`
 - `scaleY`
 
-### 6. Add a Reference Background
+Interpolation:
 
-- Click `Background` in the toolbar to upload a reference image
-- Click `Remove BG` to remove the background
+- linear interpolation
 
-The background is used as a visual reference inside the editor and can also appear in video exports.
+## 11. Save, Load, and Project Files
 
-## Keyboard Shortcuts
+### Saving a Project
 
-- `Q`: Pose tool
-- `B`: Bone tool
-- `M`: Move tool
-- `R`: Rotate tool
-- `S`: Scale tool
-- `K`: Insert keyframe
-- `Space`: Play/Pause animation
-- `Delete` / `Backspace`: Delete selected bone
-- `Esc`: Clear bone selection
-- `Arrow Left` / `Arrow Right`: Move frame backward or forward
-- `Ctrl/Cmd + Z`: Undo
-- `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y`: Redo
-- Right mouse drag on canvas: Pan camera
-- Mouse wheel: Zoom camera
-- Double click a keyframe in the timeline: Delete keyframe
-- `X` or `Delete` while hovering a keyframe: Delete keyframe
-
-## Save, Load, and Export
-
-### Save Project
-
-The `Save` button downloads a `spine-project.json` file containing:
+Saving writes a project JSON file containing:
 
 - bones
 - skins
+- active skin
+- setup pose
 - slots
 - attachments
 - keyframes
 - duration
 - fps
+- background image
 
-### Load Project
+Default suggested filename:
 
-The `Load` button accepts a `.json` project file previously saved from this application.
+- `spinebones-project.json`
+
+### Loading a Project
+
+Loading reads a JSON project file previously saved from this application.
+
+When a project is loaded:
+
+- editor state is replaced by the file contents
+- the current frame resets to `0`
+- playback is stopped
+- selection is cleared
+- the setup pose is validated
+- bones are restored to the setup pose so the initial display is correct
+
+### Desktop File Menu
+
+In the desktop app, the File menu includes:
+
+- `File > New Project`
+- `File > Save`
+- `File > Save As…`
+- `File > Open…`
+- `File > Export Spine`
+- `File > Export Video`
+
+## 12. Export
 
 ### Export Spine
 
-The `Export Spine` button generates a `spine-export.zip` file containing:
+Export Spine creates a ZIP file containing:
 
 - `skeleton.json`
 - `atlas.atlas`
 - one PNG file for each attachment
 
-This export is intended as a lightweight Spine-like output for workflows such as PixiJS Spine integration.
+This is intended as a lightweight Spine-like export for simple downstream workflows.
 
 ### Export Video
 
-The `Export Video` button generates a `spine-animation.webm` file.
+Video export produces:
 
-Notes:
+- `*.webm`
 
-- Video export uses `MediaRecorder`
-- Final output quality depends on browser support
-- If a browser does not support a preferred codec, the exporter will try available fallback formats
+Video export behavior:
 
-## Usage Notes
+- renders the animation frame by frame
+- uses `MediaRecorder`
+- can include the current background image if one is active
 
-- App data is currently stored in local in-memory state during the session
+## Full Shortcut Reference
+
+### Tools and Modes
+
+- `Q`: Pose
+- `B`: Bone
+- `M`: Move
+- `R`: Rotate
+- `S`: Scale
+- `Cmd/Ctrl+N`: New project
+- `W`: switch to `SETUP`
+- `E`: switch to `ANIMATE`
+
+### Editing
+
+- `K`: insert keyframe
+- `Delete` / `Backspace`: delete the selected bone
+- `Esc`: clear selection
+
+### Timeline
+
+- `Space`: play/pause
+- `Arrow Left`: previous frame
+- `Arrow Right`: next frame
+- double click keyframe: delete keyframe
+- `X` or `Delete` while hovering a keyframe: delete keyframe
+
+### Undo / Redo / File
+
+- `Cmd/Ctrl + Z`: undo
+- `Cmd/Ctrl + Shift + Z`: redo
+- `Cmd/Ctrl + Y`: redo
+- `Cmd/Ctrl + S`: save
+- `Cmd/Ctrl + Shift + S`: save as
+- `Cmd/Ctrl + O`: open
+
+### Canvas Navigation
+
+- right mouse button drag: pan
+- mouse wheel: zoom
+
+### Desktop View Menu
+
+- `Cmd/Ctrl + B`: toggle bone indicators
+
+## Usage Tips
+
+- Start in `SETUP` mode to build the rig structure
+- Once the base pose is correct, switch to `ANIMATE`
+- Use the `Properties` panel when you need precise numeric values
+- Choose the active skin before creating new bones if you want different bone colors
+- Use the background image as a tracing or pose reference
+- If an animation feels difficult to control, insert more keyframes on important poses
+
+## Important Notes
+
+- App state is stored in memory during the session
 - Projects must be saved manually if you want to reuse them later
-- The app automatically loads a demo skeleton when the state is empty
-- Deleting a parent bone also removes its child bones
+- A demo skeleton is loaded automatically when the state is empty
+- Deleting a parent bone also removes dependent child bones
+- Hiding bone indicators does not disable bone editing
 
 ## Available Scripts
 
@@ -236,19 +639,10 @@ Notes:
 {
   "dev": "vite",
   "build": "tsc -b && vite build",
+  "tauri:dev": "tauri dev",
+  "tauri:build": "tauri build",
   "lint": "eslint .",
-  "preview": "vite preview"
+  "preview": "bun run build && wrangler dev",
+  "deploy": "bun run build && wrangler deploy"
 }
 ```
-
-## Possible Future Improvements
-
-Some areas that can be extended further:
-
-- batch asset import
-- draw order management in the UI
-- timeline easing support
-- more complete Spine import/export support
-- project autosave
-- multi-animation management
-

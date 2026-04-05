@@ -1,6 +1,11 @@
 export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale';
 export type Mode = 'setup' | 'animate';
 
+export type SetupPose = Record<
+  number,
+  { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
+>;
+
 export interface Slot {
   id: number;
   name: string;
@@ -47,12 +52,25 @@ export interface Skin {
   color: string;
 }
 
+export interface BoneGroup {
+  id: number;
+  name: string;
+  boneIds: number[];
+}
+
+export type KeyframeEasing =
+  | 'linear'
+  | 'easeIn'
+  | 'easeOut'
+  | 'easeInOut';
+
 export interface KeyframeData {
   x: number;
   y: number;
   rotation: number;
   scaleX: number;
   scaleY: number;
+  easing?: KeyframeEasing;
 }
 
 export type Keyframes = Record<number, Record<number, KeyframeData>>;
@@ -66,4 +84,24 @@ export interface CameraState {
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface ProjectData {
+  version: string;
+  bones: Bone[];
+  boneGroups?: BoneGroup[];
+  skins: Skin[];
+  activeSkinId?: number;
+  ikChainRootIds?: number[];
+  setupPose?: SetupPose;
+  slots: Slot[];
+  attachments: Attachment[];
+  keyframes: Keyframes;
+  duration: number;
+  fps: number;
+  backgroundImage?: string | null;
+  audioData?: string | null;
+  audioName?: string | null;
+  audioVolume?: number;
+  audioOffsetFrames?: number;
 }

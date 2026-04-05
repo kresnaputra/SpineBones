@@ -3,14 +3,19 @@ import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { AttachmentPropertiesPanel } from './AttachmentPropertiesPanel';
+import { computeAllWorldTransforms } from '../../engine/transforms';
+import { getIkChain, getIkRootForBone } from '../../utils/ik';
 
 export const PropertiesPanel = () => {
   const { selectedBoneId, mode } = useEditorStore();
-  const { bones, updateBone } = useSkeletonStore();
-  const { insertKeyframe } = useAnimationStore();
+  const { bones, updateBone, ikChainRootIds, toggleIkChain, updateSetupPoseBone } = useSkeletonStore();
+  const { insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { captureSnapshot } = useHistoryStore();
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
+  const ikRootBone = selectedBone ? getIkRootForBone(selectedBone.id, bones) : null;
+  const ikChain = ikRootBone ? getIkChain(ikRootBone.id, bones) : null;
+  const ikEnabled = ikRootBone ? ikChainRootIds.includes(ikRootBone.id) : false;
 
   const handleChange = (key: string, value: string | number | null) => {
     if (!selectedBone) return;
@@ -31,10 +36,10 @@ export const PropertiesPanel = () => {
   if (!selectedBone) {
     return (
       <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
           ⚙️ Properties
         </div>
-        <div className="p-4 text-[10px] text-text-dim">
+        <div className="p-4 text-[10px] text-text-dim panel-padding-left">
           Select a bone to edit its properties
         </div>
       </div>
@@ -43,12 +48,12 @@ export const PropertiesPanel = () => {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto scrollbar-thin">
-      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
+      <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
         ⚙️ Properties
       </div>
       
       <AttachmentPropertiesPanel />
-      <div className="overflow-y-auto scrollbar-thin">
+      <div className="overflow-y-auto scrollbar-thin panel-padding-left">
         <PropRow label="Name">
           <input
             type="text"
@@ -117,11 +122,52 @@ export const PropertiesPanel = () => {
         <PropRow label="Parent">
           <select
             value={selectedBone.parentId ?? ''}
+            disabled={mode !== 'setup'}
             onChange={(e) => {
+              if (!selectedBone || mode !== 'setup') return;
               const newParentId = e.target.value === '' ? null : parseInt(e.target.value);
-              handleChange('parentId', newParentId);
+              
+              captureSnapshot();
+              computeAllWorldTransforms(bones);
+              remapBoneKeyframesForParentChange(selectedBone.id, newParentId);
+
+              const worldX = selectedBone._wx;
+              const worldY = selectedBone._wy;
+              const worldRot = selectedBone._wrot;
+
+              let newX = worldX;
+              let newY = worldY;
+              let newRot = worldRot;
+
+              if (newParentId !== null) {
+                const newParent = bones.find((b) => b.id === newParentId);
+                if (newParent) {
+                  const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+                  const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+                  const dx = worldX - newParent._wx;
+                  const dy = worldY - newParent._wy;
+                  newX = (dx * cos - dy * sin) / newParent.scaleX;
+                  newY = (dx * sin + dy * cos) / newParent.scaleY;
+                  newRot = worldRot - newParent._wrot;
+                }
+              }
+
+              updateBone(selectedBone.id, {
+                parentId: newParentId,
+                x: newX,
+                y: newY,
+                rotation: newRot,
+              });
+              updateSetupPoseBone(selectedBone.id, {
+                x: newX,
+                y: newY,
+                rotation: newRot,
+                scaleX: selectedBone.scaleX,
+                scaleY: selectedBone.scaleY,
+              });
             }}
-            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={mode === 'setup' ? 'Change parent relationship' : 'Parent changes are only available in Setup mode'}
           >
             <option value="">None</option>
             {bones
@@ -133,6 +179,31 @@ export const PropertiesPanel = () => {
               ))}
           </select>
         </PropRow>
+        {mode !== 'setup' ? (
+          <div className="px-3 py-2 text-[10px] text-text-dim border-b border-border/50">
+            Parent relationships can only be changed in Setup mode.
+          </div>
+        ) : null}
+
+        {ikRootBone && ikChain ? (
+          <PropRow label="2-Bone IK">
+            <label className="flex items-center gap-2 text-[11px] text-text min-w-0">
+              <input
+                type="checkbox"
+                checked={ikEnabled}
+                onChange={() => {
+                  captureSnapshot();
+                  toggleIkChain(ikRootBone.id);
+                }}
+              />
+              <span className="truncate">
+                {ikChain.end
+                  ? `Target on ${ikChain.root.name} -> ${ikChain.child.name} -> ${ikChain.end.name}`
+                  : `Target on ${ikChain.root.name} -> ${ikChain.child.name}`}
+              </span>
+            </label>
+          </PropRow>
+        ) : null}
       </div>
     </div>
   );

@@ -3,12 +3,27 @@ import { useEditorStore } from '../stores/editorStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
+import { useSlotStore } from '../stores/slotStore';
+import { getIkRootForBone } from '../utils/ik';
+import { createNewProject, loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
-  const { tool, setTool, mode, selectedBoneId, selectBone } = useEditorStore();
-  const { bones, deleteBone } = useSkeletonStore();
-  const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes } = useAnimationStore();
+  const {
+    tool,
+    setTool,
+    mode,
+    setMode,
+    selectedBoneId,
+    selectedBoneIds,
+    selectBone,
+    attachmentDragEnabled,
+    setAttachmentDragEnabled,
+    toggleOnionSkin,
+  } = useEditorStore();
+  const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
+  const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
+  const { slots } = useSlotStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -33,6 +48,24 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (isModifierPressed && key === 's') {
+        e.preventDefault();
+        void saveProject(e.shiftKey);
+        return;
+      }
+
+      if (isModifierPressed && key === 'o') {
+        e.preventDefault();
+        void loadProject();
+        return;
+      }
+
+      if (isModifierPressed && key === 'n') {
+        e.preventDefault();
+        createNewProject();
+        return;
+      }
+
       const toolMap: Record<string, typeof tool> = {
         q: 'pose',
         b: 'bone',
@@ -46,25 +79,90 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (key === 'w') {
+        restoreSetupPose();
+        setMode('setup');
+        return;
+      }
+
+      if (key === 'e') {
+        const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
+        const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
+        let hasDeltas = false;
+
+        if (Object.keys(oldSetupPose).length > 0) {
+          currentBones.forEach((bone) => {
+            const old = oldSetupPose[bone.id];
+            if (!old) return;
+
+            const dx = bone.x - old.x;
+            const dy = bone.y - old.y;
+            const dRot = bone.rotation - old.rotation;
+            const dScaleX = bone.scaleX - old.scaleX;
+            const dScaleY = bone.scaleY - old.scaleY;
+
+            if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0) {
+              deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY };
+              hasDeltas = true;
+            }
+          });
+        }
+
+        if (hasDeltas) {
+          shiftKeyframes(deltas);
+        }
+
+        saveSetupPose();
+        setMode('animate');
+        return;
+      }
+
       if (key === 'k') {
-        if (selectedBoneId === null) return;
-        const bone = bones.find((b) => b.id === selectedBoneId);
-        if (!bone) return;
+        if (selectedBoneIds.length === 0) return;
         captureSnapshot();
-        insertKeyframe(bone.id, {
-          x: bone.x,
-          y: bone.y,
-          rotation: bone.rotation,
-          scaleX: bone.scaleX,
-          scaleY: bone.scaleY,
+        selectedBoneIds.forEach((boneId) => {
+          const bone = bones.find((b) => b.id === boneId);
+          if (!bone) return;
+
+          insertKeyframe(bone.id, {
+            x: bone.x,
+            y: bone.y,
+            rotation: bone.rotation,
+            scaleX: bone.scaleX,
+            scaleY: bone.scaleY,
+          });
         });
         return;
       }
 
+      if (key === 'd') {
+        if (selectedBoneId === null) return;
+        const hasActiveAttachment = slots.some(
+          (slot) => slot.boneId === selectedBoneId && slot.attachmentName !== null
+        );
+        if (!hasActiveAttachment) return;
+        setAttachmentDragEnabled(!attachmentDragEnabled);
+        return;
+      }
+
+      if (key === 'o' && mode === 'animate') {
+        toggleOnionSkin();
+        return;
+      }
+
+      if (!isModifierPressed && key === 'c') {
+        if (selectedBoneId === null) return;
+        const ikRoot = getIkRootForBone(selectedBoneId, bones);
+        if (!ikRoot) return;
+        captureSnapshot();
+        toggleIkChain(ikRoot.id);
+        return;
+      }
+
       if (key === 'delete' || key === 'backspace') {
-        if (selectedBoneId !== null) {
+        if (selectedBoneIds.length > 0) {
           captureSnapshot();
-          deleteBone(selectedBoneId);
+          selectedBoneIds.forEach((boneId) => deleteBone(boneId));
           selectBone(null);
         }
         return;
@@ -106,11 +204,21 @@ export const useKeyboardShortcuts = () => {
     tool,
     setTool,
     mode,
+    setMode,
     selectedBoneId,
+    selectedBoneIds,
     selectBone,
+    attachmentDragEnabled,
+    setAttachmentDragEnabled,
+    toggleOnionSkin,
     bones,
+    slots,
     deleteBone,
+    saveSetupPose,
+    restoreSetupPose,
+    toggleIkChain,
     insertKeyframe,
+    shiftKeyframes,
     captureSnapshot,
     playing,
     play,

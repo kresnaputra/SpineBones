@@ -1,13 +1,16 @@
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Diamond, X, Plus, Undo2, Redo2, Save, Upload, Download, Video, Image, XCircle } from 'lucide-react';
+import { useEffect, useEffectEvent } from 'react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
-import { exportSpineJSON, createTextureAtlas } from '../../utils/spineExporter';
+import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
+import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
-import JSZip from 'jszip';
+import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
+import { exportPngSequence } from '../../utils/pngSequenceExporter';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -34,141 +37,102 @@ const TOOL_SHORTCUTS = {
   scale: 'S',
 };
 
+const IMAGE_FILTERS = [
+  {
+    name: 'Images',
+    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
+  },
+];
+
 export const Toolbar = () => {
-  const { tool, mode, setTool, setMode, selectedBoneId, setBackgroundImage } = useEditorStore();
-  const { addSkin, saveSetupPose, restoreSetupPose } = useSkeletonStore();
-  const { insertKeyframe, clearKeyframes } = useAnimationStore();
+  const {
+    tool,
+    mode,
+    setTool,
+    setMode,
+    selectedBoneIds,
+    onionSkinEnabled,
+    toggleOnionSkin,
+    setBackgroundImage,
+  } = useEditorStore();
+  const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
+  const { insertKeyframe } = useAnimationStore();
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
+  const showToolbarFileActions = !isDesktopApp();
 
-  const handleInsertKeyframe = () => {
-    if (selectedBoneId === null) return;
-    const bone = bones.find((b) => b.id === selectedBoneId);
-    if (!bone) return;
+  const getExportFrameSize = () => {
+    if (isDesktopApp()) {
+      return {
+        width: 1024,
+        height: 1024,
+      };
+    }
+
+    const response = window.prompt(
+      'Frame resolution for export (square, in pixels).\nExamples: 512, 1024, 1536',
+      '1024',
+    );
+
+    if (response === null) return null;
+
+    const parsed = Number.parseInt(response.trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 64) {
+      alert('Please enter a valid resolution of at least 64 pixels.');
+      return null;
+    }
+
+    const clamped = Math.min(4096, parsed);
+    return {
+      width: clamped,
+      height: clamped,
+    };
+  };
+
+  const handleMirror = (axis: 'horizontal' | 'vertical') => {
+    if (selectedBoneIds.length === 0) return;
+
     captureSnapshot();
-    insertKeyframe(bone.id, {
-      x: bone.x,
-      y: bone.y,
-      rotation: bone.rotation,
-      scaleX: bone.scaleX,
-      scaleY: bone.scaleY,
+    selectedBoneIds.forEach((boneId) => {
+      const bone = bones.find((item) => item.id === boneId);
+      if (!bone) return;
+
+      const nextScaleX = axis === 'horizontal' ? bone.scaleX * -1 : bone.scaleX;
+      const nextScaleY = axis === 'vertical' ? bone.scaleY * -1 : bone.scaleY;
+
+      updateBone(boneId, {
+        scaleX: nextScaleX,
+        scaleY: nextScaleY,
+      });
+
+      if (mode === 'animate') {
+        insertKeyframe(boneId, {
+          x: bone.x,
+          y: bone.y,
+          rotation: bone.rotation,
+          scaleX: nextScaleX,
+          scaleY: nextScaleY,
+        });
+      }
     });
   };
 
-  const handleClearKeyframes = () => {
-    if (selectedBoneId === null) return;
-    captureSnapshot();
-    clearKeyframes(selectedBoneId);
-  };
-
-  const handleAddSkin = () => {
-    const colors = ['#7c3aed', '#06b6d4', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#f97316'];
-    const skinCount = useSkeletonStore.getState().skins.length;
-    const color = colors[skinCount % colors.length];
-    const name = prompt('Skin name:', `skin_${skinCount}`);
-    if (name) {
-      captureSnapshot();
-      addSkin(name, color);
+  const handleSave = async () => {
+    try {
+      await saveProject();
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      alert('Failed to save project. Check console for details.');
     }
   };
 
-  const handleSave = () => {
-    const skeletonState = useSkeletonStore.getState();
-    const animationState = useAnimationStore.getState();
-    const slotState = useSlotStore.getState();
-    
-    const projectData = {
-      version: '1.0',
-      bones: skeletonState.bones,
-      skins: skeletonState.skins,
-      slots: slotState.slots,
-      attachments: slotState.attachments,
-      keyframes: animationState.keyframes,
-      duration: animationState.duration,
-      fps: animationState.fps,
-    };
-
-    const json = JSON.stringify(projectData, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'spine-project.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleLoad = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const text = await file.text();
-      const projectData = JSON.parse(text);
-
-      useSkeletonStore.setState({
-        bones: projectData.bones || [],
-        skins: projectData.skins || [],
-        boneIdCounter: Math.max(...(projectData.bones || []).map((b: any) => b.id), 0) + 1,
-        skinIdCounter: Math.max(...(projectData.skins || []).map((s: any) => s.id), 0) + 1,
-      });
-
-      useSlotStore.setState({
-        slots: projectData.slots || [],
-        attachments: projectData.attachments || [],
-        nextSlotId: Math.max(...(projectData.slots || []).map((s: any) => s.id), 0) + 1,
-      });
-
-      useAnimationStore.setState({
-        keyframes: projectData.keyframes || {},
-        duration: projectData.duration || 60,
-        fps: projectData.fps || 24,
-        frame: 0,
-        playing: false,
-      });
-
-      // Save the loaded bone positions as the initial setup pose
-      useSkeletonStore.getState().saveSetupPose();
-    };
-    
-    input.click();
-  };
-
-  const handleExportSpine = async () => {
-    const skeletonState = useSkeletonStore.getState();
-    const animationState = useAnimationStore.getState();
-    const slotState = useSlotStore.getState();
-
-    const skeletonJSON = exportSpineJSON(
-      skeletonState.bones,
-      slotState.slots,
-      slotState.attachments,
-      animationState.keyframes,
-      animationState.fps
-    );
-
-    const { atlas, images } = createTextureAtlas(slotState.attachments);
-
-    const zip = new JSZip();
-    zip.file('skeleton.json', skeletonJSON);
-    zip.file('atlas.atlas', atlas);
-
-    images.forEach((imageData, name) => {
-      const base64Data = imageData.split(',')[1];
-      zip.file(`${name}.png`, base64Data, { base64: true });
-    });
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'spine-export.zip';
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleLoad = async () => {
+    try {
+      await loadProject();
+    } catch (error) {
+      console.error('Failed to load project:', error);
+      alert('Failed to load project. Check console for details.');
+    }
   };
 
   const handleExportVideo = async () => {
@@ -182,7 +146,7 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
-      await exportVideo(
+      const blob = await exportVideo(
         bonesCopy,
         slotState.slots,
         slotState.attachments,
@@ -194,6 +158,13 @@ export const Toolbar = () => {
         cameraState.zoom,
         editorState.backgroundImage
       );
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-animation.webm`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'WebM Video',
+          extensions: ['webm'],
+        },
+      ]);
       console.log('Video export completed!');
     } catch (error) {
       console.error('Video export failed:', error);
@@ -201,30 +172,119 @@ export const Toolbar = () => {
     }
   };
 
-  const handleBackgroundUpload = () => {
-    console.log('Background upload clicked');
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
-        console.log('No file selected');
-        return;
-      }
+  const handleExportSpriteSheet = async () => {
+    try {
+      const skeletonState = useSkeletonStore.getState();
+      const animationState = useAnimationStore.getState();
+      const slotState = useSlotStore.getState();
+      const cameraState = useCameraStore.getState();
+      const frameSize = getExportFrameSize();
+      if (!frameSize) return;
 
-      console.log('File selected:', file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target?.result as string;
-        console.log('Background image loaded, setting...');
-        setBackgroundImage(imageData);
-      };
-      reader.readAsDataURL(file);
+      const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
+
+      const blob = await exportSpriteSheet({
+        bones: bonesCopy,
+        slots: slotState.slots,
+        attachments: slotState.attachments,
+        keyframes: animationState.keyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+        camX: cameraState.x,
+        camY: cameraState.y,
+        camZoom: cameraState.zoom,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
+      });
+
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'ZIP Archive',
+          extensions: ['zip'],
+        },
+      ]);
+    } catch (error) {
+      console.error('Sprite sheet export failed:', error);
+      alert('Sprite sheet export failed. Check console for details.');
+    }
+  };
+
+  const handleExportPngSequence = async () => {
+    try {
+      const skeletonState = useSkeletonStore.getState();
+      const animationState = useAnimationStore.getState();
+      const slotState = useSlotStore.getState();
+      const cameraState = useCameraStore.getState();
+      const editorState = useEditorStore.getState();
+      const frameSize = getExportFrameSize();
+      if (!frameSize) return;
+
+      const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
+
+      const blob = await exportPngSequence({
+        bones: bonesCopy,
+        slots: slotState.slots,
+        attachments: slotState.attachments,
+        keyframes: animationState.keyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+        camX: cameraState.x,
+        camY: cameraState.y,
+        camZoom: cameraState.zoom,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
+        backgroundImage: editorState.backgroundImage,
+        includeBackground: false,
+      });
+
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'ZIP Archive',
+          extensions: ['zip'],
+        },
+      ]);
+    } catch (error) {
+      console.error('PNG sequence export failed:', error);
+      alert('PNG sequence export failed. Check console for details.');
+    }
+  };
+
+  const handleExportVideoMenuEvent = useEffectEvent(() => {
+    void handleExportVideo();
+  });
+
+  const handleExportSpriteSheetMenuEvent = useEffectEvent(() => {
+    void handleExportSpriteSheet();
+  });
+
+  const handleExportPngSequenceMenuEvent = useEffectEvent(() => {
+    void handleExportPngSequence();
+  });
+
+  useEffect(() => {
+    window.addEventListener('spine:file-export-video', handleExportVideoMenuEvent);
+    window.addEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
+    window.addEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
+
+    return () => {
+      window.removeEventListener('spine:file-export-video', handleExportVideoMenuEvent);
+      window.removeEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
+      window.removeEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
     };
-    
-    input.click();
+  }, []);
+
+  const handleBackgroundUpload = async () => {
+    try {
+      const image = await openImageFile({ filters: IMAGE_FILTERS });
+      if (!image) return;
+      console.log('Background image loaded:', getFileNameFromPath(image.path ?? image.name));
+      setBackgroundImage(image.dataUrl);
+    } catch (error) {
+      console.error('Failed to load background image:', error);
+      alert('Failed to load background image. Check console for details.');
+    }
   };
 
   const handleRemoveBackground = () => {
@@ -234,13 +294,7 @@ export const Toolbar = () => {
   };
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0">
-      <div className="font-sans font-extrabold text-base text-accent tracking-tight mr-4">
-        Spine<span className="text-accent2">Web</span>
-      </div>
-
-      <div className="w-px h-6 bg-border mx-1" />
-
+    <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
       {(Object.keys(TOOL_ICONS) as Tool[]).map((t) => {
         const Icon = TOOL_ICONS[t];
         return (
@@ -259,6 +313,26 @@ export const Toolbar = () => {
           </button>
         );
       })}
+
+      <button
+        onClick={() => handleMirror('horizontal')}
+        disabled={selectedBoneIds.length === 0}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent"
+        title="Mirror selected bones horizontally"
+      >
+        <ArrowLeftRight size={14} />
+        Mirror H
+      </button>
+
+      <button
+        onClick={() => handleMirror('vertical')}
+        disabled={selectedBoneIds.length === 0}
+        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent"
+        title="Mirror selected bones vertically"
+      >
+        <ArrowUpDown size={14} />
+        Mirror V
+      </button>
 
       <div className="w-px h-6 bg-border mx-1" />
 
@@ -282,100 +356,58 @@ export const Toolbar = () => {
         Redo
       </button>
 
-      <div className="w-px h-6 bg-border mx-1" />
+      {showToolbarFileActions ? (
+        <>
+          <div className="w-px h-6 bg-border mx-1" />
 
-      <button
-        onClick={handleInsertKeyframe}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Insert Keyframe (K)"
-      >
-        <Diamond size={14} fill="currentColor" />
-        Key
-      </button>
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Save Project"
+          >
+            <Save size={14} />
+            Save
+          </button>
 
-      <button
-        onClick={handleClearKeyframes}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Clear Keyframes"
-      >
-        <X size={14} />
-        Clear
-      </button>
+          <button
+            onClick={handleLoad}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Load Project"
+          >
+            <Upload size={14} />
+            Load
+          </button>
 
-      <button
-        onClick={() => {
-          if (selectedBoneId === null) return;
-          const animState = useAnimationStore.getState();
-          const boneKeyframes = animState.keyframes[selectedBoneId];
-          if (boneKeyframes) {
-            const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
-            if (frames.length > 0) {
-              const firstFrame = frames[0];
-              const firstKey = boneKeyframes[firstFrame];
-              if (firstKey) {
-                captureSnapshot();
-                insertKeyframe(selectedBoneId, firstKey);
-              }
-            }
-          }
-        }}
-        disabled={selectedBoneId === null}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px] disabled:opacity-40"
-        title="Copy first keyframe to current frame for smooth looping"
-      >
-        <Diamond size={14} />
-        Loop
-      </button>
+          <button
+            onClick={handleExportVideo}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as video (WebM)"
+          >
+            <Video size={14} />
+            Export Video
+          </button>
 
-      <div className="w-px h-6 bg-border mx-1" />
+          <button
+            onClick={handleExportSpriteSheet}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as sprite sheet PNG + JSON"
+          >
+            <Grid2x2 size={14} />
+            Sprite Sheet
+          </button>
 
-      <button
-        onClick={handleAddSkin}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-      >
-        <Plus size={14} />
-        Add Skin
-      </button>
+          <button
+            onClick={handleExportPngSequence}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as PNG sequence ZIP"
+          >
+            <Images size={14} />
+            PNG Sequence
+          </button>
 
-      <div className="w-px h-6 bg-border mx-1" />
-
-      <button
-        onClick={handleSave}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Save Project"
-      >
-        <Save size={14} />
-        Save
-      </button>
-
-      <button
-        onClick={handleLoad}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Load Project"
-      >
-        <Upload size={14} />
-        Load
-      </button>
-
-      <button
-        onClick={handleExportSpine}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Export for PixiJS (@pixi/spine)"
-      >
-        <Download size={14} />
-        Export Spine
-      </button>
-
-      <button
-        onClick={handleExportVideo}
-        className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-        title="Export animation as video (WebM)"
-      >
-        <Video size={14} />
-        Export Video
-      </button>
-
-      <div className="w-px h-6 bg-border mx-1" />
+          <div className="w-px h-6 bg-border mx-1" />
+        </>
+      ) : null}
 
       <button
         onClick={handleBackgroundUpload}
@@ -395,14 +427,30 @@ export const Toolbar = () => {
         Remove BG
       </button>
 
-      <div className="flex bg-panel2 border border-border rounded-md overflow-hidden ml-auto">
+      <button
+        onClick={toggleOnionSkin}
+        disabled={mode !== 'animate'}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent ${
+          onionSkinEnabled
+            ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle onion skin preview (O)"
+      >
+        <Eye size={14} />
+        Onion
+      </button>
+
+      <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
         <button
           onClick={() => {
             restoreSetupPose();
             setMode('setup');
           }}
-          className={`px-4 py-1.5 text-[11px] transition-all ${
-            mode === 'setup' ? 'bg-accent text-white' : 'text-text-dim'
+          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+            mode === 'setup'
+              ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
+              : 'text-text-dim hover:bg-panel hover:text-text'
           }`}
         >
           SETUP
@@ -440,8 +488,10 @@ export const Toolbar = () => {
             saveSetupPose();
             setMode('animate');
           }}
-          className={`px-4 py-1.5 text-[11px] transition-all ${
-            mode === 'animate' ? 'bg-accent text-white' : 'text-text-dim'
+          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+            mode === 'animate'
+              ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
+              : 'text-text-dim hover:bg-panel hover:text-text'
           }`}
         >
           ANIMATE
