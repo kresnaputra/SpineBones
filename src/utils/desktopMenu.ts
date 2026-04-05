@@ -6,6 +6,7 @@ type DesktopMenuHandlers = {
   onSave: () => void | Promise<void>;
   onSaveAs: () => void | Promise<void>;
   onOpen: () => void | Promise<void>;
+  onOpenProjectBrowser: () => void | Promise<void>;
   onExportVideo: () => void | Promise<void>;
   onExportSpriteSheet: () => void | Promise<void>;
   onExportPngSequence: () => void | Promise<void>;
@@ -37,21 +38,27 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
         await buildPredefined('Separator'),
         {
           id: 'file-save',
-          text: 'Save',
+          text: 'Save Project Package',
           accelerator: 'CmdOrCtrl+S',
           action: () => void handlers.onSave(),
         },
         {
           id: 'file-save-as',
-          text: 'Save As…',
+          text: 'Export Project Package As…',
           accelerator: 'CmdOrCtrl+Shift+S',
           action: () => void handlers.onSaveAs(),
         },
         {
           id: 'file-open',
-          text: 'Open…',
+          text: 'Import/Open Project…',
           accelerator: 'CmdOrCtrl+O',
           action: () => void handlers.onOpen(),
+        },
+        {
+          id: 'file-open-project-browser',
+          text: 'Project Browser',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          action: () => void handlers.onOpenProjectBrowser(),
         },
         await buildPredefined('Separator'),
         {

@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpineBones .sbn Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090913;
+        --panel: rgba(19, 19, 30, 0.92);
+        --panel-2: #1a1a2a;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #f0f0f7;
+        --muted: #9494b2;
+        --accent: #7c3aed;
+        --accent-2: #06b6d4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top, rgba(124, 58, 237, 0.2), transparent 32%),
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          var(--bg);
+        background-size: 100% 100%, 28px 28px, 28px 28px, auto;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        padding: 20px;
+        border-right: 1px solid var(--border);
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+      }
+
+      .viewer {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .stage {
+        width: min(76vw, 960px);
+        aspect-ratio: 1 / 1;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          #0d0d18;
+        background-size: 26px 26px, 26px 26px, auto;
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .card {
+        padding: 14px;
+        border-radius: 16px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        margin-bottom: 14px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 10px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input[type="number"],
+      input[type="range"],
+      input[type="file"],
+      button {
+        width: 100%;
+      }
+
+      input[type="number"] {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #11111d;
+        color: var(--text);
+        font: inherit;
+      }
+
+      input[type="file"] {
+        color: var(--muted);
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 11px 12px;
+        font: inherit;
+        cursor: pointer;
+        color: white;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+
+      button.secondary {
+        background: #11111d;
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+
+      .stats {
+        display: grid;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .stats div {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .hint,
+      .status {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .status {
+        min-height: 34px;
+      }
+
+      @media (max-width: 960px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .viewer {
+          order: -1;
+          padding-top: 8px;
+        }
+
+        .stage {
+          width: min(94vw, 640px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h1>.sbn Preview</h1>
+        <p>Prototype viewer untuk membuka package <code>.sbn</code>, membaca <code>project.json</code>, lalu memutar animasinya langsung di canvas.</p>
+
+        <div class="card controls">
+          <div>
+            <label for="bundleInput">Pilih file .sbn</label>
+            <input id="bundleInput" type="file" accept=".sbn,application/zip" />
+          </div>
+          <div class="hint">Viewer ini membaca asset langsung dari archive, jadi tidak perlu extract manual.</div>
+          <div class="status" id="status">Belum ada file yang dimuat.</div>
+        </div>
+
+        <div class="card controls">
+          <div class="row">
+            <button id="toggleBtn" disabled>Play</button>
+            <button id="resetBtn" class="secondary" disabled>Reset</button>
+          </div>
+
+          <div>
+            <label for="fpsInput">Playback FPS</label>
+            <input id="fpsInput" type="number" min="1" max="120" step="1" value="24" />
+          </div>
+
+          <div>
+            <label for="scaleInput">Preview Scale</label>
+            <input id="scaleInput" type="range" min="0.4" max="4" step="0.05" value="1" />
+          </div>
+
+          <div>
+            <label for="frameInput">Frame</label>
+            <input id="frameInput" type="range" min="0" max="0" step="1" value="0" />
+          </div>
+        </div>
+
+        <div class="card stats" id="stats"></div>
+      </aside>
+
+      <main class="viewer">
+        <div class="stage">
+          <canvas id="canvas"></canvas>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const ensureJsZip = async () => {
+        if (window.JSZip) return window.JSZip;
+
+        const sources = [
+          "../node_modules/jszip/dist/jszip.min.js",
+          "/node_modules/jszip/dist/jszip.min.js",
+          "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+        ];
+
+        for (const source of sources) {
+          try {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = source;
+              script.async = true;
+              script.onload = () => resolve();
+              script.onerror = () => {
+                script.remove();
+                reject(new Error(`Failed to load ${source}`));
+              };
+              document.head.appendChild(script);
+            });
+
+            if (window.JSZip) {
+              return window.JSZip;
+            }
+          } catch (error) {
+            console.warn(error);
+          }
+        }
+
+        throw new Error(
+          "JSZip could not be loaded. Serve this file from the repo root or use an internet connection for CDN fallback.",
+        );
+      };
+
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const stage = document.querySelector(".stage");
+      const bundleInput = document.getElementById("bundleInput");
+      const toggleBtn = document.getElementById("toggleBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const fpsInput = document.getElementById("fpsInput");
+      const scaleInput = document.getElementById("scaleInput");
+      const frameInput = document.getElementById("frameInput");
+      const stats = document.getElementById("stats");
+      const status = document.getElementById("status");
+
+      const imageCache = new Map();
+      const state = {
+        project: null,
+        bones: [],
+        playing: false,
+        frame: 0,
+        fps: 24,
+        scale: 1,
+        lastTick: 0,
+        camera: {
+          centerX: 0,
+          centerY: 0,
+          zoom: 1,
+          minX: -100,
+          maxX: 100,
+          minY: -100,
+          maxY: 100,
+        },
+      };
+
+      const normalizeKeyframeData = (data) => ({
+        x: data?.x ?? 0,
+        y: data?.y ?? 0,
+        rotation: data?.rotation ?? 0,
+        scaleX: data?.scaleX ?? 1,
+        scaleY: data?.scaleY ?? 1,
+        easing: data?.easing ?? "linear",
+      });
+
+      const applyEasing = (easing, t) => {
+        if (easing === "easeIn") return t * t;
+        if (easing === "easeOut") return 1 - (1 - t) * (1 - t);
+        if (easing === "easeInOut") {
+          return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        }
+        return t;
+      };
+
+      const clone = (value) => JSON.parse(JSON.stringify(value));
+
+      const resizeCanvas = () => {
+        const rect = stage.getBoundingClientRect();
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+      };
+
+      const updateStatus = (message) => {
+        status.textContent = message;
+      };
+
+      const updateUi = () => {
+        const project = state.project;
+        if (!project) {
+          stats.innerHTML = "";
+          frameInput.max = "0";
+          frameInput.value = "0";
+          toggleBtn.disabled = true;
+          resetBtn.disabled = true;
+          return;
+        }
+
+        toggleBtn.disabled = false;
+        resetBtn.disabled = false;
+        frameInput.max = String(Math.max(0, project.duration - 1));
+        frameInput.value = String(state.frame);
+        toggleBtn.textContent = state.playing ? "Pause" : "Play";
+
+        stats.innerHTML = `
+          <div><span>Project</span><strong>${project.name ?? "Untitled"}</strong></div>
+          <div><span>Version</span><strong>${project.version ?? "-"}</strong></div>
+          <div><span>Frame</span><strong>${state.frame + 1} / ${project.duration}</strong></div>
+          <div><span>FPS</span><strong>${state.fps}</strong></div>
+          <div><span>Bones</span><strong>${project.bones.length}</strong></div>
+          <div><span>Slots</span><strong>${project.slots.length}</strong></div>
+          <div><span>Attachments</span><strong>${project.attachments.length}</strong></div>
+        `;
+      };
+
+      const computeAllWorldTransforms = (bones) => {
+        bones.forEach((bone) => {
+          if (bone.parentId === null) {
+            bone._wx = bone.x;
+            bone._wy = bone.y;
+            bone._wrot = bone.rotation;
+          }
+        });
+
+        for (let pass = 0; pass < 8; pass += 1) {
+          bones.forEach((bone) => {
+            if (bone.parentId === null) return;
+            const parent = bones.find((item) => item.id === bone.parentId);
+            if (!parent) return;
+
+            const cos = Math.cos((parent._wrot * Math.PI) / 180);
+            const sin = Math.sin((parent._wrot * Math.PI) / 180);
+            const localX = bone.x * parent.scaleX;
+            const localY = bone.y * parent.scaleY;
+
+            bone._wx = parent._wx + localX * cos - localY * sin;
+            bone._wy = parent._wy + localX * sin + localY * cos;
+            bone._wrot = parent._wrot + bone.rotation;
+          });
+        }
+      };
+
+      const sampleBonesAtFrame = (project, frame) => {
+        const bones = clone(project.bones).map((bone) => {
+          const setup = project.setupPose?.[bone.id];
+          return setup ? { ...bone, ...setup } : bone;
+        });
+
+        bones.forEach((bone) => {
+          const boneKeyframes = project.keyframes?.[bone.id];
+          if (!boneKeyframes) return;
+
+          const frames = Object.keys(boneKeyframes)
+            .map(Number)
+            .sort((a, b) => a - b);
+
+          if (frames.length === 0) return;
+
+          let prev = null;
+          let next = null;
+
+          for (const value of frames) {
+            if (value <= frame) prev = value;
+            if (value >= frame && next === null) next = value;
+          }
+
+          const applyFrame = (frameIndex) => {
+            const data = normalizeKeyframeData(boneKeyframes[frameIndex]);
+            bone.x = data.x;
+            bone.y = data.y;
+            bone.rotation = data.rotation;
+            bone.scaleX = data.scaleX;
+            bone.scaleY = data.scaleY;
+          };
+
+          if (prev === null && next !== null) {
+            applyFrame(next);
+            return;
+          }
+
+          if (prev !== null && next === null) {
+            applyFrame(prev);
+            return;
+          }
+
+          if (prev !== null && next !== null) {
+            const from = normalizeKeyframeData(boneKeyframes[prev]);
+            const to = normalizeKeyframeData(boneKeyframes[next]);
+            const t = prev === next ? 1 : (frame - prev) / (next - prev);
+            const easedT = applyEasing(from.easing, t);
+            const lerp = (a, b) => a + (b - a) * easedT;
+
+            bone.x = lerp(from.x, to.x);
+            bone.y = lerp(from.y, to.y);
+            bone.rotation = lerp(from.rotation, to.rotation);
+            bone.scaleX = lerp(from.scaleX, to.scaleX);
+            bone.scaleY = lerp(from.scaleY, to.scaleY);
+          }
+        });
+
+        computeAllWorldTransforms(bones);
+        return bones;
+      };
+
+      const getAttachmentBounds = (attachment, bone) => {
+        const rotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
+        const width = attachment.width * Math.abs(attachment.scaleX * bone.scaleX) * 0.5;
+        const height = attachment.height * Math.abs(attachment.scaleY * bone.scaleY) * 0.5;
+        const offsetX = attachment.x;
+        const offsetY = attachment.y;
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const centerX = bone._wx + offsetX * cos - offsetY * sin;
+        const centerY = bone._wy + offsetX * sin + offsetY * cos;
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+
+        const corners = [
+          { x: -halfWidth, y: -halfHeight },
+          { x: halfWidth, y: -halfHeight },
+          { x: halfWidth, y: halfHeight },
+          { x: -halfWidth, y: halfHeight },
+        ].map((corner) => ({
+          x: centerX + corner.x * cos - corner.y * sin,
+          y: centerY + corner.x * sin + corner.y * cos,
+        }));
+
+        return {
+          minX: Math.min(...corners.map((corner) => corner.x)),
+          maxX: Math.max(...corners.map((corner) => corner.x)),
+          minY: Math.min(...corners.map((corner) => corner.y)),
+          maxY: Math.max(...corners.map((corner) => corner.y)),
+        };
+      };
+
+      const computeSceneBounds = (project) => {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        const sampleFrames = new Set([0, Math.max(0, project.duration - 1)]);
+        const step = Math.max(1, Math.floor(project.duration / 12));
+        for (let frame = 0; frame < project.duration; frame += step) {
+          sampleFrames.add(frame);
+        }
+
+        for (const frame of sampleFrames) {
+          const bones = sampleBonesAtFrame(project, frame);
+          bones.forEach((bone) => {
+            const boneSlots = project.slots.filter((slot) => slot.boneId === bone.id);
+            boneSlots.forEach((slot) => {
+              if (!slot.attachmentName) return;
+              const attachment = project.attachments.find(
+                (item) => item.slotId === slot.id && item.name === slot.attachmentName,
+              );
+              if (!attachment) return;
+
+              const bounds = getAttachmentBounds(attachment, bone);
+              minX = Math.min(minX, bounds.minX);
+              minY = Math.min(minY, bounds.minY);
+              maxX = Math.max(maxX, bounds.maxX);
+              maxY = Math.max(maxY, bounds.maxY);
+            });
+          });
+        }
+
+        if (!Number.isFinite(minX) || maxX <= minX || maxY <= minY) {
+          minX = -100;
+          minY = -100;
+          maxX = 100;
+          maxY = 100;
+        }
+
+        const width = Math.max(1, maxX - minX);
+        const height = Math.max(1, maxY - minY);
+        return {
+          minX,
+          minY,
+          maxX,
+          maxY,
+          centerX: minX + width / 2,
+          centerY: minY + height / 2,
+          zoom: Math.min((stage.clientWidth * 0.78) / width, (stage.clientHeight * 0.78) / height),
+        };
+      };
+
+      const loadImage = (src) => {
+        if (imageCache.has(src)) return imageCache.get(src);
+        const promise = new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+        imageCache.set(src, promise);
+        return promise;
+      };
+
+      const worldToScreen = (x, y) => ({
+        x: stage.clientWidth / 2 + (x - state.camera.centerX) * state.camera.zoom * state.scale,
+        y: stage.clientHeight / 2 + (y - state.camera.centerY) * state.camera.zoom * state.scale,
+      });
+
+      const drawAttachment = async (attachment, bone) => {
+        if (!attachment.imageData) return;
+        const img = await loadImage(attachment.imageData);
+        const screenPos = worldToScreen(bone._wx, bone._wy);
+        const totalScaleX = attachment.scaleX * bone.scaleX;
+        const totalScaleY = attachment.scaleY * bone.scaleY;
+        const width = attachment.width * Math.abs(totalScaleX) * state.camera.zoom * state.scale * 0.5;
+        const height = attachment.height * Math.abs(totalScaleY) * state.camera.zoom * state.scale * 0.5;
+        const offsetX = attachment.x * state.camera.zoom * state.scale;
+        const offsetY = attachment.y * state.camera.zoom * state.scale;
+
+        ctx.save();
+        ctx.translate(screenPos.x, screenPos.y);
+        ctx.rotate((bone._wrot * Math.PI) / 180);
+        ctx.rotate((attachment.rotation * Math.PI) / 180);
+        ctx.scale(totalScaleX < 0 ? -1 : 1, totalScaleY < 0 ? -1 : 1);
+        ctx.drawImage(img, offsetX - width / 2, offsetY - height / 2, width, height);
+        ctx.restore();
+      };
+
+      const render = async () => {
+        resizeCanvas();
+        ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+
+        if (!state.project) return;
+
+        const bones = sampleBonesAtFrame(state.project, state.frame);
+        state.bones = bones;
+
+        if (state.project.backgroundImage) {
+          try {
+            const bg = await loadImage(state.project.backgroundImage);
+            const scale = Math.max(stage.clientWidth / bg.width, stage.clientHeight / bg.height);
+            const width = bg.width * scale;
+            const height = bg.height * scale;
+            ctx.drawImage(bg, (stage.clientWidth - width) / 2, (stage.clientHeight - height) / 2, width, height);
+          } catch (error) {
+            console.error("Failed to draw background:", error);
+          }
+        }
+
+        for (const bone of bones) {
+          const boneSlots = state.project.slots.filter((slot) => slot.boneId === bone.id);
+          for (const slot of boneSlots) {
+            if (!slot.attachmentName) continue;
+            const attachment = state.project.attachments.find(
+              (item) => item.slotId === slot.id && item.name === slot.attachmentName,
+            );
+            if (!attachment) continue;
+            await drawAttachment(attachment, bone);
+          }
+        }
+
+        updateUi();
+      };
+
+      const animationLoop = (time) => {
+        if (state.playing && state.project) {
+          const elapsed = time - state.lastTick;
+          const frameDuration = 1000 / Math.max(1, state.fps);
+          if (elapsed >= frameDuration) {
+            state.frame = (state.frame + 1) % Math.max(1, state.project.duration);
+            state.lastTick = time;
+            frameInput.value = String(state.frame);
+            void render();
+          }
+        }
+        requestAnimationFrame(animationLoop);
+      };
+
+      const loadProjectFromSbn = async (file) => {
+        await ensureJsZip();
+        updateStatus(`Membaca ${file.name}...`);
+        const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+
+        const manifestEntry = zip.file("manifest.json");
+        const projectEntry = zip.file("project.json");
+        if (!projectEntry) {
+          throw new Error("Archive tidak punya project.json");
+        }
+
+        const manifest = manifestEntry ? JSON.parse(await manifestEntry.async("string")) : null;
+        const project = JSON.parse(await projectEntry.async("string"));
+        project.name = file.name;
+
+        const loadAssetDataUrl = async (assetPath) => {
+          const entry = zip.file(assetPath);
+          if (!entry) {
+            throw new Error(`Asset tidak ditemukan: ${assetPath}`);
+          }
+          const blob = await entry.async("blob");
+          return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error || new Error("Gagal membaca asset"));
+            reader.readAsDataURL(blob);
+          });
+        };
+
+        project.attachments = await Promise.all(
+          (project.attachments || []).map(async (attachment) => {
+            if (!attachment.assetPath) return attachment;
+            return {
+              ...attachment,
+              imageData: await loadAssetDataUrl(attachment.assetPath),
+            };
+          }),
+        );
+
+        if (project.backgroundAssetPath) {
+          project.backgroundImage = await loadAssetDataUrl(project.backgroundAssetPath);
+        }
+
+        if (!project.setupPose) {
+          project.setupPose = {};
+        }
+
+        state.project = project;
+        state.frame = 0;
+        state.fps = project.fps || 24;
+        fpsInput.value = String(state.fps);
+        state.camera = computeSceneBounds(project);
+        scaleInput.value = "1";
+        state.scale = 1;
+
+        updateStatus(
+          `Loaded ${file.name}${manifest?.archiveVersion ? ` | archive ${manifest.archiveVersion}` : ""}`,
+        );
+        await render();
+      };
+
+      bundleInput.addEventListener("change", async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+          await loadProjectFromSbn(file);
+        } catch (error) {
+          console.error(error);
+          updateStatus(`Gagal load .sbn: ${error.message}`);
+        }
+      });
+
+      toggleBtn.addEventListener("click", () => {
+        if (!state.project) return;
+        state.playing = !state.playing;
+        state.lastTick = performance.now();
+        updateUi();
+      });
+
+      resetBtn.addEventListener("click", async () => {
+        state.playing = false;
+        state.frame = 0;
+        frameInput.value = "0";
+        await render();
+      });
+
+      fpsInput.addEventListener("change", () => {
+        const next = Number.parseInt(fpsInput.value, 10);
+        state.fps = Number.isFinite(next) ? Math.max(1, next) : 24;
+        fpsInput.value = String(state.fps);
+        updateUi();
+      });
+
+      scaleInput.addEventListener("input", async () => {
+        state.scale = Number.parseFloat(scaleInput.value) || 1;
+        await render();
+      });
+
+      frameInput.addEventListener("input", async () => {
+        state.frame = Number.parseInt(frameInput.value, 10) || 0;
+        state.playing = false;
+        await render();
+      });
+
+      window.addEventListener("resize", () => {
+        void render();
+      });
+
+      resizeCanvas();
+      updateUi();
+      requestAnimationFrame(animationLoop);
+      ensureJsZip().catch((error) => {
+        console.error(error);
+        updateStatus(error.message);
+      });
+    </script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -10,6 +10,7 @@ type FileFilter = {
 
 type OpenDialogOptions = {
   filters?: FileFilter[];
+  defaultPath?: string;
 };
 
 export interface LoadedFile {
@@ -28,6 +29,12 @@ export interface LoadedAudioFile {
   name: string;
   path: string | null;
   dataUrl: string;
+}
+
+export interface LoadedBinaryFile {
+  name: string;
+  path: string | null;
+  bytes: Uint8Array;
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -49,6 +56,11 @@ const AUDIO_MIME_TYPES: Record<string, string> = {
 };
 
 export const isDesktopApp = () => isTauri();
+
+export const getLaunchProjectPath = async (): Promise<string | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<string | null>('get_launch_project_path');
+};
 
 export const getFileNameFromPath = (path: string) => {
   const parts = path.split(/[\\/]/);
@@ -142,6 +154,7 @@ export const openTextFile = async (
       multiple: false,
       directory: false,
       filters: options?.filters,
+      defaultPath: options?.defaultPath,
     }),
   );
 
@@ -152,6 +165,55 @@ export const openTextFile = async (
     path: selectedPath,
     text: await readTextFile(selectedPath),
   };
+};
+
+export const openBinaryFile = async (
+  accept: string,
+  options?: OpenDialogOptions,
+): Promise<LoadedBinaryFile | null> => {
+  if (!isDesktopApp()) {
+    const loadedFile = await pickBrowserFile(accept, 'data-url');
+    if (!loadedFile || !('dataUrl' in loadedFile)) return null;
+
+    const response = await fetch(loadedFile.dataUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      name: loadedFile.name,
+      path: loadedFile.path,
+      bytes: new Uint8Array(arrayBuffer),
+    };
+  }
+
+  const selectedPath = normalizeDialogSelection(
+    await openDialog({
+      multiple: false,
+      directory: false,
+      filters: options?.filters,
+      defaultPath: options?.defaultPath,
+    }),
+  );
+
+  if (!selectedPath) return null;
+
+  return {
+    name: getFileNameFromPath(selectedPath),
+    path: selectedPath,
+    bytes: await readFile(selectedPath),
+  };
+};
+
+export const readBinaryFileAtPath = async (path: string): Promise<Uint8Array> => {
+  if (!isDesktopApp()) {
+    throw new Error('Reading arbitrary local paths is only supported in the desktop app');
+  }
+
+  try {
+    return await readFile(path);
+  } catch (error) {
+    console.warn('Falling back to native project file read:', error);
+    const bytes = await invoke<number[]>('read_project_file', { path });
+    return Uint8Array.from(bytes);
+  }
 };
 
 export const openImageFile = async (
@@ -166,6 +228,7 @@ export const openImageFile = async (
       multiple: false,
       directory: false,
       filters: options?.filters,
+      defaultPath: options?.defaultPath,
     }),
   );
 
@@ -193,6 +256,7 @@ export const openAudioFile = async (
       multiple: false,
       directory: false,
       filters: options?.filters,
+      defaultPath: options?.defaultPath,
     }),
   );
 
@@ -248,6 +312,8 @@ export const saveBlobFile = async (
   defaultPath: string,
   blob: Blob,
   filters: FileFilter[],
+  currentPath?: string | null,
+  forceDialog = false,
 ): Promise<string | null> => {
   if (!isDesktopApp()) {
     const url = URL.createObjectURL(blob);
@@ -256,15 +322,23 @@ export const saveBlobFile = async (
     return null;
   }
 
-  const targetPath = await saveDialog({
-    defaultPath,
-    filters,
-  });
+  const targetPath =
+    !forceDialog && currentPath
+      ? currentPath
+      : await saveDialog({
+          defaultPath: currentPath ?? defaultPath,
+          filters,
+        });
 
   if (!targetPath) return null;
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  await writeFile(targetPath, bytes);
+  try {
+    await writeFile(targetPath, bytes);
+  } catch (error) {
+    console.warn('Falling back to native project file write:', error);
+    await invoke('write_project_file', { path: targetPath, bytes: Array.from(bytes) });
+  }
   return targetPath;
 };
 
