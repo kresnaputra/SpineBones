@@ -10,7 +10,7 @@ export type RecentProjectRecord = {
 };
 
 const RECENT_PROJECTS_KEY = 'spinebones:recent-projects';
-const MAX_RECENT_PROJECTS = 12;
+const MAX_RECENT_PROJECTS = 4;
 
 const isBrowser = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
@@ -38,7 +38,7 @@ const tryWriteRecentProjects = (entries: RecentProjectRecord[]) => {
   }
 };
 
-export const getRecentProjects = () => readRecentProjects();
+export const getRecentProjects = () => readRecentProjects().slice(0, MAX_RECENT_PROJECTS);
 
 export const rememberRecentProject = (
   entry: Omit<RecentProjectRecord, 'lastOpenedAt'>,

@@ -19,6 +19,8 @@ export const useKeyboardShortcuts = () => {
     attachmentDragEnabled,
     setAttachmentDragEnabled,
     toggleOnionSkin,
+    showBoneIndicators,
+    setShowBoneIndicators,
   } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
@@ -63,6 +65,12 @@ export const useKeyboardShortcuts = () => {
       if (isModifierPressed && key === 'n') {
         e.preventDefault();
         createNewProject();
+        return;
+      }
+
+      if (isModifierPressed && key === 'b') {
+        e.preventDefault();
+        setShowBoneIndicators(!showBoneIndicators);
         return;
       }
 
@@ -132,6 +140,24 @@ export const useKeyboardShortcuts = () => {
             scaleY: bone.scaleY,
           });
         });
+        return;
+      }
+
+      if (key === 'f') {
+        const animState = useAnimationStore.getState();
+        const targetBoneIds = selectedBoneId !== null ? [selectedBoneId] : bones.map((b) => b.id);
+        const entries = targetBoneIds.flatMap((boneId) => {
+          const boneKeyframes = animState.keyframes[boneId];
+          if (!boneKeyframes) return [];
+          const frames = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+          if (frames.length === 0) return [];
+          const firstKey = boneKeyframes[frames[0]];
+          if (!firstKey) return [];
+          return [{ boneId, firstKey }];
+        });
+        if (entries.length === 0) return;
+        captureSnapshot();
+        entries.forEach(({ boneId, firstKey }) => insertKeyframe(boneId, { ...firstKey }));
         return;
       }
 
@@ -229,5 +255,7 @@ export const useKeyboardShortcuts = () => {
     applyKeyframes,
     undo,
     redo,
+    showBoneIndicators,
+    setShowBoneIndicators,
   ]);
 };

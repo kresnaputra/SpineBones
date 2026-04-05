@@ -346,7 +346,11 @@ export const exportSpriteSheet = async ({
   includeBackground = false,
   backgroundImage = null,
 }: ExportSpriteSheetOptions): Promise<Blob> => {
-  const totalFrames = Math.max(1, duration);
+  const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
+    const frames = Object.keys(boneKfs).map(Number);
+    return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
+  }, -1);
+  const totalFrames = Math.max(1, lastKeyframe >= 0 ? lastKeyframe + 1 : duration);
   const maxFramesPerSheet = getMaxFramesPerSheet(frameWidth, frameHeight);
   const sheetRanges = Array.from(
     { length: Math.ceil(totalFrames / maxFramesPerSheet) },

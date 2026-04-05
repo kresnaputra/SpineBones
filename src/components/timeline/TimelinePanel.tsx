@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useEffectEvent } from "react";
 import type { KeyframeEasing } from "../../types";
 import {
   Play,
@@ -22,6 +22,7 @@ const HEADER_H = 20;
 const ROW_H = 28;
 const AUDIO_ROW_H = 36;
 const HEADER_W = 120;
+const TIMELINE_PADDING_RIGHT = 50;
 const MAX_WAVEFORM_SAMPLES = 240;
 
 const AUDIO_FILTERS = [
@@ -114,6 +115,8 @@ export const TimelinePanel = () => {
   const [resizeTick, setResizeTick] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [fpsInput, setFpsInput] = useState<string>('');
+  const [durationInput, setDurationInput] = useState<string>('');
 
   const { mode, selectedBoneId, selectedBoneIds, selectBone } =
     useEditorStore();
@@ -146,6 +149,25 @@ export const TimelinePanel = () => {
     deleteKeyframe,
     clearKeyframes,
   } = useAnimationStore();
+
+  useEffect(() => { setFpsInput(String(fps)); }, [fps]);
+  useEffect(() => { setDurationInput(String(duration)); }, [duration]);
+
+  const commitFps = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(120, parsed)) : 1;
+    captureSnapshot();
+    setFps(clamped);
+    setFpsInput(String(clamped));
+  };
+
+  const commitDuration = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed) ? Math.max(10, Math.min(300, parsed)) : 10;
+    captureSnapshot();
+    setDuration(clamped);
+    setDurationInput(String(clamped));
+  };
 
   useEffect(() => {
     if (audioRef.current) {
@@ -383,7 +405,10 @@ export const TimelinePanel = () => {
     if (!rect) return null;
 
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const frameW = Math.max(8, (rect.width - HEADER_W) / duration);
+    const frameW = Math.max(
+      8,
+      (rect.width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
+    );
 
     if (sx < HEADER_W) return null;
 
@@ -420,7 +445,10 @@ export const TimelinePanel = () => {
     audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
-    const frameW = Math.max(8, (width - HEADER_W) / duration);
+    const frameW = Math.max(
+      8,
+      (width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
+    );
     return Math.round(clamp((sx - HEADER_W) / frameW, 0, duration));
   };
 
@@ -788,6 +816,30 @@ export const TimelinePanel = () => {
     });
   };
 
+  const handlePrevKeyUiEvent = useEffectEvent(() => {
+    handlePrevKey();
+  });
+
+  const handleNextKeyUiEvent = useEffectEvent(() => {
+    handleNextKey();
+  });
+
+  const handleSelectFrameKeysUiEvent = useEffectEvent(() => {
+    handleSelectFrameKeyframes();
+  });
+
+  useEffect(() => {
+    window.addEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
+    window.addEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
+    window.addEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+
+    return () => {
+      window.removeEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
+      window.removeEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
+      window.removeEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+    };
+  }, []);
+
   return (
     <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
@@ -846,7 +898,7 @@ export const TimelinePanel = () => {
           onClick={handleCopyFirstKeyframe}
           disabled={selectedBoneId === null}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-[10px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Copy first keyframe to current frame"
+          title="Copy first keyframe to current frame — no selection copies all bones (F)"
         >
           <Diamond size={12} />
           1st Key
@@ -932,11 +984,10 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">FPS:</span>
         <input
           type="number"
-          value={fps}
-          onChange={(e) => {
-            captureSnapshot();
-            setFps(Math.max(1, Math.min(120, parseInt(e.target.value) || 24)));
-          }}
+          value={fpsInput}
+          onChange={(e) => setFpsInput(e.target.value)}
+          onBlur={(e) => commitFps(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { commitFps((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
           className="w-10 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="1"
           max="120"
@@ -944,13 +995,10 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">Duration:</span>
         <input
           type="number"
-          value={duration}
-          onChange={(e) => {
-            captureSnapshot();
-            setDuration(
-              Math.max(10, Math.min(300, parseInt(e.target.value) || 60)),
-            );
-          }}
+          value={durationInput}
+          onChange={(e) => setDurationInput(e.target.value)}
+          onBlur={(e) => commitDuration(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { commitDuration((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
           className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="10"
           max="300"

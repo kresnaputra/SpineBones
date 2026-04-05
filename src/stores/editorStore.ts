@@ -6,6 +6,8 @@ interface EditorState {
   mode: Mode;
   selectedBoneId: number | null;
   selectedBoneIds: number[];
+  playbackRangeStart: number;
+  playbackRangeEnd: number | null;
   showHelpDialog: boolean;
   showProjectBrowser: boolean;
   showBoneIndicators: boolean;
@@ -17,6 +19,7 @@ interface EditorState {
   setMode: (mode: Mode) => void;
   selectBone: (id: number | null) => void;
   toggleBoneSelection: (id: number) => void;
+  setPlaybackRange: (start: number, end: number | null) => void;
   setShowHelpDialog: (show: boolean) => void;
   setShowProjectBrowser: (show: boolean) => void;
   setShowBoneIndicators: (show: boolean) => void;
@@ -32,6 +35,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   mode: 'setup',
   selectedBoneId: null,
   selectedBoneIds: [],
+  playbackRangeStart: 0,
+  playbackRangeEnd: null,
   showHelpDialog: false,
   showProjectBrowser: false,
   showBoneIndicators: true,
@@ -60,6 +65,11 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedBoneId: id,
         selectedBoneIds: [...state.selectedBoneIds, id],
       };
+    }),
+  setPlaybackRange: (start, end) =>
+    set({
+      playbackRangeStart: Math.max(0, Math.round(start)),
+      playbackRangeEnd: end === null ? null : Math.max(0, Math.round(end)),
     }),
   setShowHelpDialog: (showHelpDialog) => set({ showHelpDialog }),
   setShowProjectBrowser: (showProjectBrowser) => set({ showProjectBrowser }),

@@ -8,10 +8,10 @@ export const AttachmentPropertiesPanel = () => {
   if (selectedBoneId === null) {
     return (
       <div className="border-b border-border">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 panel-padding-left">
+        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
           🖼️ Attachment
         </div>
-        <div className="p-3 text-[10px] text-text-dim panel-padding-left">
+        <div className="p-3 text-[10px] text-text-dim">
           Select a bone with an active attachment
         </div>
       </div>
@@ -47,7 +47,7 @@ export const AttachmentPropertiesPanel = () => {
   };
 
   return (
-    <div className="border-b border-border panel-padding-left">
+    <div className="border-b border-border">
       <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 flex items-center justify-between gap-2">
         <span>Attachment: {attachment.name}</span>
         <button

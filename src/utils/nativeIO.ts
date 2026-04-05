@@ -37,6 +37,24 @@ export interface LoadedBinaryFile {
   bytes: Uint8Array;
 }
 
+export interface McpBridgeInfo {
+  port: number;
+  url: string;
+  externalClientActive: boolean;
+  lastClientPath: string | null;
+  lastClientSeenSecondsAgo: number | null;
+}
+
+export interface McpServerStatus {
+  running: boolean;
+  pid: number | null;
+  command: string;
+  serverPath: string;
+  serverSource: string;
+  serverUrl: string;
+  lastError: string | null;
+}
+
 const IMAGE_MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -60,6 +78,33 @@ export const isDesktopApp = () => isTauri();
 export const getLaunchProjectPath = async (): Promise<string | null> => {
   if (!isDesktopApp()) return null;
   return invoke<string | null>('get_launch_project_path');
+};
+
+export const getMcpBridgeInfo = async (): Promise<McpBridgeInfo | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpBridgeInfo>('get_mcp_bridge_info');
+};
+
+export const updateMcpEditorState = async (snapshot: unknown) => {
+  if (!isDesktopApp()) return;
+  await invoke('update_mcp_editor_state', {
+    snapshotJson: JSON.stringify(snapshot),
+  });
+};
+
+export const getMcpServerStatus = async (): Promise<McpServerStatus | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpServerStatus>('get_mcp_server_status');
+};
+
+export const startMcpServer = async (): Promise<McpServerStatus | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<McpServerStatus>('start_mcp_server');
+};
+
+export const stopMcpServer = async () => {
+  if (!isDesktopApp()) return;
+  await invoke('stop_mcp_server');
 };
 
 export const getFileNameFromPath = (path: string) => {
@@ -216,6 +261,26 @@ export const readBinaryFileAtPath = async (path: string): Promise<Uint8Array> =>
   }
 };
 
+export const loadImageFileFromPath = async (path: string): Promise<LoadedImageFile> => {
+  const bytes = await readBinaryFileAtPath(path);
+  const blob = new Blob([bytes.slice().buffer], { type: getMimeTypeFromPath(path) });
+  return {
+    name: getFileNameFromPath(path),
+    path,
+    dataUrl: await blobToDataUrl(blob),
+  };
+};
+
+export const loadAudioFileFromPath = async (path: string): Promise<LoadedAudioFile> => {
+  const bytes = await readBinaryFileAtPath(path);
+  const blob = new Blob([bytes.slice().buffer], { type: getMimeTypeFromPath(path) });
+  return {
+    name: getFileNameFromPath(path),
+    path,
+    dataUrl: await blobToDataUrl(blob),
+  };
+};
+
 export const openImageFile = async (
   options?: OpenDialogOptions,
 ): Promise<LoadedImageFile | null> => {
@@ -340,6 +405,17 @@ export const saveBlobFile = async (
     await invoke('write_project_file', { path: targetPath, bytes: Array.from(bytes) });
   }
   return targetPath;
+};
+
+export const saveBlobToPath = async (path: string, blob: Blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  try {
+    await writeFile(path, bytes);
+  } catch (error) {
+    console.warn('Falling back to native project file write:', error);
+    await invoke('write_project_file', { path, bytes: Array.from(bytes) });
+  }
+  return path;
 };
 
 export const openPathWithDefaultApp = async (path: string) => {
