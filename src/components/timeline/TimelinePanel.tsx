@@ -482,14 +482,14 @@ export const TimelinePanel = () => {
 
   const getBoneAtPosition = (sy: number) => {
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
+    const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
 
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
     return bones[boneIndex] ?? null;
   };
 
   const isAudioTrackHit = (sy: number) =>
-    audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
+    audioData && sy >= 0 && sy <= AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
     const frameW = getFrameW(width);
@@ -509,8 +509,6 @@ export const TimelinePanel = () => {
 
     if (boneHit) {
       selectBone(boneHit.id);
-    } else if (sy <= 20) {
-      selectBone(null);
     }
 
     if (e.detail === 2 && keyframeHit) {
