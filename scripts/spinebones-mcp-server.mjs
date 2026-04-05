@@ -9,6 +9,7 @@ import * as z from 'zod/v4';
 
 const bridgeUrl = process.env.SPINEBONES_MCP_URL ?? 'http://127.0.0.1:48570';
 const serverPort = Number.parseInt(process.env.SPINEBONES_MCP_PORT ?? '48600', 10);
+const serverHost = process.env.SPINEBONES_MCP_HOST ?? '127.0.0.1';
 const transportMode = process.env.SPINEBONES_MCP_TRANSPORT === 'http' ? 'http' : 'stdio';
 
 const requestJson = async (path, init) => {
@@ -2363,7 +2364,8 @@ if (transportMode === 'http') {
       mode: 'streamable-http',
       bridgeUrl,
       port: serverPort,
-      mcpUrl: `http://127.0.0.1:${serverPort}/mcp`,
+      host: serverHost,
+      mcpUrl: `http://${serverHost}:${serverPort}/mcp`,
     });
   });
 
@@ -2419,13 +2421,13 @@ if (transportMode === 'http') {
     }));
   });
 
-  app.listen(serverPort, (error) => {
+  app.listen(serverPort, serverHost, (error) => {
     if (error) {
       console.error('Failed to start SpineBones MCP HTTP server:', error);
       process.exit(1);
     }
 
-    console.error(`SpineBones MCP server ready via streamable HTTP -> http://127.0.0.1:${serverPort}/mcp`);
+    console.error(`SpineBones MCP server ready via streamable HTTP -> http://${serverHost}:${serverPort}/mcp`);
   });
 } else {
   const server = createServer();

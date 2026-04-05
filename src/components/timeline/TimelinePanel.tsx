@@ -498,6 +498,18 @@ export const TimelinePanel = () => {
     );
   };
 
+  const handleHeaderMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = headerCanvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    if (sx <= HEADER_W) return;
+    const newFrame = getFrameFromX(sx, rect.width);
+    setFrame(newFrame);
+    if (mode === "animate") applyKeyframes();
+    setIsDragging(true);
+    setDragMode("playhead");
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -1084,7 +1096,14 @@ export const TimelinePanel = () => {
         ref={wrapRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin"
       >
-        <canvas ref={headerCanvasRef} className="block sticky top-0 z-10" />
+        <canvas
+          ref={headerCanvasRef}
+          className="block sticky top-0 z-10"
+          onMouseDown={handleHeaderMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          style={{ cursor: "default" }}
+        />
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -1103,8 +1122,8 @@ export const TimelinePanel = () => {
                 Math.max(0, Math.min(getMaxScrollX(canvas.width), prev)),
               );
             } else {
-              // Pan horizontally
-              const delta = e.shiftKey ? e.deltaY : e.deltaX || e.deltaY;
+              // Pan horizontally only when shift is held or there is actual horizontal delta
+              const delta = e.shiftKey ? e.deltaY : e.deltaX;
               if (Math.abs(delta) > 0) {
                 e.preventDefault();
                 setScrollOffsetX((prev) =>
