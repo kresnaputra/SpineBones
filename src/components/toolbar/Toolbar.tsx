@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2 } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -10,6 +10,7 @@ import { saveProject, loadProject, getSuggestedProjectFileName } from '../../uti
 import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
+import { exportPngSequence } from '../../utils/pngSequenceExporter';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -50,6 +51,8 @@ export const Toolbar = () => {
     setTool,
     setMode,
     selectedBoneIds,
+    onionSkinEnabled,
+    toggleOnionSkin,
     setBackgroundImage,
   } = useEditorStore();
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
@@ -57,6 +60,34 @@ export const Toolbar = () => {
   const { bones } = useSkeletonStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
+
+  const getExportFrameSize = () => {
+    if (isDesktopApp()) {
+      return {
+        width: 1024,
+        height: 1024,
+      };
+    }
+
+    const response = window.prompt(
+      'Frame resolution for export (square, in pixels).\nExamples: 512, 1024, 1536',
+      '1024',
+    );
+
+    if (response === null) return null;
+
+    const parsed = Number.parseInt(response.trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 64) {
+      alert('Please enter a valid resolution of at least 64 pixels.');
+      return null;
+    }
+
+    const clamped = Math.min(4096, parsed);
+    return {
+      width: clamped,
+      height: clamped,
+    };
+  };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -147,6 +178,8 @@ export const Toolbar = () => {
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
+      const frameSize = getExportFrameSize();
+      if (!frameSize) return;
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -160,6 +193,8 @@ export const Toolbar = () => {
         camX: cameraState.x,
         camY: cameraState.y,
         camZoom: cameraState.zoom,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
       });
 
       const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
@@ -175,6 +210,47 @@ export const Toolbar = () => {
     }
   };
 
+  const handleExportPngSequence = async () => {
+    try {
+      const skeletonState = useSkeletonStore.getState();
+      const animationState = useAnimationStore.getState();
+      const slotState = useSlotStore.getState();
+      const cameraState = useCameraStore.getState();
+      const editorState = useEditorStore.getState();
+      const frameSize = getExportFrameSize();
+      if (!frameSize) return;
+
+      const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
+
+      const blob = await exportPngSequence({
+        bones: bonesCopy,
+        slots: slotState.slots,
+        attachments: slotState.attachments,
+        keyframes: animationState.keyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+        camX: cameraState.x,
+        camY: cameraState.y,
+        camZoom: cameraState.zoom,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
+        backgroundImage: editorState.backgroundImage,
+        includeBackground: false,
+      });
+
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
+      await saveBlobFile(suggestedName, blob, [
+        {
+          name: 'ZIP Archive',
+          extensions: ['zip'],
+        },
+      ]);
+    } catch (error) {
+      console.error('PNG sequence export failed:', error);
+      alert('PNG sequence export failed. Check console for details.');
+    }
+  };
+
   const handleExportVideoMenuEvent = useEffectEvent(() => {
     void handleExportVideo();
   });
@@ -183,13 +259,19 @@ export const Toolbar = () => {
     void handleExportSpriteSheet();
   });
 
+  const handleExportPngSequenceMenuEvent = useEffectEvent(() => {
+    void handleExportPngSequence();
+  });
+
   useEffect(() => {
     window.addEventListener('spine:file-export-video', handleExportVideoMenuEvent);
     window.addEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
+    window.addEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
 
     return () => {
       window.removeEventListener('spine:file-export-video', handleExportVideoMenuEvent);
       window.removeEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
+      window.removeEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
     };
   }, []);
 
@@ -314,6 +396,15 @@ export const Toolbar = () => {
             Sprite Sheet
           </button>
 
+          <button
+            onClick={handleExportPngSequence}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as PNG sequence ZIP"
+          >
+            <Images size={14} />
+            PNG Sequence
+          </button>
+
           <div className="w-px h-6 bg-border mx-1" />
         </>
       ) : null}
@@ -334,6 +425,20 @@ export const Toolbar = () => {
       >
         <XCircle size={14} />
         Remove BG
+      </button>
+
+      <button
+        onClick={toggleOnionSkin}
+        disabled={mode !== 'animate'}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-dim disabled:hover:border-transparent ${
+          onionSkinEnabled
+            ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle onion skin preview (O)"
+      >
+        <Eye size={14} />
+        Onion
       </button>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">

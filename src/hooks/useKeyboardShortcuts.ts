@@ -8,7 +8,18 @@ import { getIkRootForBone } from '../utils/ik';
 import { createNewProject, loadProject, saveProject } from '../utils/projectPersistence';
 
 export const useKeyboardShortcuts = () => {
-  const { tool, setTool, mode, setMode, selectedBoneId, selectedBoneIds, selectBone, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
+  const {
+    tool,
+    setTool,
+    mode,
+    setMode,
+    selectedBoneId,
+    selectedBoneIds,
+    selectBone,
+    attachmentDragEnabled,
+    setAttachmentDragEnabled,
+    toggleOnionSkin,
+  } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
@@ -134,6 +145,11 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (key === 'o' && mode === 'animate') {
+        toggleOnionSkin();
+        return;
+      }
+
       if (!isModifierPressed && key === 'c') {
         if (selectedBoneId === null) return;
         const ikRoot = getIkRootForBone(selectedBoneId, bones);
@@ -194,6 +210,7 @@ export const useKeyboardShortcuts = () => {
     selectBone,
     attachmentDragEnabled,
     setAttachmentDragEnabled,
+    toggleOnionSkin,
     bones,
     slots,
     deleteBone,

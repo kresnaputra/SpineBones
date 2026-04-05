@@ -27,6 +27,7 @@ import {
   Link2,
   FolderTree,
   Keyboard,
+  Eye,
 } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
 
@@ -84,6 +85,7 @@ const sections: HelpSection[] = [
         Use Export Sprite Sheet <InlineIcon icon={Grid2x2} /> to generate a
         sprite sheet archive for game workflows.
       </>,
+      "Use Export PNG Sequence to generate one PNG per frame inside a ZIP archive.",
     ],
   },
   {
@@ -191,6 +193,10 @@ const sections: HelpSection[] = [
         Use 1st Key <InlineIcon icon={Diamond} /> to copy the first keyframe of
         the selected bone to the current frame.
       </>,
+      <>
+        Use Onion <InlineIcon icon={Eye} /> in Animate mode to preview the
+        nearest previous and next moving poses directly on the canvas.
+      </>,
       "Frame Keys selects every keyframe on the active frame, then Delete or Backspace removes them all at once.",
       "Click a keyframe to select it, then Shift+click to build a multi-selection.",
       "Drag selected keyframes to move them together to a new frame.",
@@ -212,6 +218,7 @@ const sections: HelpSection[] = [
         Import audio into the timeline <InlineIcon icon={Music2} /> for sync
         reference, then adjust its start frame and volume.
       </>,
+      "Onion skin only shows the parts of the rig that actually move, so nearby comparisons stay readable instead of drawing the full character every time.",
       "FPS controls the playback speed, while Duration controls the timeline length.",
       "Space toggles play and pause for fast previewing.",
     ],
@@ -238,6 +245,7 @@ const sections: HelpSection[] = [
     items: [
       "Q, B, M, R, and S switch tools for Pose, Bone, Move, Rotate, and Scale.",
       "W switches to Setup mode and E switches to Animate mode.",
+      "O toggles onion skin preview while you are in Animate mode.",
       "K inserts keyframes for the current bone selection.",
       "C toggles IK for the selected valid chain.",
       "Delete or Backspace deletes selected bones or selected timeline keyframes.",

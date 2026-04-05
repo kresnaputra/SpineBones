@@ -6,13 +6,15 @@ import { useCameraStore } from '../../stores/cameraStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
-import { drawGrid, drawOriginCross, drawBone, drawBoneRelation } from '../../engine/renderer';
-import { drawAttachmentOutline, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
+import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
+import { drawAttachmentOutline, drawSlotOutlines, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
+import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
+  const GHOST_MOVEMENT_EPSILON = 0.01;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
@@ -21,9 +23,9 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, attachmentDragEnabled, backgroundImage } = useEditorStore();
-  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds } = useSkeletonStore();
-  const { keyframes, frame, insertKeyframe } = useAnimationStore();
+  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
+  const { keyframes, frame, duration, insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
@@ -39,30 +41,53 @@ export const MainCanvas = () => {
     return false;
   };
 
-  const reparentBone = (childId: number, newParentId: number) => {
+  const setBoneParent = (childId: number, newParentId: number | null) => {
     const child = bones.find((bone) => bone.id === childId);
-    const newParent = bones.find((bone) => bone.id === newParentId);
-    if (!child || !newParent) return false;
-    if (child.id === newParent.id) return false;
-    if (isDescendantOfBone(newParent.id, child.id)) return false;
-    if (child.parentId === newParent.id) return false;
+    if (!child) return false;
+
+    const newParent =
+      newParentId === null
+        ? null
+        : bones.find((bone) => bone.id === newParentId) ?? null;
+    if (newParentId !== null && !newParent) return false;
+    if (newParent && child.id === newParent.id) return false;
+    if (newParent && isDescendantOfBone(newParent.id, child.id)) return false;
+    if (child.parentId === newParentId) return false;
 
     captureSnapshot();
     computeAllWorldTransforms(bones);
+    remapBoneKeyframesForParentChange(child.id, newParentId);
 
     const worldX = child._wx;
     const worldY = child._wy;
     const worldRot = child._wrot;
-    const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
-    const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
-    const dx = worldX - newParent._wx;
-    const dy = worldY - newParent._wy;
+    let nextX = worldX;
+    let nextY = worldY;
+    let nextRotation = worldRot;
+
+    if (newParent) {
+      const cos = Math.cos((-newParent._wrot * Math.PI) / 180);
+      const sin = Math.sin((-newParent._wrot * Math.PI) / 180);
+      const dx = worldX - newParent._wx;
+      const dy = worldY - newParent._wy;
+
+      nextX = (dx * cos - dy * sin) / newParent.scaleX;
+      nextY = (dx * sin + dy * cos) / newParent.scaleY;
+      nextRotation = worldRot - newParent._wrot;
+    }
 
     updateBone(child.id, {
-      parentId: newParent.id,
-      x: (dx * cos - dy * sin) / newParent.scaleX,
-      y: (dx * sin + dy * cos) / newParent.scaleY,
-      rotation: worldRot - newParent._wrot,
+      parentId: newParent?.id ?? null,
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+    });
+    updateSetupPoseBone(child.id, {
+      x: nextX,
+      y: nextY,
+      rotation: nextRotation,
+      scaleX: child.scaleX,
+      scaleY: child.scaleY,
     });
     return true;
   };
@@ -206,7 +231,30 @@ export const MainCanvas = () => {
       setImageLoadTrigger(prev => prev + 1);
     };
 
-    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, handleImageLoad);
+    const getMovedGhostBones = (ghostBones: typeof bones) =>
+      ghostBones.filter((ghostBone) => {
+        const currentBone = bones.find((bone) => bone.id === ghostBone.id);
+        if (!currentBone) return false;
+
+        return (
+          Math.abs(currentBone._wx - ghostBone._wx) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone._wy - ghostBone._wy) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone._wrot - ghostBone._wrot) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone.scaleX - ghostBone.scaleX) > GHOST_MOVEMENT_EPSILON ||
+          Math.abs(currentBone.scaleY - ghostBone.scaleY) > GHOST_MOVEMENT_EPSILON
+        );
+      });
+
+    const { previous, next } =
+      mode === 'animate' && onionSkinEnabled
+        ? getAdjacentKeyframes(keyframes, frame)
+        : { previous: null, next: null };
+    const previousFrame = previous !== null ? sampleBonesAtFrame(bones, keyframes, setupPose, previous) : null;
+    const nextFrame = next !== null ? sampleBonesAtFrame(bones, keyframes, setupPose, next) : null;
+    const previousMovedBones = previousFrame ? getMovedGhostBones(previousFrame) : [];
+    const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
+
+    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
 
     if (attachmentDragEnabled && selectedBoneId !== null) {
       const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
@@ -270,7 +318,31 @@ export const MainCanvas = () => {
       }
     }
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, worldToScreen, slots, attachments, showBoneIndicators, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
+    if (previousMovedBones.length > 0) {
+      drawSlots(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, {
+        strokeStyle: 'rgba(8,145,178,0.9)',
+        lineWidth: 2,
+        dash: [6, 4],
+      });
+      previousMovedBones.forEach((bone) => {
+        drawGhostBone(ctx, bone, '#0891b2', 0.4, worldToScreen);
+      });
+    }
+
+    if (nextMovedBones.length > 0) {
+      drawSlots(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, {
+        strokeStyle: 'rgba(219,39,119,0.9)',
+        lineWidth: 2,
+        dash: [6, 4],
+      });
+      nextMovedBones.forEach((bone) => {
+        drawGhostBone(ctx, bone, '#db2777', 0.4, worldToScreen);
+      });
+    }
+
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -398,8 +470,16 @@ export const MainCanvas = () => {
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
 
     if (e.button === 2) {
-      if (selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
-        const didReparent = reparentBone(selectedBoneId, hit.id);
+      if (mode !== 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        alert('Parent relationships can only be changed in Setup mode.');
+        return;
+      }
+
+      if (mode === 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
+        const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
+        const nextParentId =
+          selectedBone?.parentId === hit.id ? null : hit.id;
+        const didReparent = setBoneParent(selectedBoneId, nextParentId);
         if (didReparent) return;
       }
 

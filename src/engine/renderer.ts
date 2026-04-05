@@ -181,3 +181,26 @@ export const drawBone = (
     ctx.stroke();
   }
 };
+
+export const drawGhostBone = (
+  ctx: CanvasRenderingContext2D,
+  bone: Bone,
+  outlineColor: string,
+  alpha: number,
+  worldToScreen: (x: number, y: number) => { x: number; y: number },
+): void => {
+  const start = worldToScreen(bone._wx, bone._wy);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = outlineColor;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(start.x, start.y, 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.beginPath();
+  ctx.arc(start.x, start.y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+};

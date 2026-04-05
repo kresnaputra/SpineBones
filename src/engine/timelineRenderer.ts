@@ -1,4 +1,5 @@
-import type { Bone, Skin, Keyframes } from '../types';
+import type { Bone, Skin, KeyframeEasing, Keyframes } from '../types';
+import { normalizeKeyframeEasing } from '../utils/easing';
 
 type AudioTrackRenderData = {
   enabled: boolean;
@@ -22,6 +23,12 @@ export const drawTimeline = (
   width: number,
   height: number
 ): void => {
+  const easingColors: Record<KeyframeEasing, string> = {
+    linear: '#f59e0b',
+    easeIn: '#60a5fa',
+    easeOut: '#34d399',
+    easeInOut: '#f472b6',
+  };
   const rowH = 28;
   const audioRowH = audioTrack.enabled ? 36 : 0;
   const headerW = 120;
@@ -162,10 +169,11 @@ export const drawTimeline = (
         const frameNumber = parseInt(kf);
         const fx = headerW + frameNumber * frameW;
         const isSelectedKeyframe = selectedKeyframeSet.has(`${bone.id}:${frameNumber}`);
+        const easing = normalizeKeyframeEasing(keyframes[bone.id][frameNumber]?.easing);
         ctx.save();
         ctx.translate(fx, y + rowH / 2);
         ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = isSelectedKeyframe ? '#7c3aed' : '#f59e0b';
+        ctx.fillStyle = isSelectedKeyframe ? '#7c3aed' : easingColors[easing];
         ctx.fillRect(-5, -5, 10, 10);
         if (isSelectedKeyframe) {
           ctx.strokeStyle = '#f5f3ff';

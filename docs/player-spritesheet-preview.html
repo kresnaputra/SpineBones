@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spritesheet Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a14;
+        --panel: #151522;
+        --panel-2: #1d1d2e;
+        --text: #e9e9f1;
+        --muted: #9a9ab3;
+        --accent: #7c3aed;
+        --accent-2: #06b6d4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        background:
+          radial-gradient(circle at top, rgba(124, 58, 237, 0.18), transparent 35%),
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          var(--bg);
+        background-size: 100% 100%, 28px 28px, 28px 28px, auto;
+        color: var(--text);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(12, 12, 20, 0.88);
+        backdrop-filter: blur(14px);
+        padding: 20px;
+      }
+
+      .viewer {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 10px;
+      }
+
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input[type="range"],
+      input[type="number"],
+      input[type="file"],
+      button {
+        width: 100%;
+      }
+
+      input[type="number"] {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      input[type="file"] {
+        color: var(--muted);
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 11px 12px;
+        font: inherit;
+        color: white;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: var(--panel-2);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text);
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .stats {
+        display: grid;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .stats div {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .stage {
+        width: min(70vw, 760px);
+        aspect-ratio: 1 / 1;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          #0c0c18;
+        background-size: 24px 24px, 24px 24px, auto;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: auto;
+      }
+
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .viewer {
+          order: -1;
+          padding-top: 10px;
+        }
+
+        .stage {
+          width: min(92vw, 540px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h1>Spritesheet Preview</h1>
+        <p>Preview animasi dari spritesheet SpineBones. Pilih semua file hasil export sekaligus agar single-sheet maupun multi-sheet langsung terbaca.</p>
+
+        <div class="card controls">
+          <div class="row">
+            <button id="toggleBtn">Pause</button>
+            <button id="resetBtn" class="secondary">Reset</button>
+          </div>
+
+          <div>
+            <label for="fpsInput">Playback FPS</label>
+            <input id="fpsInput" type="number" min="1" max="120" step="1" value="60" />
+          </div>
+
+          <div>
+            <label for="scaleInput">Preview Scale</label>
+            <input id="scaleInput" type="range" min="0.5" max="8" step="0.1" value="3.2" />
+          </div>
+
+          <div>
+            <label for="frameInput">Frame</label>
+            <input id="frameInput" type="range" min="0" max="299" step="1" value="0" />
+          </div>
+        </div>
+
+        <div class="card controls">
+          <div>
+            <label for="bundleInput">Pilih File Export</label>
+            <input id="bundleInput" type="file" accept=".json,application/json,.png,image/png" multiple />
+          </div>
+          <div class="hint">Pilih semua file hasil export sekaligus: untuk single-sheet pilih `spritesheet.json` dan `spritesheet.png`, untuk multi-sheet pilih juga `spritesheets-manifest.json` beserta semua file `spritesheet-xx.json/png`.</div>
+        </div>
+
+        <div class="card stats" id="stats"></div>
+      </aside>
+
+      <main class="viewer">
+        <div class="stage">
+          <canvas id="canvas"></canvas>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const defaultData = {
+        "frames": {
+          "frame_0000": { "frame": { "x": 0, "y": 0, "w": 88, "h": 187 }, "rotated": false, "trimmed": true, "spriteSourceSize": { "x": 73, "y": 31, "w": 88, "h": 187 }, "sourceSize": { "w": 230, "h": 230 }, "duration": 17 },
+          "frame_0001": { "frame": { "x": 88, "y": 0, "w": 88, "h": 187 }, "rotated": false, "trimmed": true, "spriteSourceSize": { "x": 73, "y": 31, "w": 88, "h": 187 }, "sourceSize": { "w": 230, "h": 230 }, "duration": 17 },
+          "frame_0002": { "frame": { "x": 176, "y": 0, "w": 88, "h": 187 }, "rotated": false, "trimmed": true, "spriteSourceSize": { "x": 73, "y": 31, "w": 88, "h": 187 }, "sourceSize": { "w": 230, "h": 230 }, "duration": 17 },
+          "frame_0003": { "frame": { "x": 264, "y": 0, "w": 88, "h": 187 }, "rotated": false, "trimmed": true, "spriteSourceSize": { "x": 73, "y": 31, "w": 88, "h": 187 }, "sourceSize": { "w": 230, "h": 230 }, "duration": 17 }
+        },
+        "animations": {
+          "animation": Array.from({ length: 300 }, (_, i) => `frame_${String(i).padStart(4, "0")}`)
+        },
+        "meta": {
+          "app": "SpineBones",
+          "version": "1.0",
+          "image": "spritesheet.png",
+          "format": "RGBA8888",
+          "size": { "w": 4136, "h": 1306 },
+          "scale": "1",
+          "frameSize": { "w": 230, "h": 230 },
+          "fps": 60,
+          "frameCount": 300
+        }
+      };
+
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const stage = document.querySelector(".stage");
+      const toggleBtn = document.getElementById("toggleBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const fpsInput = document.getElementById("fpsInput");
+      const scaleInput = document.getElementById("scaleInput");
+      const frameInput = document.getElementById("frameInput");
+      const bundleInput = document.getElementById("bundleInput");
+      const stats = document.getElementById("stats");
+
+      let data = structuredClone(defaultData);
+      let animationFrames = Object.keys(data.frames).sort();
+      let currentFrame = 0;
+      let playing = true;
+      let previewScale = Number(scaleInput.value);
+      let playbackFps = data.meta.fps;
+      let lastTime = 0;
+      let viewWidth = 760;
+      let viewHeight = 760;
+      let selectedFiles = [];
+
+      const resizeCanvas = () => {
+        const rect = stage.getBoundingClientRect();
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        viewWidth = Math.max(1, Math.round(rect.width));
+        viewHeight = Math.max(1, Math.round(rect.height));
+        canvas.width = Math.round(viewWidth * dpr);
+        canvas.height = Math.round(viewHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+      };
+
+      const imageCache = new Map();
+      const image = new Image();
+      let sheetSources = [];
+
+      const ensureImage = async (src) => {
+        if (imageCache.has(src)) {
+          const cached = imageCache.get(src);
+          if (cached.complete) return cached;
+          await cached.decode().catch(() => undefined);
+          return cached;
+        }
+
+        const nextImage = new Image();
+        nextImage.src = src;
+        imageCache.set(src, nextImage);
+        await nextImage.decode().catch(() => undefined);
+        return nextImage;
+      };
+
+      const fileMapFromSelection = () => {
+        const fileMap = new Map();
+        selectedFiles.forEach((file) => fileMap.set(file.name, file));
+        return fileMap;
+      };
+
+      const updateStats = () => {
+        const frameName = animationFrames[currentFrame] ?? "-";
+        const frameData = data.frames[frameName];
+        stats.innerHTML = `
+          <div><span>Total Frames</span><strong>${animationFrames.length}</strong></div>
+          <div><span>Current Frame</span><strong>${currentFrame}</strong></div>
+          <div><span>Frame Name</span><strong>${frameName}</strong></div>
+          <div><span>Playback FPS</span><strong>${playbackFps}</strong></div>
+          <div><span>Frame Box</span><strong>${frameData ? `${frameData.frame.w}x${frameData.frame.h}` : "-"}</strong></div>
+          <div><span>Sheet Size</span><strong>${data.meta.size.w}x${data.meta.size.h}</strong></div>
+        `;
+      };
+
+      const drawFrame = () => {
+        const frameName = animationFrames[currentFrame];
+        const frameData = data.frames[frameName];
+        if (!frameData) return;
+
+        const activeSheet =
+          sheetSources.find((sheet) => currentFrame >= sheet.frameStart && currentFrame <= sheet.frameEnd) ??
+          sheetSources[0];
+        const activeImage = activeSheet?.image;
+        if (!activeImage?.complete) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const source = frameData.frame;
+        const frameSize = frameData.sourceSize ?? data.meta.frameSize;
+        const targetWidth = frameSize.w * previewScale;
+        const targetHeight = frameSize.h * previewScale;
+        const drawX = (viewWidth - targetWidth) / 2;
+        const drawY = (viewHeight - targetHeight) / 2;
+
+        ctx.drawImage(
+          activeImage,
+          source.x,
+          source.y,
+          source.w,
+          source.h,
+          drawX + frameData.spriteSourceSize.x * previewScale,
+          drawY + frameData.spriteSourceSize.y * previewScale,
+          source.w * previewScale,
+          source.h * previewScale
+        );
+
+        updateStats();
+      };
+
+      const tick = (time) => {
+        if (!lastTime) lastTime = time;
+        const elapsed = time - lastTime;
+        const frameDuration = 1000 / playbackFps;
+
+        if (playing && elapsed >= frameDuration) {
+          currentFrame = (currentFrame + 1) % animationFrames.length;
+          frameInput.value = String(currentFrame);
+          lastTime = time;
+          drawFrame();
+        }
+
+        requestAnimationFrame(tick);
+      };
+
+      const applyJsonData = (nextData) => {
+        data = nextData;
+        animationFrames = nextData.animations?.animation ?? Object.keys(nextData.frames).sort();
+        playbackFps = nextData.meta?.fps ?? 24;
+        fpsInput.value = String(playbackFps);
+        frameInput.max = String(Math.max(0, animationFrames.length - 1));
+        currentFrame = 0;
+        frameInput.value = "0";
+        drawFrame();
+      };
+
+      const applyManifestData = async (manifest) => {
+        const linkedSheets = [];
+
+        data = {
+          frames: {},
+          animations: {
+            animation: Array.from({ length: manifest.totalFrames ?? 0 }, (_, index) => `frame_${String(index).padStart(4, "0")}`),
+          },
+          meta: {
+            app: manifest.app ?? "SpineBones",
+            version: manifest.version ?? "1.0",
+            image: "",
+            format: "RGBA8888",
+            size: { w: 0, h: 0 },
+            scale: "1",
+            frameSize: { w: 0, h: 0 },
+            fps: manifest.fps ?? 24,
+            frameCount: manifest.totalFrames ?? 0,
+          },
+        };
+
+        const fileMap = fileMapFromSelection();
+
+        for (const sheet of manifest.sheets ?? []) {
+          const jsonFile = fileMap.get(sheet.data);
+          const imageFile = fileMap.get(sheet.image);
+          if (!jsonFile || !imageFile) continue;
+
+          const sheetJson = JSON.parse(await jsonFile.text());
+          Object.assign(data.frames, sheetJson.frames);
+          data.meta.frameSize = sheetJson.meta?.frameSize ?? data.meta.frameSize;
+          data.meta.fps = sheetJson.meta?.fps ?? data.meta.fps;
+
+          const imageUrl = URL.createObjectURL(imageFile);
+          const loadedImage = await ensureImage(imageUrl);
+          linkedSheets.push({
+            frameStart: sheet.frameStart,
+            frameEnd: sheet.frameEnd,
+            image: loadedImage,
+            imageSrc: imageUrl,
+          });
+        }
+
+        sheetSources = linkedSheets.length > 0 ? linkedSheets : sheetSources;
+        animationFrames = data.animations.animation;
+        playbackFps = data.meta.fps ?? 24;
+        fpsInput.value = String(playbackFps);
+        frameInput.max = String(Math.max(0, animationFrames.length - 1));
+        currentFrame = 0;
+        frameInput.value = "0";
+        drawFrame();
+      };
+
+      const applySingleSheetData = async (sheetJson) => {
+        const fileMap = fileMapFromSelection();
+        const imageFile = fileMap.get(sheetJson.meta?.image ?? "spritesheet.png");
+
+        if (!imageFile) {
+          alert("PNG spritesheet belum ikut dipilih.");
+          return;
+        }
+
+        const imageUrl = URL.createObjectURL(imageFile);
+        const loadedImage = await ensureImage(imageUrl);
+        sheetSources = [{ frameStart: 0, frameEnd: Infinity, image: loadedImage, imageSrc: imageUrl }];
+        applyJsonData(sheetJson);
+      };
+
+      toggleBtn.addEventListener("click", () => {
+        playing = !playing;
+        toggleBtn.textContent = playing ? "Pause" : "Play";
+      });
+
+      resetBtn.addEventListener("click", () => {
+        currentFrame = 0;
+        frameInput.value = "0";
+        drawFrame();
+      });
+
+      fpsInput.addEventListener("input", () => {
+        playbackFps = Math.max(1, Number(fpsInput.value) || 1);
+        updateStats();
+      });
+
+      scaleInput.addEventListener("input", () => {
+        previewScale = Number(scaleInput.value);
+        drawFrame();
+      });
+
+      frameInput.addEventListener("input", () => {
+        currentFrame = Number(frameInput.value);
+        drawFrame();
+      });
+
+      bundleInput.addEventListener("change", async (event) => {
+        const files = Array.from(event.target.files ?? []);
+        if (files.length === 0) return;
+        selectedFiles = files;
+
+        const manifestFile = files.find((file) => file.name === "spritesheets-manifest.json");
+        if (manifestFile) {
+          const manifest = JSON.parse(await manifestFile.text());
+          await applyManifestData(manifest);
+          return;
+        }
+
+        const jsonFile = files.find((file) => file.name.endsWith(".json"));
+        if (!jsonFile) return;
+        await applySingleSheetData(JSON.parse(await jsonFile.text()));
+      });
+
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        drawFrame();
+      });
+      resizeCanvas();
+      drawFrame();
+      updateStats();
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>
