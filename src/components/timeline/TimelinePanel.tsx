@@ -918,6 +918,32 @@ export const TimelinePanel = () => {
     };
   }, []);
 
+  const handleCanvasWheel = useEffectEvent((e: WheelEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const maxX = getMaxScrollX(canvas.width);
+    if (e.altKey) {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setTimelineZoom((z) => Math.max(1, Math.min(20, z * zoomFactor)));
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev)));
+    } else if (e.shiftKey) {
+      e.preventDefault();
+      const delta = e.deltaY || e.deltaX;
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + delta)));
+    } else if (Math.abs(e.deltaX) > 0) {
+      e.preventDefault();
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + e.deltaX)));
+    }
+  });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener("wheel", handleCanvasWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleCanvasWheel);
+  }, []);
+
   return (
     <div className="h-[190px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
@@ -1110,31 +1136,6 @@ export const TimelinePanel = () => {
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onContextMenu={handleContextMenu}
-          onWheel={(e) => {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            if (e.ctrlKey || e.metaKey) {
-              // Zoom with Ctrl/Cmd + wheel
-              e.preventDefault();
-              const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-              setTimelineZoom((z) => Math.max(1, Math.min(20, z * zoomFactor)));
-              setScrollOffsetX((prev) =>
-                Math.max(0, Math.min(getMaxScrollX(canvas.width), prev)),
-              );
-            } else {
-              // Pan horizontally only when shift is held or there is actual horizontal delta
-              const delta = e.shiftKey ? e.deltaY : e.deltaX;
-              if (Math.abs(delta) > 0) {
-                e.preventDefault();
-                setScrollOffsetX((prev) =>
-                  Math.max(
-                    0,
-                    Math.min(getMaxScrollX(canvas.width), prev + delta),
-                  ),
-                );
-              }
-            }
-          }}
           className="block"
           style={{
             cursor:
