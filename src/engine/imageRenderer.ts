@@ -9,6 +9,15 @@ type AttachmentOutlineOptions = {
 const imageCache = new Map<string, HTMLImageElement>();
 const outlineCache = new Map<string, HTMLCanvasElement>();
 
+export const clearAttachmentCache = (imageData: string): void => {
+  imageCache.delete(imageData);
+  for (const key of outlineCache.keys()) {
+    if (key.startsWith(`${imageData}::`)) {
+      outlineCache.delete(key);
+    }
+  }
+};
+
 export const loadImage = (imageData: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     if (imageCache.has(imageData)) {
