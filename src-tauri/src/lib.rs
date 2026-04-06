@@ -360,11 +360,17 @@ fn create_mcp_process_command(script_path: &PathBuf, bridge_port: u16, server_po
   let bridge_url = format!("http://127.0.0.1:{bridge_port}");
 
   if cfg!(target_os = "windows") {
-    let mut command = Command::new("node");
+    let mut command = Command::new("cmd");
+    command.args(["/c", "node"]);
     command.arg(script_path);
     command.env("SPINEBONES_MCP_URL", bridge_url);
     command.env("SPINEBONES_MCP_TRANSPORT", "http");
     command.env("SPINEBONES_MCP_PORT", server_port.to_string());
+    #[cfg(target_os = "windows")]
+    {
+      use std::os::windows::process::CommandExt;
+      command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
     command
   } else {
     let launch_command = build_mcp_launch_command(script_path, bridge_port, server_port);
