@@ -516,6 +516,11 @@ fn start_mcp_bridge_server(
 
 fn resolve_mcp_server_path(app: &AppHandle, workspace_root: &PathBuf) -> (PathBuf, String) {
   if let Ok(resource_dir) = app.path().resource_dir() {
+    // Tauri replaces ".." with "_up_" in bundled resource paths
+    let bundled_script_up = resource_dir.join("_up_").join("scripts").join("spinebones-mcp-server.mjs");
+    if bundled_script_up.exists() {
+      return (bundled_script_up, "bundled script".to_string());
+    }
     let bundled_script = resource_dir.join("scripts").join("spinebones-mcp-server.mjs");
     if bundled_script.exists() {
       return (bundled_script, "bundled script".to_string());
