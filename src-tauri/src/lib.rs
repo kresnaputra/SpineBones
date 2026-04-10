@@ -239,11 +239,20 @@ fn start_mcp_server(
   command
     .stdin(Stdio::null())
     .stdout(Stdio::null())
-    .stderr(Stdio::null());
+    .stderr(Stdio::piped());
 
   match command.spawn() {
-    Ok(child) => {
+    Ok(mut child) => {
       let pid = child.id();
+      if let Some(stderr) = child.stderr.take() {
+        thread::spawn(move || {
+          use std::io::BufRead;
+          let reader = std::io::BufReader::new(stderr);
+          for line in reader.lines().map_while(Result::ok) {
+            eprintln!("[MCP stderr] {line}");
+          }
+        });
+      }
       *process_state
         .child
         .lock()
@@ -347,11 +356,11 @@ fn build_mcp_launch_command(script_path: &PathBuf, bridge_port: u16, server_port
   let path = script_path.to_string_lossy();
   if cfg!(target_os = "windows") {
     format!(
-      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} node \"{path}\""
+      "node \"{path}\""
     )
   } else {
     format!(
-      "SPINEBONES_MCP_URL=http://127.0.0.1:{bridge_port} SPINEBONES_MCP_TRANSPORT=http SPINEBONES_MCP_PORT={server_port} if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
+      "if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
     )
   }
 }
@@ -376,6 +385,9 @@ fn create_mcp_process_command(script_path: &PathBuf, bridge_port: u16, server_po
     let launch_command = build_mcp_launch_command(script_path, bridge_port, server_port);
     let mut command = Command::new("/bin/zsh");
     command.arg("-lc").arg(launch_command);
+    command.env("SPINEBONES_MCP_URL", bridge_url);
+    command.env("SPINEBONES_MCP_TRANSPORT", "http");
+    command.env("SPINEBONES_MCP_PORT", server_port.to_string());
     command
   }
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -2357,6 +2358,7 @@ const createServer = () => {
 
 if (transportMode === 'http') {
   const app = createMcpExpressApp();
+  const transports = new Map();
 
   app.get('/health', (_req, res) => {
     res.json({
@@ -2369,21 +2371,47 @@ if (transportMode === 'http') {
     });
   });
 
-  app.post('/mcp', async (req, res) => {
-    const server = createServer();
+  const handleMcpRequest = async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'];
+    let record = typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
 
     try {
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
+      if (!record) {
+        if (req.method !== 'POST') {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'No active MCP session for this request.',
+            },
+            id: null,
+          });
+          return;
+        }
 
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+        const server = createServer();
+        let createdSessionId = null;
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          enableJsonResponse: true,
+          onsessioninitialized: (newSessionId) => {
+            createdSessionId = newSessionId;
+            transports.set(newSessionId, { transport, server });
+          },
+        });
 
-      res.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
+        transport.onclose = async () => {
+          if (createdSessionId) {
+            transports.delete(createdSessionId);
+          }
+          await server.close();
+        };
+
+        await server.connect(transport);
+        record = { transport, server };
+      }
+
+      await record.transport.handleRequest(req, res, req.body);
     } catch (error) {
       console.error('Error handling SpineBones MCP HTTP request:', error);
       if (!res.headersSent) {
@@ -2397,29 +2425,11 @@ if (transportMode === 'http') {
         });
       }
     }
-  });
+  };
 
-  app.get('/mcp', async (_req, res) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
-  });
-
-  app.delete('/mcp', async (_req, res) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
-  });
+  app.post('/mcp', handleMcpRequest);
+  app.get('/mcp', handleMcpRequest);
+  app.delete('/mcp', handleMcpRequest);
 
   app.listen(serverPort, serverHost, (error) => {
     if (error) {
