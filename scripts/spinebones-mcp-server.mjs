@@ -2391,6 +2391,7 @@ if (transportMode === 'http') {
 
         const server = createServer();
         let createdSessionId = null;
+        let closing = false;
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           enableJsonResponse: true,
@@ -2401,10 +2402,11 @@ if (transportMode === 'http') {
         });
 
         transport.onclose = async () => {
+          if (closing) return;
+          closing = true;
           if (createdSessionId) {
             transports.delete(createdSessionId);
           }
-          await server.close();
         };
 
         await server.connect(transport);
