@@ -3,6 +3,7 @@ import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { createExportWorldToScreen } from '../engine/viewport';
 
 export const exportVideo = async (
   bones: Bone[],
@@ -69,10 +70,10 @@ export const exportVideo = async (
     if (e.data.size > 0) chunks.push(e.data);
   };
 
-  const worldToScreen = (x: number, y: number) => ({
-    x: width / 2 + (x - camX) * camZoom,
-    y: height / 2 + (y - camY) * camZoom,
-  });
+  // Shared export transform: the canvas IS the video frame, so vpScale = 1.
+  // This formula is the canonical "source of truth" for export coordinates;
+  // the editor preview mirrors it via createViewportWorldToScreen (+ vpScale).
+  const worldToScreen = createExportWorldToScreen(width, height, camX, camY, camZoom);
 
   const applyKeyframe = (boneId: number, frame: number) => {
     const boneKeyframes = keyframes[boneId];

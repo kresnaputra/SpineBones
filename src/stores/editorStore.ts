@@ -11,6 +11,7 @@ interface EditorState {
   showHelpDialog: boolean;
   showProjectBrowser: boolean;
   showBoneIndicators: boolean;
+  showViewport: boolean;
   onionSkinEnabled: boolean;
   attachmentDragEnabled: boolean;
   backgroundImage: string | null;
@@ -23,6 +24,8 @@ interface EditorState {
   setShowHelpDialog: (show: boolean) => void;
   setShowProjectBrowser: (show: boolean) => void;
   setShowBoneIndicators: (show: boolean) => void;
+  setShowViewport: (show: boolean) => void;
+  toggleViewport: () => void;
   setOnionSkinEnabled: (enabled: boolean) => void;
   toggleOnionSkin: () => void;
   setAttachmentDragEnabled: (enabled: boolean) => void;
@@ -40,6 +43,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   showHelpDialog: false,
   showProjectBrowser: false,
   showBoneIndicators: true,
+  showViewport: false,
   onionSkinEnabled: false,
   attachmentDragEnabled: false,
   backgroundImage: null,
@@ -74,6 +78,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setShowHelpDialog: (showHelpDialog) => set({ showHelpDialog }),
   setShowProjectBrowser: (showProjectBrowser) => set({ showProjectBrowser }),
   setShowBoneIndicators: (showBoneIndicators) => set({ showBoneIndicators }),
+  setShowViewport: (showViewport) => set({ showViewport }),
+  toggleViewport: () => set((state) => ({ showViewport: !state.showViewport })),
   setOnionSkinEnabled: (onionSkinEnabled) => set({ onionSkinEnabled }),
   toggleOnionSkin: () => set((state) => ({ onionSkinEnabled: !state.onionSkinEnabled })),
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
