@@ -1,6 +1,7 @@
 use std::{
+  env,
   io::{Read, Write},
-  net::TcpListener,
+  net::{TcpListener, TcpStream},
   path::PathBuf,
   io::ErrorKind,
   process::{Child, Command, Stdio},
@@ -144,6 +145,17 @@ fn get_mcp_server_status(
         *child_guard = None;
       }
     }
+  }
+
+  if !running && is_local_port_open(server_port_state.0) {
+    running = true;
+    *process_state
+      .last_error
+      .lock()
+      .map_err(|_| "Failed to lock MCP error state".to_string())? = Some(
+      "MCP server is still responding on its port after the tracked process ended. Stop will use a port-based fallback."
+        .to_string(),
+    );
   }
 
   let last_error = process_state
@@ -296,7 +308,10 @@ fn start_mcp_server(
 }
 
 #[tauri::command]
-fn stop_mcp_server(process_state: tauri::State<'_, McpProcessState>) -> Result<(), String> {
+fn stop_mcp_server(
+  server_port_state: tauri::State<'_, McpServerPort>,
+  process_state: tauri::State<'_, McpProcessState>,
+) -> Result<(), String> {
   let mut child_guard = process_state
     .child
     .lock()
@@ -310,6 +325,26 @@ fn stop_mcp_server(process_state: tauri::State<'_, McpProcessState>) -> Result<(
   }
 
   *child_guard = None;
+  drop(child_guard);
+
+  if is_local_port_open(server_port_state.0) {
+    stop_processes_on_port(server_port_state.0)?;
+  }
+
+  let lingering = is_local_port_open(server_port_state.0);
+  let mut last_error = process_state
+    .last_error
+    .lock()
+    .map_err(|_| "Failed to lock MCP error state".to_string())?;
+  *last_error = if lingering {
+    Some(format!(
+      "MCP stop requested but port {} is still accepting connections.",
+      server_port_state.0
+    ))
+  } else {
+    None
+  };
+
   Ok(())
 }
 
@@ -352,44 +387,193 @@ fn build_text_response(status: &str, body: &str) -> Vec<u8> {
   .into_bytes()
 }
 
+fn is_local_port_open(port: u16) -> bool {
+  TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+fn stop_processes_on_port(port: u16) -> Result<(), String> {
+  #[cfg(target_os = "windows")]
+  {
+    let output = Command::new("netstat")
+      .args(["-ano", "-p", "tcp"])
+      .output()
+      .map_err(|error| format!("Failed to inspect TCP port {port}: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let port_suffix = format!("127.0.0.1:{port}");
+    let pids: Vec<String> = stdout
+      .lines()
+      .filter(|line| line.contains("LISTENING") && line.contains(&port_suffix))
+      .filter_map(|line| line.split_whitespace().last().map(str::to_string))
+      .collect();
+
+    for pid in pids {
+      let _ = Command::new("taskkill").args(["/PID", &pid, "/F"]).status();
+    }
+    return Ok(());
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let output = Command::new("lsof")
+      .args(["-ti", &format!("tcp:{port}")])
+      .output()
+      .map_err(|error| format!("Failed to inspect TCP port {port}: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for pid in stdout.lines().map(str::trim).filter(|pid| !pid.is_empty()) {
+      let _ = Command::new("kill").args(["-TERM", pid]).status();
+    }
+
+    if is_local_port_open(port) {
+      for pid in stdout.lines().map(str::trim).filter(|pid| !pid.is_empty()) {
+        let _ = Command::new("kill").args(["-KILL", pid]).status();
+      }
+    }
+
+    Ok(())
+  }
+}
+
+fn unique_push_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+  if !paths.iter().any(|existing| existing == &candidate) {
+    paths.push(candidate);
+  }
+}
+
+fn candidate_runtime_paths() -> Vec<PathBuf> {
+  let mut candidates = Vec::new();
+  let runtime_names = if cfg!(target_os = "windows") {
+    ["node.exe", "bun.exe"]
+  } else {
+    ["node", "bun"]
+  };
+
+  if let Some(path_env) = env::var_os("PATH") {
+    for entry in env::split_paths(&path_env) {
+      for runtime in runtime_names {
+        unique_push_path(&mut candidates, entry.join(runtime));
+      }
+    }
+  }
+
+  if cfg!(target_os = "windows") {
+    if let Some(program_files) = env::var_os("ProgramFiles").map(PathBuf::from) {
+      unique_push_path(
+        &mut candidates,
+        program_files.join("nodejs").join("node.exe"),
+      );
+    }
+    if let Some(program_files_x86) = env::var_os("ProgramFiles(x86)").map(PathBuf::from) {
+      unique_push_path(
+        &mut candidates,
+        program_files_x86.join("nodejs").join("node.exe"),
+      );
+    }
+    if let Some(local_app_data) = env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+      unique_push_path(
+        &mut candidates,
+        local_app_data.join("Programs").join("bun").join("bun.exe"),
+      );
+      unique_push_path(
+        &mut candidates,
+        local_app_data
+          .join("Volta")
+          .join("bin")
+          .join("node.exe"),
+      );
+    }
+    if let Some(user_profile) = env::var_os("USERPROFILE").map(PathBuf::from) {
+      unique_push_path(
+        &mut candidates,
+        user_profile
+          .join("scoop")
+          .join("apps")
+          .join("nodejs")
+          .join("current")
+          .join("node.exe"),
+      );
+      unique_push_path(
+        &mut candidates,
+        user_profile
+          .join("scoop")
+          .join("apps")
+          .join("bun")
+          .join("current")
+          .join("bun.exe"),
+      );
+    }
+  }
+
+  if cfg!(target_os = "macos") {
+    for runtime in runtime_names {
+      unique_push_path(&mut candidates, PathBuf::from("/opt/homebrew/bin").join(runtime));
+      unique_push_path(&mut candidates, PathBuf::from("/usr/local/bin").join(runtime));
+    }
+  }
+
+  if !cfg!(target_os = "windows") {
+    if let Some(home_dir) = env::var_os("HOME").map(PathBuf::from) {
+      unique_push_path(&mut candidates, home_dir.join(".bun/bin/bun"));
+      unique_push_path(&mut candidates, home_dir.join(".volta/bin/node"));
+      unique_push_path(&mut candidates, home_dir.join(".volta/bin/bun"));
+      unique_push_path(&mut candidates, home_dir.join(".asdf/shims/node"));
+      unique_push_path(&mut candidates, home_dir.join(".asdf/shims/bun"));
+      unique_push_path(&mut candidates, home_dir.join(".fnm/current/bin/node"));
+    }
+  }
+
+  candidates
+}
+
+fn find_mcp_runtime() -> Option<PathBuf> {
+  candidate_runtime_paths()
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
 fn build_mcp_launch_command(script_path: &PathBuf, bridge_port: u16, server_port: u16) -> String {
   let path = script_path.to_string_lossy();
-  if cfg!(target_os = "windows") {
-    format!(
-      "node \"{path}\""
-    )
+  let bridge_url = format!("http://127.0.0.1:{bridge_port}");
+  if let Some(runtime_path) = find_mcp_runtime() {
+    let runtime = runtime_path.to_string_lossy();
+    if cfg!(target_os = "windows") {
+      format!(
+        "set SPINEBONES_MCP_URL={bridge_url} && set SPINEBONES_MCP_TRANSPORT=http && set SPINEBONES_MCP_PORT={server_port} && \"{runtime}\" \"{path}\""
+      )
+    } else {
+      format!(
+        "SPINEBONES_MCP_URL=\"{bridge_url}\" SPINEBONES_MCP_TRANSPORT=\"http\" SPINEBONES_MCP_PORT=\"{server_port}\" \"{runtime}\" \"{path}\""
+      )
+    }
+  } else if cfg!(target_os = "windows") {
+    format!("node \"{path}\"")
   } else {
-    format!(
-      "if command -v node >/dev/null 2>&1; then node \"{path}\"; elif command -v bun >/dev/null 2>&1; then bun \"{path}\"; else echo 'node or bun runtime not found in PATH' >&2; exit 127; fi"
-    )
+    format!("node-or-bun-runtime-not-found \"{path}\"")
   }
 }
 
 fn create_mcp_process_command(script_path: &PathBuf, bridge_port: u16, server_port: u16) -> Command {
   let bridge_url = format!("http://127.0.0.1:{bridge_port}");
+  let Some(runtime_path) = find_mcp_runtime() else {
+    let missing_runtime = if cfg!(target_os = "windows") {
+      "node.exe"
+    } else {
+      "node-or-bun"
+    };
+    return Command::new(missing_runtime);
+  };
 
-  if cfg!(target_os = "windows") {
-    let mut command = Command::new("cmd");
-    command.args(["/c", "node"]);
-    command.arg(script_path);
-    command.env("SPINEBONES_MCP_URL", bridge_url);
-    command.env("SPINEBONES_MCP_TRANSPORT", "http");
-    command.env("SPINEBONES_MCP_PORT", server_port.to_string());
-    #[cfg(target_os = "windows")]
-    {
-      use std::os::windows::process::CommandExt;
-      command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    command
-  } else {
-    let launch_command = build_mcp_launch_command(script_path, bridge_port, server_port);
-    let mut command = Command::new("/bin/zsh");
-    command.arg("-lc").arg(launch_command);
-    command.env("SPINEBONES_MCP_URL", bridge_url);
-    command.env("SPINEBONES_MCP_TRANSPORT", "http");
-    command.env("SPINEBONES_MCP_PORT", server_port.to_string());
-    command
+  let mut command = Command::new(runtime_path);
+  command.arg(script_path);
+  command.env("SPINEBONES_MCP_URL", bridge_url);
+  command.env("SPINEBONES_MCP_TRANSPORT", "http");
+  command.env("SPINEBONES_MCP_PORT", server_port.to_string());
+  #[cfg(target_os = "windows")]
+  {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
   }
+  command
 }
 
 fn pick_bridge_port() -> u16 {
@@ -535,11 +719,16 @@ fn start_mcp_bridge_server(
 fn resolve_mcp_server_path(app: &AppHandle, workspace_root: &PathBuf) -> (PathBuf, String) {
   if let Ok(resource_dir) = app.path().resource_dir() {
     // Tauri replaces ".." with "_up_" in bundled resource paths
-    let bundled_script_up = resource_dir.join("_up_").join("scripts").join("spinebones-mcp-server.mjs");
+    let bundled_script_up = resource_dir
+      .join("_up_")
+      .join("scripts")
+      .join("spinebones-mcp-server.bundle.mjs");
     if bundled_script_up.exists() {
       return (bundled_script_up, "bundled script".to_string());
     }
-    let bundled_script = resource_dir.join("scripts").join("spinebones-mcp-server.mjs");
+    let bundled_script = resource_dir
+      .join("scripts")
+      .join("spinebones-mcp-server.bundle.mjs");
     if bundled_script.exists() {
       return (bundled_script, "bundled script".to_string());
     }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:mcp-server": "bun build ./scripts/spinebones-mcp-server.mjs --target=node --format=esm --outfile ./scripts/spinebones-mcp-server.bundle.mjs",
     "pixi:test": "python3 -m http.server 4175 --directory pixi-export-test",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
