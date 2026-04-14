@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -9,6 +10,7 @@ import * as z from 'zod/v4';
 
 const bridgeUrl = process.env.SPINEBONES_MCP_URL ?? 'http://127.0.0.1:48570';
 const serverPort = Number.parseInt(process.env.SPINEBONES_MCP_PORT ?? '48600', 10);
+const serverHost = process.env.SPINEBONES_MCP_HOST ?? '127.0.0.1';
 const transportMode = process.env.SPINEBONES_MCP_TRANSPORT === 'http' ? 'http' : 'stdio';
 
 const requestJson = async (path, init) => {
@@ -2356,6 +2358,7 @@ const createServer = () => {
 
 if (transportMode === 'http') {
   const app = createMcpExpressApp();
+  const transports = new Map();
 
   app.get('/health', (_req, res) => {
     res.json({
@@ -2363,25 +2366,54 @@ if (transportMode === 'http') {
       mode: 'streamable-http',
       bridgeUrl,
       port: serverPort,
-      mcpUrl: `http://127.0.0.1:${serverPort}/mcp`,
+      host: serverHost,
+      mcpUrl: `http://${serverHost}:${serverPort}/mcp`,
     });
   });
 
-  app.post('/mcp', async (req, res) => {
-    const server = createServer();
+  const handleMcpRequest = async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'];
+    let record = typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
 
     try {
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
+      if (!record) {
+        if (req.method !== 'POST') {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'No active MCP session for this request.',
+            },
+            id: null,
+          });
+          return;
+        }
 
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+        const server = createServer();
+        let createdSessionId = null;
+        let closing = false;
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          enableJsonResponse: true,
+          onsessioninitialized: (newSessionId) => {
+            createdSessionId = newSessionId;
+            transports.set(newSessionId, { transport, server });
+          },
+        });
 
-      res.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
+        transport.onclose = async () => {
+          if (closing) return;
+          closing = true;
+          if (createdSessionId) {
+            transports.delete(createdSessionId);
+          }
+        };
+
+        await server.connect(transport);
+        record = { transport, server };
+      }
+
+      await record.transport.handleRequest(req, res, req.body);
     } catch (error) {
       console.error('Error handling SpineBones MCP HTTP request:', error);
       if (!res.headersSent) {
@@ -2395,37 +2427,19 @@ if (transportMode === 'http') {
         });
       }
     }
-  });
+  };
 
-  app.get('/mcp', async (_req, res) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
-  });
+  app.post('/mcp', handleMcpRequest);
+  app.get('/mcp', handleMcpRequest);
+  app.delete('/mcp', handleMcpRequest);
 
-  app.delete('/mcp', async (_req, res) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
-  });
-
-  app.listen(serverPort, (error) => {
+  app.listen(serverPort, serverHost, (error) => {
     if (error) {
       console.error('Failed to start SpineBones MCP HTTP server:', error);
       process.exit(1);
     }
 
-    console.error(`SpineBones MCP server ready via streamable HTTP -> http://127.0.0.1:${serverPort}/mcp`);
+    console.error(`SpineBones MCP server ready via streamable HTTP -> http://${serverHost}:${serverPort}/mcp`);
   });
 } else {
   const server = createServer();

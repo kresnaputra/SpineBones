@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "bun run dev -- --host 0.0.0.0 --port 1420",
-    "beforeBuildCommand": "bun run build"
+    "beforeBuildCommand": "bun run build && bun run build:mcp-server"
   },
   "app": {
     "windows": [
@@ -30,7 +30,7 @@
     "active": true,
     "targets": "app",
     "resources": [
-      "../scripts/spinebones-mcp-server.mjs"
+      "../scripts/spinebones-mcp-server.bundle.mjs"
     ],
     "fileAssociations": [
       {

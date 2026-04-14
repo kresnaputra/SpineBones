@@ -19,6 +19,7 @@ interface ExportPngSequenceOptions {
   frameHeight?: number;
   includeBackground?: boolean;
   backgroundImage?: string | null;
+  crop?: boolean;
 }
 
 interface PngSequenceManifest {
@@ -56,6 +57,27 @@ const preloadImages = async (
       }
     }),
   );
+};
+
+const getTrimmedBounds = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const { data } = ctx.getImageData(0, 0, width, height);
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return { x: 0, y: 0, w: width, h: height, empty: true };
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, empty: false };
 };
 
 const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
@@ -222,6 +244,7 @@ export const exportPngSequence = async ({
   frameHeight = 512,
   includeBackground = false,
   backgroundImage = null,
+  crop = false,
 }: ExportPngSequenceOptions): Promise<Blob> => {
   const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
     const frames = Object.keys(boneKfs).map(Number);
@@ -276,14 +299,57 @@ export const exportPngSequence = async ({
   };
   const exportZoom = camZoom * fitTransform.scale;
 
+  // When crop is enabled and there is no background, compute a global bounding box
+  // across all frames so every exported PNG shares the same consistent cropped size.
+  let cropRect = { x: 0, y: 0, w: frameWidth, h: frameHeight };
+  if (crop && !includeBackground) {
+    let unionMinX = frameWidth;
+    let unionMinY = frameHeight;
+    let unionMaxX = -1;
+    let unionMaxY = -1;
+
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      const bonesCopy = JSON.parse(JSON.stringify(bones)) as Bone[];
+      ctx.clearRect(0, 0, frameWidth, frameHeight);
+      applyFramePose(bonesCopy, keyframes, frame);
+      computeAllWorldTransforms(bonesCopy);
+      drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+      const bounds = getTrimmedBounds(ctx, frameWidth, frameHeight);
+      if (!bounds.empty) {
+        if (bounds.x < unionMinX) unionMinX = bounds.x;
+        if (bounds.y < unionMinY) unionMinY = bounds.y;
+        if (bounds.x + bounds.w > unionMaxX) unionMaxX = bounds.x + bounds.w;
+        if (bounds.y + bounds.h > unionMaxY) unionMaxY = bounds.y + bounds.h;
+      }
+    }
+
+    if (unionMaxX > unionMinX && unionMaxY > unionMinY) {
+      cropRect = {
+        x: unionMinX,
+        y: unionMinY,
+        w: unionMaxX - unionMinX,
+        h: unionMaxY - unionMinY,
+      };
+    }
+  }
+
+  const outputWidth = cropRect.w;
+  const outputHeight = cropRect.h;
+
   const manifest: PngSequenceManifest = {
     app: 'SpineBones',
     version: '1.0',
     fps,
     frameCount: totalFrames,
-    frameSize: { w: frameWidth, h: frameHeight },
+    frameSize: { w: outputWidth, h: outputHeight },
     frames: [],
   };
+
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = outputWidth;
+  cropCanvas.height = outputHeight;
+  const cropCtx = cropCanvas.getContext('2d');
+  if (!cropCtx) throw new Error('Could not get crop canvas context');
 
   const zip = new JSZip();
   const framesFolder = zip.folder('frames');
@@ -309,8 +375,16 @@ export const exportPngSequence = async ({
     computeAllWorldTransforms(bonesCopy);
     drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
 
+    // Apply crop if needed
+    let outputCanvas = canvas;
+    if (crop && !includeBackground && (cropRect.x !== 0 || cropRect.y !== 0 || outputWidth !== frameWidth || outputHeight !== frameHeight)) {
+      cropCtx.clearRect(0, 0, outputWidth, outputHeight);
+      cropCtx.drawImage(canvas, cropRect.x, cropRect.y, outputWidth, outputHeight, 0, 0, outputWidth, outputHeight);
+      outputCanvas = cropCanvas;
+    }
+
     const pngBlob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => {
+      outputCanvas.toBlob((blob) => {
         if (!blob) {
           reject(new Error(`Failed to encode PNG sequence frame ${frame}`));
           return;

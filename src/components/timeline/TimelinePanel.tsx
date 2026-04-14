@@ -14,7 +14,10 @@ import { useEditorStore } from "../../stores/editorStore";
 import { useSkeletonStore } from "../../stores/skeletonStore";
 import { useAnimationStore } from "../../stores/animationStore";
 import { useHistoryStore } from "../../stores/historyStore";
-import { drawTimeline } from "../../engine/timelineRenderer";
+import {
+  drawTimeline,
+  drawTimelineHeader,
+} from "../../engine/timelineRenderer";
 import { openAudioFile } from "../../utils/nativeIO";
 import { normalizeKeyframeEasing } from "../../utils/easing";
 
@@ -84,6 +87,7 @@ const extractWaveformPeaks = (channelData: Float32Array, samples: number) => {
 
 export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const headerCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -115,8 +119,10 @@ export const TimelinePanel = () => {
   const [resizeTick, setResizeTick] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
-  const [fpsInput, setFpsInput] = useState<string>('');
-  const [durationInput, setDurationInput] = useState<string>('');
+  const [fpsInput, setFpsInput] = useState<string>("");
+  const [durationInput, setDurationInput] = useState<string>("");
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [scrollOffsetX, setScrollOffsetX] = useState(0);
 
   const { mode, selectedBoneId, selectedBoneIds, selectBone } =
     useEditorStore();
@@ -150,12 +156,18 @@ export const TimelinePanel = () => {
     clearKeyframes,
   } = useAnimationStore();
 
-  useEffect(() => { setFpsInput(String(fps)); }, [fps]);
-  useEffect(() => { setDurationInput(String(duration)); }, [duration]);
+  useEffect(() => {
+    setFpsInput(String(fps));
+  }, [fps]);
+  useEffect(() => {
+    setDurationInput(String(duration));
+  }, [duration]);
 
   const commitFps = (raw: string) => {
     const parsed = parseInt(raw, 10);
-    const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(120, parsed)) : 1;
+    const clamped = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(120, parsed))
+      : 1;
     captureSnapshot();
     setFps(clamped);
     setFpsInput(String(clamped));
@@ -163,7 +175,9 @@ export const TimelinePanel = () => {
 
   const commitDuration = (raw: string) => {
     const parsed = parseInt(raw, 10);
-    const clamped = Number.isFinite(parsed) ? Math.max(10, Math.min(300, parsed)) : 10;
+    const clamped = Number.isFinite(parsed)
+      ? Math.max(10, Math.min(300, parsed))
+      : 10;
     captureSnapshot();
     setDuration(clamped);
     setDurationInput(String(clamped));
@@ -286,10 +300,14 @@ export const TimelinePanel = () => {
       if (!canvasRef.current || !wrapRef.current) return;
       const { clientWidth } = wrapRef.current;
       const audioRowH = audioData ? AUDIO_ROW_H : 0;
-      const requiredHeight = HEADER_H + audioRowH + bones.length * ROW_H;
+      const bodyHeight = audioRowH + bones.length * ROW_H;
 
       canvasRef.current.width = clientWidth;
-      canvasRef.current.height = requiredHeight;
+      canvasRef.current.height = bodyHeight;
+      if (headerCanvasRef.current) {
+        headerCanvasRef.current.width = clientWidth;
+        headerCanvasRef.current.height = HEADER_H;
+      }
       setResizeTick((tick) => tick + 1);
     };
 
@@ -340,6 +358,8 @@ export const TimelinePanel = () => {
       },
       canvas.width,
       canvas.height,
+      scrollOffsetX,
+      getFrameW(canvas.width),
     );
   }, [
     bones,
@@ -357,7 +377,25 @@ export const TimelinePanel = () => {
     audioDurationSeconds,
     fps,
     waveformPeaks,
+    scrollOffsetX,
+    timelineZoom,
   ]);
+
+  useEffect(() => {
+    const canvas = headerCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    drawTimelineHeader(
+      ctx,
+      frame,
+      duration,
+      canvas.width,
+      canvas.height,
+      scrollOffsetX,
+      getFrameW(canvas.width),
+    );
+  }, [frame, duration, resizeTick, scrollOffsetX, timelineZoom]);
 
   useEffect(() => {
     setSelectedKeyframes((current) =>
@@ -397,6 +435,18 @@ export const TimelinePanel = () => {
     }
   }, [frame, playing, mode, applyKeyframes]);
 
+  const getFrameW = (canvasWidth: number) =>
+    Math.max(8, (canvasWidth - HEADER_W - TIMELINE_PADDING_RIGHT) / duration) *
+    timelineZoom;
+
+  const getMaxScrollX = (canvasWidth: number) =>
+    Math.max(
+      0,
+      getFrameW(canvasWidth) * duration +
+        TIMELINE_PADDING_RIGHT -
+        (canvasWidth - HEADER_W),
+    );
+
   const getKeyframeAtPosition = (
     sx: number,
     sy: number,
@@ -405,14 +455,11 @@ export const TimelinePanel = () => {
     if (!rect) return null;
 
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const frameW = Math.max(
-      8,
-      (rect.width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
-    );
+    const frameW = getFrameW(rect.width);
 
     if (sx < HEADER_W) return null;
 
-    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
+    const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
 
     const bone = bones[boneIndex];
@@ -421,8 +468,8 @@ export const TimelinePanel = () => {
 
     for (const kf of Object.keys(boneKeyframes)) {
       const kfFrame = parseInt(kf);
-      const kfX = HEADER_W + kfFrame * frameW;
-      const kfY = HEADER_H + audioRowH + boneIndex * ROW_H + ROW_H / 2;
+      const kfX = HEADER_W + kfFrame * frameW - scrollOffsetX;
+      const kfY = audioRowH + boneIndex * ROW_H + ROW_H / 2;
 
       const dist = Math.hypot(sx - kfX, sy - kfY);
       if (dist < 8) {
@@ -435,21 +482,32 @@ export const TimelinePanel = () => {
 
   const getBoneAtPosition = (sy: number) => {
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
+    const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
 
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
     return bones[boneIndex] ?? null;
   };
 
   const isAudioTrackHit = (sy: number) =>
-    audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
+    audioData && sy >= 0 && sy <= AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
-    const frameW = Math.max(
-      8,
-      (width - HEADER_W - TIMELINE_PADDING_RIGHT) / duration,
+    const frameW = getFrameW(width);
+    return Math.round(
+      clamp((sx - HEADER_W + scrollOffsetX) / frameW, 0, duration),
     );
-    return Math.round(clamp((sx - HEADER_W) / frameW, 0, duration));
+  };
+
+  const handleHeaderMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = headerCanvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    if (sx <= HEADER_W) return;
+    const newFrame = getFrameFromX(sx, rect.width);
+    setFrame(newFrame);
+    if (mode === "animate") applyKeyframes();
+    setIsDragging(true);
+    setDragMode("playhead");
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -463,8 +521,14 @@ export const TimelinePanel = () => {
 
     if (boneHit) {
       selectBone(boneHit.id);
-    } else if (sy <= 20) {
-      selectBone(null);
+      if (sx < HEADER_W) {
+        const boneKeyframes = keyframes[boneHit.id];
+        if (boneKeyframes) {
+          const allFrames = Object.keys(boneKeyframes).map(Number);
+          setSelectedKeyframes(allFrames.map((f) => ({ boneId: boneHit.id, frame: f })));
+        }
+        return;
+      }
     }
 
     if (e.detail === 2 && keyframeHit) {
@@ -625,6 +689,7 @@ export const TimelinePanel = () => {
         selectedKeyframes.length > 0
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         captureSnapshot();
         selectedKeyframes.forEach((keyframe) => {
           deleteKeyframe(keyframe.boneId, keyframe.frame);
@@ -638,6 +703,7 @@ export const TimelinePanel = () => {
         hoveredKeyframe
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         deleteKeyframe(hoveredKeyframe.boneId, hoveredKeyframe.frame);
       }
     };
@@ -646,11 +712,11 @@ export const TimelinePanel = () => {
       setContextMenu(null);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("click", handleClickOutside);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("click", handleClickOutside);
     };
   }, [hoveredKeyframe, selectedKeyframes, captureSnapshot, deleteKeyframe]);
@@ -829,19 +895,57 @@ export const TimelinePanel = () => {
   });
 
   useEffect(() => {
-    window.addEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
-    window.addEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
-    window.addEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+    window.addEventListener("spine:timeline-prev-key", handlePrevKeyUiEvent);
+    window.addEventListener("spine:timeline-next-key", handleNextKeyUiEvent);
+    window.addEventListener(
+      "spine:timeline-select-frame-keys",
+      handleSelectFrameKeysUiEvent,
+    );
 
     return () => {
-      window.removeEventListener('spine:timeline-prev-key', handlePrevKeyUiEvent);
-      window.removeEventListener('spine:timeline-next-key', handleNextKeyUiEvent);
-      window.removeEventListener('spine:timeline-select-frame-keys', handleSelectFrameKeysUiEvent);
+      window.removeEventListener(
+        "spine:timeline-prev-key",
+        handlePrevKeyUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-next-key",
+        handleNextKeyUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-select-frame-keys",
+        handleSelectFrameKeysUiEvent,
+      );
     };
   }, []);
 
+  const handleCanvasWheel = useEffectEvent((e: WheelEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const maxX = getMaxScrollX(canvas.width);
+    if (e.altKey) {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setTimelineZoom((z) => Math.max(1, Math.min(20, z * zoomFactor)));
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev)));
+    } else if (e.shiftKey) {
+      e.preventDefault();
+      const delta = e.deltaY || e.deltaX;
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + delta)));
+    } else if (Math.abs(e.deltaX) > 0) {
+      e.preventDefault();
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + e.deltaX)));
+    }
+  });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener("wheel", handleCanvasWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleCanvasWheel);
+  }, []);
+
   return (
-    <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
+    <div className="h-[190px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
         <button
           onClick={playing ? stop : play}
@@ -987,7 +1091,12 @@ export const TimelinePanel = () => {
           value={fpsInput}
           onChange={(e) => setFpsInput(e.target.value)}
           onBlur={(e) => commitFps(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { commitFps((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commitFps((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
           className="w-10 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="1"
           max="120"
@@ -998,7 +1107,12 @@ export const TimelinePanel = () => {
           value={durationInput}
           onChange={(e) => setDurationInput(e.target.value)}
           onBlur={(e) => commitDuration(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { commitDuration((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commitDuration((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
           className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="10"
           max="300"
@@ -1008,6 +1122,14 @@ export const TimelinePanel = () => {
         ref={wrapRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin"
       >
+        <canvas
+          ref={headerCanvasRef}
+          className="block sticky top-0 z-10"
+          onMouseDown={handleHeaderMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          style={{ cursor: "default" }}
+        />
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -1039,6 +1161,47 @@ export const TimelinePanel = () => {
             </button>
           </div>
         )}
+      </div>
+      {/* Horizontal scrollbar */}
+      <div
+        className="h-2.5 bg-panel2 border-t border-border flex-shrink-0 relative"
+        style={{ paddingLeft: HEADER_W }}
+        onMouseDown={(e) => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const maxScroll = getMaxScrollX(canvas.width);
+          if (maxScroll <= 0) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const trackW = canvas.width - HEADER_W;
+          const thumbW = Math.max(20, (trackW * trackW) / (trackW + maxScroll));
+          const ratio = Math.max(
+            0,
+            Math.min(1, (clickX - thumbW / 2) / (trackW - thumbW)),
+          );
+          setScrollOffsetX(ratio * maxScroll);
+        }}
+      >
+        <div className="relative h-full w-full">
+          {(() => {
+            const canvas = canvasRef.current;
+            if (!canvas) return null;
+            const maxScroll = getMaxScrollX(canvas.width);
+            if (maxScroll <= 0) return null;
+            const trackW = canvas.width - HEADER_W;
+            const thumbW = Math.max(
+              20,
+              (trackW * trackW) / (trackW + maxScroll),
+            );
+            const thumbLeft = (scrollOffsetX / maxScroll) * (trackW - thumbW);
+            return (
+              <div
+                className="absolute top-0.5 bottom-0.5 bg-border hover:bg-accent/60 rounded-full cursor-pointer transition-colors"
+                style={{ left: thumbLeft, width: thumbW }}
+              />
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
