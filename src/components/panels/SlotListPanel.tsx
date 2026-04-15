@@ -2,8 +2,10 @@ import { Upload, Plus, Trash2 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useSlotStore } from '../../stores/slotStore';
+import { useAnimationStore } from '../../stores/animationStore';
 import { openImageFile } from '../../utils/nativeIO';
 import { useHistoryStore } from '../../stores/historyStore';
+import { getSlotAttachmentAtFrame } from '../../utils/slotAnimation';
 
 const IMAGE_FILTERS = [
   {
@@ -13,9 +15,10 @@ const IMAGE_FILTERS = [
 ];
 
 export const SlotListPanel = () => {
-  const { selectedBoneId } = useEditorStore();
+  const { selectedBoneId, mode } = useEditorStore();
   const { bones } = useSkeletonStore();
   const { slots, addSlot, deleteSlot, addAttachment, setSlotAttachment, getAttachmentsBySlot } = useSlotStore();
+  const { frame, slotAttachmentKeyframes, insertSlotAttachmentKeyframe } = useAnimationStore();
   const { captureSnapshot } = useHistoryStore();
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
@@ -55,7 +58,11 @@ export const SlotListPanel = () => {
           scaleX: scale,
           scaleY: scale,
         });
-        setSlotAttachment(slotId, attachmentName);
+        if (mode === 'animate') {
+          insertSlotAttachmentKeyframe(slotId, attachmentName);
+        } else {
+          setSlotAttachment(slotId, attachmentName);
+        }
       };
       img.onerror = () => {
         alert('Failed to decode image.');
@@ -101,7 +108,11 @@ export const SlotListPanel = () => {
         ) : (
           boneSlots.map((slot) => {
             const slotAttachments = getAttachmentsBySlot(slot.id);
-            const activeAttachment = slotAttachments.find((a) => a.name === slot.attachmentName);
+            const activeAttachmentName =
+              mode === 'animate'
+                ? getSlotAttachmentAtFrame(slot.id, frame, slotAttachmentKeyframes, slot.attachmentName)
+                : slot.attachmentName;
+            const activeAttachment = slotAttachments.find((a) => a.name === activeAttachmentName);
 
             return (
               <div key={slot.id} className="border-b border-border/40">
@@ -135,9 +146,16 @@ export const SlotListPanel = () => {
                     {slotAttachments.map((att) => (
                       <button
                         key={att.name}
-                        onClick={() => setSlotAttachment(slot.id, att.name)}
+                        onClick={() => {
+                          captureSnapshot();
+                          if (mode === 'animate') {
+                            insertSlotAttachmentKeyframe(slot.id, att.name);
+                          } else {
+                            setSlotAttachment(slot.id, att.name);
+                          }
+                        }}
                         className={`block w-full text-left px-2 py-1 text-[10px] rounded mb-0.5 transition-colors ${
-                          slot.attachmentName === att.name
+                          activeAttachmentName === att.name
                             ? 'bg-accent text-white'
                             : 'text-text-dim hover:bg-panel2'
                         }`}

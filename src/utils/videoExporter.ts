@@ -1,8 +1,9 @@
-import type { Bone, Slot, Attachment, Keyframes } from '../types';
+import type { Bone, Slot, Attachment, Keyframes, SlotAttachmentKeyframes } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { resolveAnimatedSlots } from './slotAnimation';
 import { createExportWorldToScreen } from '../engine/viewport';
 
 export const exportVideo = async (
@@ -10,6 +11,7 @@ export const exportVideo = async (
   slots: Slot[],
   attachments: Attachment[],
   keyframes: Keyframes,
+  slotAttachmentKeyframes: SlotAttachmentKeyframes,
   duration: number,
   fps: number,
   camX: number,
@@ -124,7 +126,11 @@ export const exportVideo = async (
     mediaRecorder.start();
 
     let currentFrame = 0;
-    const totalFrames = duration;
+    const lastAttachmentKeyframe = Object.values(slotAttachmentKeyframes).reduce((max, slotKfs) => {
+      const frames = Object.keys(slotKfs).map(Number);
+      return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
+    }, -1);
+    const totalFrames = Math.max(duration, lastAttachmentKeyframe + 1);
 
     const renderFrame = () => {
       if (currentFrame >= totalFrames) {
@@ -149,7 +155,8 @@ export const exportVideo = async (
       });
 
       computeAllWorldTransforms(bones);
-      drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom);
+      const resolvedSlots = resolveAnimatedSlots(slots, currentFrame, slotAttachmentKeyframes);
+      drawSlots(ctx, resolvedSlots, attachments, bones, worldToScreen, camZoom);
 
       currentFrame++;
       setTimeout(renderFrame, 1000 / fps);

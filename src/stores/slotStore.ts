@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Slot, Attachment } from '../types';
 import { clearAttachmentCache } from '../engine/imageRenderer';
+import { useAnimationStore } from './animationStore';
 
 interface SlotState {
   slots: Slot[];
@@ -63,6 +64,7 @@ export const useSlotStore = create<SlotState>((set, get) => ({
       slots: state.slots.filter((slot) => slot.id !== id),
       attachments: remaining,
     }));
+    useAnimationStore.getState().clearSlotAttachmentKeyframes(id);
   },
 
   addAttachment: (slotId, attachment) => {
@@ -97,6 +99,7 @@ export const useSlotStore = create<SlotState>((set, get) => ({
       }
     }
     set({ attachments: remaining });
+    useAnimationStore.getState().clearSlotAttachmentReferences(slotId, name);
   },
 
   setSlotAttachment: (slotId, attachmentName) => {

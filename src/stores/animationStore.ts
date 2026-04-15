@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { Bone, Keyframes, KeyframeData, KeyframeEasing } from '../types';
+import type { Bone, Keyframes, KeyframeData, KeyframeEasing, SlotAttachmentKeyframes } from '../types';
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
   keyframes: Keyframes;
+  slotAttachmentKeyframes: SlotAttachmentKeyframes;
   frame: number;
   duration: number;
   fps: number;
@@ -15,6 +16,10 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  insertSlotAttachmentKeyframe: (slotId: number, attachmentName: string | null) => void;
+  deleteSlotAttachmentKeyframe: (slotId: number, frame: number) => void;
+  clearSlotAttachmentKeyframes: (slotId: number) => void;
+  clearSlotAttachmentReferences: (slotId: number, attachmentName: string | null) => void;
   moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
@@ -59,6 +64,7 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
+  slotAttachmentKeyframes: {},
   frame: 0,
   duration: 60,
   fps: 24,
@@ -78,6 +84,66 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  insertSlotAttachmentKeyframe: (slotId, attachmentName) => {
+    set((state) => ({
+      slotAttachmentKeyframes: {
+        ...state.slotAttachmentKeyframes,
+        [slotId]: {
+          ...state.slotAttachmentKeyframes[slotId],
+          [state.frame]: { attachmentName },
+        },
+      },
+    }));
+  },
+
+  deleteSlotAttachmentKeyframe: (slotId, frame) => {
+    set((state) => {
+      const slotKeyframes = { ...(state.slotAttachmentKeyframes[slotId] ?? {}) };
+      delete slotKeyframes[frame];
+
+      const nextSlotAttachmentKeyframes = { ...state.slotAttachmentKeyframes };
+      if (Object.keys(slotKeyframes).length === 0) {
+        delete nextSlotAttachmentKeyframes[slotId];
+      } else {
+        nextSlotAttachmentKeyframes[slotId] = slotKeyframes;
+      }
+
+      return { slotAttachmentKeyframes: nextSlotAttachmentKeyframes };
+    });
+  },
+
+  clearSlotAttachmentKeyframes: (slotId) => {
+    set((state) => {
+      const nextSlotAttachmentKeyframes = { ...state.slotAttachmentKeyframes };
+      delete nextSlotAttachmentKeyframes[slotId];
+      return { slotAttachmentKeyframes: nextSlotAttachmentKeyframes };
+    });
+  },
+
+  clearSlotAttachmentReferences: (slotId, attachmentName) => {
+    set((state) => {
+      const slotKeyframes = state.slotAttachmentKeyframes[slotId];
+      if (!slotKeyframes) return state;
+
+      const nextSlotKeyframes: Record<number, { attachmentName: string | null }> = {};
+      Object.entries(slotKeyframes).forEach(([frame, data]) => {
+        nextSlotKeyframes[Number(frame)] = {
+          attachmentName:
+            attachmentName !== null && data.attachmentName === attachmentName
+              ? null
+              : data.attachmentName,
+        };
+      });
+
+      return {
+        slotAttachmentKeyframes: {
+          ...state.slotAttachmentKeyframes,
+          [slotId]: nextSlotKeyframes,
+        },
+      };
+    });
   },
 
   moveKeyframe: (boneId, fromFrame, toFrame) => {

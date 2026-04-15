@@ -74,6 +74,10 @@ export interface KeyframeData {
 }
 
 export type Keyframes = Record<number, Record<number, KeyframeData>>;
+export type SlotAttachmentKeyframes = Record<
+  number,
+  Record<number, { attachmentName: string | null }>
+>;
 
 export interface CameraState {
   x: number;
@@ -97,6 +101,7 @@ export interface ProjectData {
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
   fps: number;
   backgroundImage?: string | null;

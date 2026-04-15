@@ -1,9 +1,14 @@
 import { useEditorStore } from '../../stores/editorStore';
 import { useSlotStore } from '../../stores/slotStore';
+import { useAnimationStore } from '../../stores/animationStore';
+import { useHistoryStore } from '../../stores/historyStore';
+import { getSlotAttachmentAtFrame } from '../../utils/slotAnimation';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
+  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
+  const { frame, slotAttachmentKeyframes, insertSlotAttachmentKeyframe, deleteSlotAttachmentKeyframe } = useAnimationStore();
+  const { captureSnapshot } = useHistoryStore();
 
   if (selectedBoneId === null) {
     return (
@@ -19,9 +24,21 @@ export const AttachmentPropertiesPanel = () => {
   }
 
   const boneSlots = slots.filter((s) => s.boneId === selectedBoneId);
-  const activeSlot = boneSlots.find((s) => s.attachmentName !== null);
+  const activeSlot = boneSlots.find((s) => {
+    const attachmentName =
+      mode === 'animate'
+        ? getSlotAttachmentAtFrame(s.id, frame, slotAttachmentKeyframes, s.attachmentName)
+        : s.attachmentName;
+    return attachmentName !== null;
+  });
   
-  if (!activeSlot || !activeSlot.attachmentName) {
+  const resolvedAttachmentName = activeSlot
+    ? mode === 'animate'
+      ? getSlotAttachmentAtFrame(activeSlot.id, frame, slotAttachmentKeyframes, activeSlot.attachmentName)
+      : activeSlot.attachmentName
+    : null;
+
+  if (!activeSlot || !resolvedAttachmentName) {
     return (
       <div className="border-b border-border">
         <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
@@ -35,16 +52,18 @@ export const AttachmentPropertiesPanel = () => {
   }
 
   const attachment = attachments.find(
-    (a) => a.slotId === activeSlot.id && a.name === activeSlot.attachmentName
+    (a) => a.slotId === activeSlot.id && a.name === resolvedAttachmentName
   );
 
   if (!attachment) return null;
 
   const handleUpdate = (field: string, value: number) => {
-    updateAttachment(activeSlot.id, activeSlot.attachmentName!, {
+    updateAttachment(activeSlot.id, resolvedAttachmentName, {
       [field]: value,
     });
   };
+
+  const hasAttachmentKeyOnCurrentFrame = slotAttachmentKeyframes[activeSlot.id]?.[frame] !== undefined;
 
   return (
     <div className="border-b border-border">
@@ -64,6 +83,34 @@ export const AttachmentPropertiesPanel = () => {
         </button>
       </div>
       <div className="p-3 space-y-2">
+        {mode === 'animate' ? (
+          <div className="rounded border border-border bg-panel2 px-2 py-2 text-[10px] text-text-dim">
+            <div>Frame {frame}</div>
+            <div className="mt-1 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  captureSnapshot();
+                  insertSlotAttachmentKeyframe(activeSlot.id, resolvedAttachmentName);
+                }}
+                className="rounded border border-accent/60 bg-accent/15 px-2 py-1 text-[10px] text-text hover:bg-accent/25"
+              >
+                Set Attach Key
+              </button>
+              <button
+                type="button"
+                disabled={!hasAttachmentKeyOnCurrentFrame}
+                onClick={() => {
+                  captureSnapshot();
+                  deleteSlotAttachmentKeyframe(activeSlot.id, frame);
+                }}
+                className="rounded border border-border px-2 py-1 text-[10px] text-text-dim hover:border-red-500 hover:text-white disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-dim"
+              >
+                Clear Key
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="text-[9px] text-text-dim mb-2">
           Adjust offset to change rotation pivot
         </div>

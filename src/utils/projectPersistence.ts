@@ -498,13 +498,20 @@ export const buildProjectData = (): ProjectData => {
 
   // Normalize keyframes so the earliest frame across all bones becomes frame 0
   const originalKeyframes = animationState.keyframes;
+  const originalSlotAttachmentKeyframes = animationState.slotAttachmentKeyframes;
   let minFrame = Infinity;
   for (const boneId of Object.keys(originalKeyframes)) {
     for (const frame of Object.keys(originalKeyframes[Number(boneId)])) {
       minFrame = Math.min(minFrame, Number(frame));
     }
   }
+  for (const slotId of Object.keys(originalSlotAttachmentKeyframes)) {
+    for (const frame of Object.keys(originalSlotAttachmentKeyframes[Number(slotId)])) {
+      minFrame = Math.min(minFrame, Number(frame));
+    }
+  }
   const normalizedKeyframes: typeof originalKeyframes = {};
+  const normalizedSlotAttachmentKeyframes: typeof originalSlotAttachmentKeyframes = {};
   if (minFrame !== Infinity && minFrame > 0) {
     for (const boneIdStr of Object.keys(originalKeyframes)) {
       const boneId = Number(boneIdStr);
@@ -514,8 +521,18 @@ export const buildProjectData = (): ProjectData => {
         normalizedKeyframes[boneId][frame - minFrame] = originalKeyframes[boneId][frame];
       }
     }
+    for (const slotIdStr of Object.keys(originalSlotAttachmentKeyframes)) {
+      const slotId = Number(slotIdStr);
+      normalizedSlotAttachmentKeyframes[slotId] = {};
+      for (const frameStr of Object.keys(originalSlotAttachmentKeyframes[slotId])) {
+        const frame = Number(frameStr);
+        normalizedSlotAttachmentKeyframes[slotId][frame - minFrame] =
+          originalSlotAttachmentKeyframes[slotId][frame];
+      }
+    }
   } else {
     Object.assign(normalizedKeyframes, originalKeyframes);
+    Object.assign(normalizedSlotAttachmentKeyframes, originalSlotAttachmentKeyframes);
   }
 
   const currentSetupPose = skeletonState.bones.reduce<SetupPose>((acc, bone) => {
@@ -543,7 +560,7 @@ export const buildProjectData = (): ProjectData => {
   });
 
   return {
-    version: '1.1',
+    version: '1.2',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -560,6 +577,7 @@ export const buildProjectData = (): ProjectData => {
     slots: slotState.slots,
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
+    slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -598,6 +616,7 @@ export const applyProjectData = (
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
+    slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
@@ -646,6 +665,7 @@ export const createNewProject = () => {
 
   useAnimationStore.setState({
     keyframes: {},
+    slotAttachmentKeyframes: {},
     frame: 0,
     duration: 60,
     fps: 24,

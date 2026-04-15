@@ -1,15 +1,17 @@
 import JSZip from 'jszip';
-import type { Attachment, Bone, Keyframes, Slot } from '../types';
+import type { Attachment, Bone, Keyframes, Slot, SlotAttachmentKeyframes } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { resolveAnimatedSlots } from './slotAnimation';
 
 interface ExportPngSequenceOptions {
   bones: Bone[];
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
   fps: number;
   camX: number;
@@ -159,6 +161,7 @@ const getAutoFitTransform = ({
   slots,
   attachments,
   keyframes,
+  slotAttachmentKeyframes,
   totalFrames,
   frameWidth,
   frameHeight,
@@ -170,6 +173,7 @@ const getAutoFitTransform = ({
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  slotAttachmentKeyframes: SlotAttachmentKeyframes;
   totalFrames: number;
   frameWidth: number;
   frameHeight: number;
@@ -191,8 +195,9 @@ const getAutoFitTransform = ({
     const bonesCopy = JSON.parse(JSON.stringify(bones)) as Bone[];
     applyFramePose(bonesCopy, keyframes, frame);
     computeAllWorldTransforms(bonesCopy);
+    const resolvedSlots = resolveAnimatedSlots(slots, frame, slotAttachmentKeyframes);
 
-    slots.forEach((slot) => {
+    resolvedSlots.forEach((slot) => {
       if (!slot.attachmentName) return;
 
       const bone = bonesCopy.find((item) => item.id === slot.boneId);
@@ -235,6 +240,7 @@ export const exportPngSequence = async ({
   slots,
   attachments,
   keyframes,
+  slotAttachmentKeyframes = {},
   duration,
   fps,
   camX,
@@ -250,7 +256,15 @@ export const exportPngSequence = async ({
     const frames = Object.keys(boneKfs).map(Number);
     return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
   }, -1);
-  const totalFrames = Math.max(1, lastKeyframe >= 0 ? lastKeyframe + 1 : duration);
+  const lastAttachmentKeyframe = Object.values(slotAttachmentKeyframes).reduce((max, slotKfs) => {
+    const frames = Object.keys(slotKfs).map(Number);
+    return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
+  }, -1);
+  const totalFrames = Math.max(
+    1,
+    lastKeyframe >= 0 ? lastKeyframe + 1 : duration,
+    lastAttachmentKeyframe >= 0 ? lastAttachmentKeyframe + 1 : duration,
+  );
 
   await preloadImages(attachments, backgroundImage, includeBackground);
 
@@ -280,9 +294,10 @@ export const exportPngSequence = async ({
     : getAutoFitTransform({
         bones,
         slots,
-        attachments,
-        keyframes,
-        totalFrames,
+      attachments,
+      keyframes,
+      slotAttachmentKeyframes,
+      totalFrames,
         frameWidth,
         frameHeight,
         camX,
@@ -313,7 +328,8 @@ export const exportPngSequence = async ({
       ctx.clearRect(0, 0, frameWidth, frameHeight);
       applyFramePose(bonesCopy, keyframes, frame);
       computeAllWorldTransforms(bonesCopy);
-      drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+      const resolvedSlots = resolveAnimatedSlots(slots, frame, slotAttachmentKeyframes);
+      drawSlots(ctx, resolvedSlots, attachments, bonesCopy, worldToScreen, exportZoom);
       const bounds = getTrimmedBounds(ctx, frameWidth, frameHeight);
       if (!bounds.empty) {
         if (bounds.x < unionMinX) unionMinX = bounds.x;
@@ -373,7 +389,8 @@ export const exportPngSequence = async ({
 
     applyFramePose(bonesCopy, keyframes, frame);
     computeAllWorldTransforms(bonesCopy);
-    drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+    const resolvedSlots = resolveAnimatedSlots(slots, frame, slotAttachmentKeyframes);
+    drawSlots(ctx, resolvedSlots, attachments, bonesCopy, worldToScreen, exportZoom);
 
     // Apply crop if needed
     let outputCanvas = canvas;
