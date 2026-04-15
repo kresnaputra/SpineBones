@@ -518,6 +518,21 @@ export const buildProjectData = (): ProjectData => {
     Object.assign(normalizedKeyframes, originalKeyframes);
   }
 
+  const originalMeshDeformKeyframes = animationState.meshDeformKeyframes;
+  const normalizedMeshDeformKeyframes: typeof originalMeshDeformKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const attachmentKey of Object.keys(originalMeshDeformKeyframes)) {
+      normalizedMeshDeformKeyframes[attachmentKey] = {};
+      for (const frameStr of Object.keys(originalMeshDeformKeyframes[attachmentKey])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedMeshDeformKeyframes[attachmentKey][normalizedFrame] =
+          originalMeshDeformKeyframes[attachmentKey][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedMeshDeformKeyframes, originalMeshDeformKeyframes);
+  }
+
   const currentSetupPose = skeletonState.bones.reduce<SetupPose>((acc, bone) => {
     acc[bone.id] = {
       x: bone.x,
@@ -543,7 +558,7 @@ export const buildProjectData = (): ProjectData => {
   });
 
   return {
-    version: '1.1',
+    version: '1.2',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -560,6 +575,7 @@ export const buildProjectData = (): ProjectData => {
     slots: slotState.slots,
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
+    meshDeformKeyframes: normalizedMeshDeformKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -598,6 +614,7 @@ export const applyProjectData = (
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
+    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
@@ -646,6 +663,7 @@ export const createNewProject = () => {
 
   useAnimationStore.setState({
     keyframes: {},
+    meshDeformKeyframes: {},
     frame: 0,
     duration: 60,
     fps: 24,

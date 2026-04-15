@@ -7,10 +7,11 @@ import { useHistoryStore } from '../../stores/historyStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
-import { drawAttachmentOutline, drawSlotOutlines, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
+import { drawAttachmentOutline, drawSlotOutlines, drawSlots, getAttachmentMeshScreenVertices, hitTestAttachment } from '../../engine/imageRenderer';
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
+import { ensureMeshAttachment, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
@@ -25,9 +26,9 @@ export const MainCanvas = () => {
   
   const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
-  const { keyframes, frame, duration, insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
+  const { keyframes, meshDeformKeyframes, frame, duration, insertKeyframe, setMeshDeformKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
-  const { slots, attachments } = useSlotStore();
+  const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
 
   const isDescendantOfBone = (boneId: number, ancestorId: number) => {
@@ -165,6 +166,30 @@ export const MainCanvas = () => {
     totalRotation: number;
   } | null>(null);
   const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
+  const [hoveredMeshVertexIndex, setHoveredMeshVertexIndex] = useState<number | null>(null);
+  const [meshDragStart, setMeshDragStart] = useState<{
+    slotId: number;
+    attachmentName: string;
+    vertexIndex: number;
+    startScreenX: number;
+    startScreenY: number;
+    initialVertices: NonNullable<typeof attachments[number]['meshVertices']>;
+  } | null>(null);
+
+  const activeSlot = selectedBoneId === null
+    ? null
+    : slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ?? null;
+  const activeBone = selectedBoneId === null
+    ? null
+    : bones.find((bone) => bone.id === selectedBoneId) ?? null;
+  const activeAttachment = activeSlot && activeSlot.attachmentName
+    ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName) ?? null
+    : null;
+  const resolvedActiveAttachment =
+    activeAttachment?.type === 'mesh'
+      ? resolveAttachmentAtFrame(activeAttachment, frame, meshDeformKeyframes)
+      : activeAttachment;
+  const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -254,18 +279,19 @@ export const MainCanvas = () => {
     const previousMovedBones = previousFrame ? getMovedGhostBones(previousFrame) : [];
     const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
 
-    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
+    const resolvedAttachments = attachments.map((attachment) =>
+      resolveAttachmentAtFrame(attachment, frame, meshDeformKeyframes),
+    );
+    drawSlots(ctx, slots, resolvedAttachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
 
-    if (attachmentDragEnabled && selectedBoneId !== null) {
-      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
-      const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
-      const activeAttachment = activeSlot
-        ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
-        : null;
-
-      if (activeSlot && selectedBone && activeAttachment) {
-        drawAttachmentOutline(ctx, activeAttachment, selectedBone, worldToScreen, camZoom);
-      }
+    if (activeSlot && activeBone && activeAttachment && (attachmentDragEnabled || tool === 'mesh')) {
+      drawAttachmentOutline(
+        ctx,
+        resolvedActiveAttachment ?? activeAttachment,
+        activeBone,
+        worldToScreen,
+        camZoom,
+      );
     }
 
     if (showBoneIndicators) {
@@ -319,8 +345,8 @@ export const MainCanvas = () => {
     }
 
     if (previousMovedBones.length > 0) {
-      drawSlots(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, {
+      drawSlots(ctx, slots, resolvedAttachments, previousMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, resolvedAttachments, previousMovedBones, worldToScreen, camZoom, {
         strokeStyle: 'rgba(8,145,178,0.9)',
         lineWidth: 2,
         dash: [6, 4],
@@ -331,8 +357,8 @@ export const MainCanvas = () => {
     }
 
     if (nextMovedBones.length > 0) {
-      drawSlots(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, {
+      drawSlots(ctx, slots, resolvedAttachments, nextMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, resolvedAttachments, nextMovedBones, worldToScreen, camZoom, {
         strokeStyle: 'rgba(219,39,119,0.9)',
         lineWidth: 2,
         dash: [6, 4],
@@ -342,7 +368,7 @@ export const MainCanvas = () => {
       });
     }
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -368,6 +394,28 @@ export const MainCanvas = () => {
         x: attachmentDragStart.initialX + localDx,
         y: attachmentDragStart.initialY + localDy,
       });
+      return;
+    }
+
+    if (meshDragStart && activeBone) {
+      const nextVertices = meshDragStart.initialVertices.map((vertex, index) => {
+        if (index !== meshDragStart.vertexIndex) return vertex;
+        return {
+          ...vertex,
+          x: vertex.x + (sx - meshDragStart.startScreenX) / camZoom,
+          y: vertex.y + (sy - meshDragStart.startScreenY) / camZoom,
+        };
+      });
+      if (mode === 'animate') {
+        setMeshDeformKeyframe(
+          getMeshAttachmentKey({ slotId: meshDragStart.slotId, name: meshDragStart.attachmentName }),
+          nextVertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+        );
+      } else {
+        updateAttachment(meshDragStart.slotId, meshDragStart.attachmentName, {
+          meshVertices: nextVertices,
+        });
+      }
       return;
     }
 
@@ -457,6 +505,14 @@ export const MainCanvas = () => {
       return;
     }
 
+    if (tool === 'mesh' && meshAttachment && activeBone) {
+      const screenVertices = getAttachmentMeshScreenVertices(meshAttachment, activeBone, worldToScreen, camZoom);
+      const hoveredIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);
+      setHoveredMeshVertexIndex(hoveredIndex >= 0 ? hoveredIndex : null);
+      setHoveredBoneId(null);
+      return;
+    }
+
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
     setHoveredBoneId(hit?.id || null);
   };
@@ -468,6 +524,34 @@ export const MainCanvas = () => {
     const sy = e.clientY - rect.top;
 
     const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+
+    if (tool === 'mesh' && activeSlot && activeBone && activeAttachment) {
+      const ensuredAttachment =
+        activeAttachment.type === 'mesh' ? activeAttachment : ensureMeshAttachment(activeAttachment);
+      if (activeAttachment.type !== 'mesh') {
+        captureSnapshot();
+        updateAttachment(activeSlot.id, activeAttachment.name, ensuredAttachment);
+      }
+      const displayAttachment =
+        mode === 'animate'
+          ? resolveAttachmentAtFrame(ensuredAttachment, frame, meshDeformKeyframes)
+          : ensuredAttachment;
+      const screenVertices = getAttachmentMeshScreenVertices(displayAttachment, activeBone, worldToScreen, camZoom);
+      const targetVertexIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);
+      if (targetVertexIndex >= 0 && displayAttachment.meshVertices) {
+        if (activeBone.id !== selectedBoneId) selectBone(activeBone.id);
+        if (meshDragStart === null) captureSnapshot();
+        setMeshDragStart({
+          slotId: activeSlot.id,
+          attachmentName: ensuredAttachment.name,
+          vertexIndex: targetVertexIndex,
+          startScreenX: sx,
+          startScreenY: sy,
+          initialVertices: displayAttachment.meshVertices.map((vertex) => ({ ...vertex })),
+        });
+        return;
+      }
+    }
 
     if (e.button === 2) {
       if (mode !== 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
@@ -677,9 +761,11 @@ export const MainCanvas = () => {
     }
 
     setAttachmentDragStart(null);
+    setMeshDragStart(null);
     setIkDragStart(null);
     setIsDragging(false);
     setDragStart(null);
+    setHoveredMeshVertexIndex(null);
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -714,6 +800,7 @@ export const MainCanvas = () => {
         onWheel={handleWheel}
         onContextMenu={handleContextMenu}
         className="absolute top-0 left-0 cursor-crosshair"
+        style={{ cursor: tool === 'mesh' && hoveredMeshVertexIndex !== null ? 'grab' : undefined }}
       />
       
       <div className="absolute bottom-3 left-3 text-[10px] text-text-dim bg-bg/80 px-2.5 py-1.5 rounded-md border border-border leading-relaxed pointer-events-none">

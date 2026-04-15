@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { Bone, Keyframes, KeyframeData, KeyframeEasing } from '../types';
+import type { Bone, Keyframes, KeyframeData, KeyframeEasing, MeshDeformKeyframes } from '../types';
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
   keyframes: Keyframes;
+  meshDeformKeyframes: MeshDeformKeyframes;
   frame: number;
   duration: number;
   fps: number;
@@ -15,6 +16,8 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
+  deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
   moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
@@ -59,6 +62,7 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
+  meshDeformKeyframes: {},
   frame: 0,
   duration: 60,
   fps: 24,
@@ -78,6 +82,36 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  setMeshDeformKeyframe: (attachmentKey, vertices) => {
+    set((state) => ({
+      meshDeformKeyframes: {
+        ...state.meshDeformKeyframes,
+        [attachmentKey]: {
+          ...state.meshDeformKeyframes[attachmentKey],
+          [state.frame]: {
+            vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+          },
+        },
+      },
+    }));
+  },
+
+  deleteMeshDeformKeyframe: (attachmentKey, frame) => {
+    set((state) => {
+      const attachmentKeyframes = { ...(state.meshDeformKeyframes[attachmentKey] ?? {}) };
+      delete attachmentKeyframes[frame];
+
+      const nextMeshDeformKeyframes = { ...state.meshDeformKeyframes };
+      if (Object.keys(attachmentKeyframes).length === 0) {
+        delete nextMeshDeformKeyframes[attachmentKey];
+      } else {
+        nextMeshDeformKeyframes[attachmentKey] = attachmentKeyframes;
+      }
+
+      return { meshDeformKeyframes: nextMeshDeformKeyframes };
+    });
   },
 
   moveKeyframe: (boneId, fromFrame, toFrame) => {

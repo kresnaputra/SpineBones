@@ -1184,6 +1184,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       slotState.slots,
       slotState.attachments,
       animationState.keyframes,
+      animationState.meshDeformKeyframes,
       animationState.duration,
       animationState.fps,
       cameraState.x,

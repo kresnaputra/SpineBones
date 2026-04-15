@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Scan } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -13,6 +13,7 @@ import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripEx
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
+import { ensureMeshAttachment } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -21,6 +22,7 @@ const TOOL_ICONS = {
   move: Move,
   rotate: RotateCw,
   scale: Maximize2,
+  mesh: Scan,
 };
 
 const TOOL_LABELS = {
@@ -29,6 +31,7 @@ const TOOL_LABELS = {
   move: 'Move',
   rotate: 'Rotate',
   scale: 'Scale',
+  mesh: 'Mesh',
 };
 
 const TOOL_SHORTCUTS = {
@@ -37,6 +40,7 @@ const TOOL_SHORTCUTS = {
   move: 'G',
   rotate: 'R',
   scale: 'S',
+  mesh: 'M',
 };
 
 const IMAGE_FILTERS = [
@@ -54,6 +58,7 @@ export const Toolbar = () => {
     mode,
     setTool,
     setMode,
+    selectedBoneId,
     selectedBoneIds,
     onionSkinEnabled,
     toggleOnionSkin,
@@ -63,9 +68,22 @@ export const Toolbar = () => {
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
   const { insertKeyframe } = useAnimationStore();
   const { bones } = useSkeletonStore();
+  const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
   const showProjectBrowserButton = isDesktopApp();
+
+  const activeSlot =
+    selectedBoneId === null
+      ? null
+      : slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ?? null;
+  const activeAttachment =
+    activeSlot && activeSlot.attachmentName
+      ? attachments.find(
+          (attachment) =>
+            attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName,
+        ) ?? null
+      : null;
 
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
@@ -130,6 +148,7 @@ export const Toolbar = () => {
         slotState.slots,
         slotState.attachments,
         animationState.keyframes,
+        animationState.meshDeformKeyframes,
         animationState.duration,
         animationState.fps,
         cameraState.x,
@@ -282,13 +301,27 @@ export const Toolbar = () => {
         return (
           <button
             key={t}
-            onClick={() => setTool(t)}
+            onClick={() => {
+              if (t === 'mesh') {
+                if (!activeSlot || !activeAttachment) return;
+                if (activeAttachment.type !== 'mesh') {
+                  captureSnapshot();
+                  updateAttachment(
+                    activeSlot.id,
+                    activeAttachment.name,
+                    ensureMeshAttachment(activeAttachment),
+                  );
+                }
+              }
+              setTool(t);
+            }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
               tool === t
                 ? 'bg-accent text-white border-accent'
                 : 'bg-transparent text-text-dim border-transparent hover:bg-panel2 hover:text-text hover:border-border'
             }`}
             title={`${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})`}
+            disabled={t === 'mesh' && !activeAttachment}
           >
             <Icon size={14} />
             {TOOL_LABELS[t]}
