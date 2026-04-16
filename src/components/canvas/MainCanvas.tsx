@@ -18,7 +18,8 @@ import {
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
-import { ensureMeshAttachment, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { ensureMeshAttachmentAsync, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
@@ -41,6 +42,8 @@ export const MainCanvas = () => {
     duration,
     insertKeyframe,
     setMeshDeformKeyframe,
+    setMeshDeformKeyframeAtFrame,
+    updateMeshDeformKeyframeEasing,
     remapBoneKeyframesForParentChange,
   } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy } = useCameraStore();
@@ -220,6 +223,27 @@ export const MainCanvas = () => {
         )
       : activeAttachment;
   const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;
+
+  useEffect(() => {
+    if (tool !== 'mesh' || !activeSlot || !activeAttachment || activeAttachment.type === 'mesh') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const convertToMesh = async () => {
+      captureSnapshot();
+      const nextAttachment = await ensureMeshAttachmentAsync(activeAttachment);
+      if (cancelled) return;
+      updateAttachment(activeSlot.id, activeAttachment.name, nextAttachment);
+    };
+
+    void convertToMesh();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tool, activeSlot, activeAttachment, updateAttachment, captureSnapshot]);
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -503,10 +527,37 @@ export const MainCanvas = () => {
         };
       });
       if (mode === 'animate') {
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: meshDragStart.slotId,
+          name: meshDragStart.attachmentName,
+        });
+        const existingFrames = Object.keys(
+          meshDeformKeyframes[attachmentKey] ?? {},
+        ).map(Number);
+        const currentBoneEasing = normalizeKeyframeEasing(
+          keyframes[activeBone.id]?.[frame]?.easing,
+        );
+
+        if (
+          frame > 0 &&
+          activeAttachment?.meshVertices &&
+          !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
+        ) {
+          setMeshDeformKeyframeAtFrame(
+            attachmentKey,
+            0,
+            activeAttachment.meshVertices.map((vertex) => ({
+              x: vertex.x,
+              y: vertex.y,
+            })),
+          );
+        }
+
         setMeshDeformKeyframe(
-          getMeshAttachmentKey({ slotId: meshDragStart.slotId, name: meshDragStart.attachmentName }),
+          attachmentKey,
           nextVertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
         );
+        updateMeshDeformKeyframeEasing(attachmentKey, frame, currentBoneEasing);
       } else {
         updateAttachment(meshDragStart.slotId, meshDragStart.attachmentName, {
           meshVertices: nextVertices,
@@ -622,12 +673,10 @@ export const MainCanvas = () => {
     const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
 
     if (tool === 'mesh' && activeSlot && activeBone && activeAttachment) {
-      const ensuredAttachment =
-        activeAttachment.type === 'mesh' ? activeAttachment : ensureMeshAttachment(activeAttachment);
       if (activeAttachment.type !== 'mesh') {
-        captureSnapshot();
-        updateAttachment(activeSlot.id, activeAttachment.name, ensuredAttachment);
+        return;
       }
+      const ensuredAttachment = activeAttachment;
       const displayAttachment =
         mode === 'animate'
           ? resolveAttachmentAtFrame(

@@ -22,6 +22,12 @@ export interface Attachment {
   imagePath: string;
   imageData?: string;
   opacity?: number;
+  opaqueBounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
   width: number;
   height: number;
   x: number;
@@ -88,7 +94,13 @@ export interface KeyframeData {
 export type Keyframes = Record<number, Record<number, KeyframeData>>;
 export type MeshDeformKeyframes = Record<
   string,
-  Record<number, { vertices: Array<Pick<MeshVertex, 'x' | 'y'>> }>
+  Record<
+    number,
+    {
+      vertices: Array<Pick<MeshVertex, 'x' | 'y'>>;
+      easing?: KeyframeEasing;
+    }
+  >
 >;
 export type AttachmentOpacityKeyframes = Record<
   string,

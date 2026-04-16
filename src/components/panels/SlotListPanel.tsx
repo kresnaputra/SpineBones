@@ -4,6 +4,7 @@ import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { openImageFile } from '../../utils/nativeIO';
 import { useHistoryStore } from '../../stores/historyStore';
+import { getOpaqueBoundsFromImageData } from '../../utils/meshAttachment';
 
 const IMAGE_FILTERS = [
   {
@@ -34,7 +35,7 @@ export const SlotListPanel = () => {
       if (!imageFile) return;
 
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const attachmentName = imageFile.name.replace(/\.[^/.]+$/, '');
 
         // Calculate scale to fit scene (target ~200px max dimension)
@@ -42,11 +43,16 @@ export const SlotListPanel = () => {
         const maxDimension = Math.max(img.width, img.height);
         const scale = maxDimension > targetSize ? targetSize / maxDimension : 1;
 
+        const opaqueBounds = await getOpaqueBoundsFromImageData(imageFile.dataUrl).catch(
+          () => undefined,
+        );
+
         addAttachment(slotId, {
           name: attachmentName,
           type: 'image',
           imagePath: imageFile.path ?? imageFile.name,
           imageData: imageFile.dataUrl,
+          opaqueBounds,
           width: img.width,
           height: img.height,
           x: 0,

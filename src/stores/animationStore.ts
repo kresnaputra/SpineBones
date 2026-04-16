@@ -31,6 +31,8 @@ interface AnimationState {
   ) => void;
   setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
   deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
+  moveMeshDeformKeyframe: (attachmentKey: string, fromFrame: number, toFrame: number) => void;
+  updateMeshDeformKeyframeEasing: (attachmentKey: string, frame: number, easing: KeyframeEasing) => void;
   setAttachmentOpacityKeyframeAtFrame: (attachmentKey: string, frame: number, opacity: number) => void;
   setAttachmentOpacityKeyframe: (attachmentKey: string, opacity: number) => void;
   deleteAttachmentOpacityKeyframe: (attachmentKey: string, frame: number) => void;
@@ -111,6 +113,10 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           ...state.meshDeformKeyframes[attachmentKey],
           [Math.max(0, Math.round(frame))]: {
             vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+            easing:
+              state.meshDeformKeyframes[attachmentKey]?.[
+                Math.max(0, Math.round(frame))
+              ]?.easing ?? 'linear',
           },
         },
       },
@@ -125,6 +131,9 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           ...state.meshDeformKeyframes[attachmentKey],
           [state.frame]: {
             vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+            easing:
+              state.meshDeformKeyframes[attachmentKey]?.[state.frame]?.easing ??
+              'linear',
           },
         },
       },
@@ -144,6 +153,53 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       }
 
       return { meshDeformKeyframes: nextMeshDeformKeyframes };
+    });
+  },
+
+  moveMeshDeformKeyframe: (attachmentKey, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const attachmentKeyframes = state.meshDeformKeyframes[attachmentKey];
+      const sourceKeyframe = attachmentKeyframes?.[fromFrame];
+      if (!attachmentKeyframes || !sourceKeyframe) return state;
+
+      const nextAttachmentKeyframes = { ...attachmentKeyframes };
+      delete nextAttachmentKeyframes[fromFrame];
+      nextAttachmentKeyframes[toFrame] = {
+        vertices: sourceKeyframe.vertices.map((vertex) => ({
+          x: vertex.x,
+          y: vertex.y,
+        })),
+        easing: sourceKeyframe.easing,
+      };
+
+      return {
+        meshDeformKeyframes: {
+          ...state.meshDeformKeyframes,
+          [attachmentKey]: nextAttachmentKeyframes,
+        },
+      };
+    });
+  },
+
+  updateMeshDeformKeyframeEasing: (attachmentKey, frame, easing) => {
+    set((state) => {
+      const existing = state.meshDeformKeyframes[attachmentKey]?.[frame];
+      if (!existing) return state;
+
+      return {
+        meshDeformKeyframes: {
+          ...state.meshDeformKeyframes,
+          [attachmentKey]: {
+            ...state.meshDeformKeyframes[attachmentKey],
+            [frame]: {
+              ...existing,
+              easing,
+            },
+          },
+        },
+      };
     });
   },
 
