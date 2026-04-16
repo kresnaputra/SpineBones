@@ -1,8 +1,20 @@
 import { useEditorStore } from '../../stores/editorStore';
+import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
+import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
+  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
+  const {
+    frame,
+    keyframes,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+    setAttachmentOpacityKeyframeAtFrame,
+    setAttachmentOpacityKeyframe,
+    updateAttachmentOpacityKeyframeEasing,
+  } = useAnimationStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
 
   if (selectedBoneId === null) {
@@ -40,7 +52,44 @@ export const AttachmentPropertiesPanel = () => {
 
   if (!attachment) return null;
 
+  const clampOpacity = (value: number) => Math.min(1, Math.max(0, value));
+  const resolvedAttachment = resolveAttachmentAtFrame(
+    attachment,
+    frame,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+  );
+
   const handleUpdate = (field: string, value: number) => {
+    if (field === 'opacity' && mode === 'animate') {
+      const attachmentKey = getMeshAttachmentKey(attachment);
+      const existingFrames = Object.keys(
+        attachmentOpacityKeyframes[attachmentKey] ?? {},
+      ).map(Number);
+      const currentBoneEasing = normalizeKeyframeEasing(
+        keyframes[selectedBoneId]?.[frame]?.easing,
+      );
+
+      if (
+        frame > 0 &&
+        !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
+      ) {
+        setAttachmentOpacityKeyframeAtFrame(
+          attachmentKey,
+          0,
+          attachment.opacity ?? 1,
+        );
+      }
+
+      setAttachmentOpacityKeyframe(attachmentKey, clampOpacity(value));
+      updateAttachmentOpacityKeyframeEasing(
+        attachmentKey,
+        frame,
+        currentBoneEasing,
+      );
+      return;
+    }
+
     updateAttachment(activeSlot.id, activeSlot.attachmentName!, {
       [field]: value,
     });
@@ -121,6 +170,37 @@ export const AttachmentPropertiesPanel = () => {
             className="flex-1 bg-panel2 border border-border rounded px-2 py-1 text-text text-[11px]"
             step="0.1"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-dim w-16">Opacity</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
+            onChange={(e) =>
+              handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
+            }
+            className="flex-1 accent-accent"
+          />
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
+            onChange={(e) =>
+              handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
+            }
+            className="w-14 bg-panel2 border border-border rounded px-2 py-1 text-text text-[11px]"
+            step="1"
+          />
+        </div>
+
+        <div className="text-[9px] text-text-dim">
+          {mode === 'animate'
+            ? 'Animate mode: changing opacity adds fade keyframes on the current frame.'
+            : 'Setup mode: changing opacity updates the default attachment opacity.'}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { useAnimationStore } from './animationStore';
 import { useCameraStore } from './cameraStore';
 import { useEditorStore } from './editorStore';
 import { useSkeletonStore } from './skeletonStore';
+import { useSlotStore } from './slotStore';
 
 const HISTORY_LIMIT = 100;
 
@@ -25,6 +26,8 @@ interface ProjectSnapshot {
   };
   animation: {
     keyframes: ReturnType<typeof useAnimationStore.getState>['keyframes'];
+    meshDeformKeyframes: ReturnType<typeof useAnimationStore.getState>['meshDeformKeyframes'];
+    attachmentOpacityKeyframes: ReturnType<typeof useAnimationStore.getState>['attachmentOpacityKeyframes'];
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
@@ -32,6 +35,11 @@ interface ProjectSnapshot {
     audioName: ReturnType<typeof useAnimationStore.getState>['audioName'];
     audioVolume: ReturnType<typeof useAnimationStore.getState>['audioVolume'];
     audioOffsetFrames: ReturnType<typeof useAnimationStore.getState>['audioOffsetFrames'];
+  };
+  slots: {
+    slots: ReturnType<typeof useSlotStore.getState>['slots'];
+    attachments: ReturnType<typeof useSlotStore.getState>['attachments'];
+    nextSlotId: ReturnType<typeof useSlotStore.getState>['nextSlotId'];
   };
   camera: {
     x: ReturnType<typeof useCameraStore.getState>['x'];
@@ -56,6 +64,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
   const editor = useEditorStore.getState();
   const skeleton = useSkeletonStore.getState();
   const animation = useAnimationStore.getState();
+  const slot = useSlotStore.getState();
   const camera = useCameraStore.getState();
 
   return cloneSnapshot({
@@ -77,6 +86,8 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     },
     animation: {
       keyframes: animation.keyframes,
+      meshDeformKeyframes: animation.meshDeformKeyframes,
+      attachmentOpacityKeyframes: animation.attachmentOpacityKeyframes,
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
@@ -84,6 +95,11 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       audioName: animation.audioName,
       audioVolume: animation.audioVolume,
       audioOffsetFrames: animation.audioOffsetFrames,
+    },
+    slots: {
+      slots: slot.slots,
+      attachments: slot.attachments,
+      nextSlotId: slot.nextSlotId,
     },
     camera: {
       x: camera.x,
@@ -112,6 +128,8 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   });
   useAnimationStore.setState({
     keyframes: cloneSnapshot(snapshot.animation.keyframes),
+    meshDeformKeyframes: cloneSnapshot(snapshot.animation.meshDeformKeyframes),
+    attachmentOpacityKeyframes: cloneSnapshot(snapshot.animation.attachmentOpacityKeyframes),
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,
@@ -120,6 +138,11 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     audioVolume: snapshot.animation.audioVolume,
     audioOffsetFrames: snapshot.animation.audioOffsetFrames,
     playing: false,
+  });
+  useSlotStore.setState({
+    slots: cloneSnapshot(snapshot.slots.slots),
+    attachments: cloneSnapshot(snapshot.slots.attachments),
+    nextSlotId: snapshot.slots.nextSlotId,
   });
   useCameraStore.setState({
     x: snapshot.camera.x,

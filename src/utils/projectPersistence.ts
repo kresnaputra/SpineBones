@@ -427,7 +427,10 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
   const attachments = await Promise.all(
     archiveProject.attachments.map(async (attachment) => {
       if (!attachment.assetPath) {
-        return attachment as Attachment;
+        return {
+          ...attachment,
+          opacity: attachment.opacity ?? 1,
+        } as Attachment;
       }
 
       const assetEntry = zip.file(attachment.assetPath);
@@ -439,6 +442,7 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
       const { assetPath, ...restAttachment } = attachment;
       return {
         ...restAttachment,
+        opacity: restAttachment.opacity ?? 1,
         imageData: bytesToDataUrl(data, getMimeTypeFromAssetPath(assetPath)),
       } as Attachment;
     }),
@@ -518,6 +522,36 @@ export const buildProjectData = (): ProjectData => {
     Object.assign(normalizedKeyframes, originalKeyframes);
   }
 
+  const originalMeshDeformKeyframes = animationState.meshDeformKeyframes;
+  const normalizedMeshDeformKeyframes: typeof originalMeshDeformKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const attachmentKey of Object.keys(originalMeshDeformKeyframes)) {
+      normalizedMeshDeformKeyframes[attachmentKey] = {};
+      for (const frameStr of Object.keys(originalMeshDeformKeyframes[attachmentKey])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedMeshDeformKeyframes[attachmentKey][normalizedFrame] =
+          originalMeshDeformKeyframes[attachmentKey][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedMeshDeformKeyframes, originalMeshDeformKeyframes);
+  }
+
+  const originalAttachmentOpacityKeyframes = animationState.attachmentOpacityKeyframes;
+  const normalizedAttachmentOpacityKeyframes: typeof originalAttachmentOpacityKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const attachmentKey of Object.keys(originalAttachmentOpacityKeyframes)) {
+      normalizedAttachmentOpacityKeyframes[attachmentKey] = {};
+      for (const frameStr of Object.keys(originalAttachmentOpacityKeyframes[attachmentKey])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedAttachmentOpacityKeyframes[attachmentKey][normalizedFrame] =
+          originalAttachmentOpacityKeyframes[attachmentKey][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedAttachmentOpacityKeyframes, originalAttachmentOpacityKeyframes);
+  }
+
   const currentSetupPose = skeletonState.bones.reduce<SetupPose>((acc, bone) => {
     acc[bone.id] = {
       x: bone.x,
@@ -543,7 +577,7 @@ export const buildProjectData = (): ProjectData => {
   });
 
   return {
-    version: '1.1',
+    version: '1.3',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -560,6 +594,8 @@ export const buildProjectData = (): ProjectData => {
     slots: slotState.slots,
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
+    meshDeformKeyframes: normalizedMeshDeformKeyframes,
+    attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -592,12 +628,17 @@ export const applyProjectData = (
 
   useSlotStore.setState({
     slots,
-    attachments: projectData.attachments ?? [],
+    attachments: (projectData.attachments ?? []).map((attachment) => ({
+      ...attachment,
+      opacity: attachment.opacity ?? 1,
+    })),
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
+    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
+    attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
@@ -646,6 +687,8 @@ export const createNewProject = () => {
 
   useAnimationStore.setState({
     keyframes: {},
+    meshDeformKeyframes: {},
+    attachmentOpacityKeyframes: {},
     frame: 0,
     duration: 60,
     fps: 24,
