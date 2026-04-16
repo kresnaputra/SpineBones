@@ -92,7 +92,7 @@ export type MeshDeformKeyframes = Record<
 >;
 export type AttachmentOpacityKeyframes = Record<
   string,
-  Record<number, { opacity: number }>
+  Record<number, { opacity: number; easing?: KeyframeEasing }>
 >;
 
 export interface CameraState {

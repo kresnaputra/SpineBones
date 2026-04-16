@@ -5,6 +5,7 @@ import type {
   MeshTriangle,
   MeshVertex,
 } from '../types';
+import { applyEasing } from './easing';
 
 export const createGridMeshVertices = (
   attachment: Attachment,
@@ -100,7 +101,10 @@ export const resolveAttachmentOpacityAtFrame = (
       return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
     }
 
-    const t = (frame - prev) / (next - prev);
+    const t = applyEasing(
+      attachmentKeyframes[prev]?.easing,
+      (frame - prev) / (next - prev),
+    );
     return lerp(
       attachmentKeyframes[prev]?.opacity ?? baseOpacity,
       attachmentKeyframes[next]?.opacity ?? baseOpacity,

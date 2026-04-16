@@ -26,8 +26,11 @@ interface AnimationState {
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
   setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
   deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
+  setAttachmentOpacityKeyframeAtFrame: (attachmentKey: string, frame: number, opacity: number) => void;
   setAttachmentOpacityKeyframe: (attachmentKey: string, opacity: number) => void;
   deleteAttachmentOpacityKeyframe: (attachmentKey: string, frame: number) => void;
+  moveAttachmentOpacityKeyframe: (attachmentKey: string, fromFrame: number, toFrame: number) => void;
+  updateAttachmentOpacityKeyframeEasing: (attachmentKey: string, frame: number, easing: KeyframeEasing) => void;
   moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
@@ -125,6 +128,24 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     });
   },
 
+  setAttachmentOpacityKeyframeAtFrame: (attachmentKey, frame, opacity) => {
+    set((state) => ({
+      attachmentOpacityKeyframes: {
+        ...state.attachmentOpacityKeyframes,
+        [attachmentKey]: {
+          ...state.attachmentOpacityKeyframes[attachmentKey],
+          [Math.max(0, Math.round(frame))]: {
+            opacity: Math.min(1, Math.max(0, opacity)),
+            easing:
+              state.attachmentOpacityKeyframes[attachmentKey]?.[
+                Math.max(0, Math.round(frame))
+              ]?.easing ?? 'linear',
+          },
+        },
+      },
+    }));
+  },
+
   setAttachmentOpacityKeyframe: (attachmentKey, opacity) => {
     set((state) => ({
       attachmentOpacityKeyframes: {
@@ -133,6 +154,9 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           ...state.attachmentOpacityKeyframes[attachmentKey],
           [state.frame]: {
             opacity: Math.min(1, Math.max(0, opacity)),
+            easing:
+              state.attachmentOpacityKeyframes[attachmentKey]?.[state.frame]?.easing ??
+              'linear',
           },
         },
       },
@@ -152,6 +176,47 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       }
 
       return { attachmentOpacityKeyframes: nextAttachmentOpacityKeyframes };
+    });
+  },
+
+  moveAttachmentOpacityKeyframe: (attachmentKey, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const attachmentKeyframes = state.attachmentOpacityKeyframes[attachmentKey];
+      const sourceKeyframe = attachmentKeyframes?.[fromFrame];
+      if (!attachmentKeyframes || !sourceKeyframe) return state;
+
+      const nextAttachmentKeyframes = { ...attachmentKeyframes };
+      delete nextAttachmentKeyframes[fromFrame];
+      nextAttachmentKeyframes[toFrame] = sourceKeyframe;
+
+      return {
+        attachmentOpacityKeyframes: {
+          ...state.attachmentOpacityKeyframes,
+          [attachmentKey]: nextAttachmentKeyframes,
+        },
+      };
+    });
+  },
+
+  updateAttachmentOpacityKeyframeEasing: (attachmentKey, frame, easing) => {
+    set((state) => {
+      const existing = state.attachmentOpacityKeyframes[attachmentKey]?.[frame];
+      if (!existing) return state;
+
+      return {
+        attachmentOpacityKeyframes: {
+          ...state.attachmentOpacityKeyframes,
+          [attachmentKey]: {
+            ...state.attachmentOpacityKeyframes[attachmentKey],
+            [frame]: {
+              ...existing,
+              easing,
+            },
+          },
+        },
+      };
     });
   },
 

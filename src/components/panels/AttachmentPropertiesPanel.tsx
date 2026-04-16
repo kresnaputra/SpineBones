@@ -2,14 +2,18 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
   const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
   const {
     frame,
+    keyframes,
     meshDeformKeyframes,
     attachmentOpacityKeyframes,
+    setAttachmentOpacityKeyframeAtFrame,
     setAttachmentOpacityKeyframe,
+    updateAttachmentOpacityKeyframeEasing,
   } = useAnimationStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
 
@@ -58,7 +62,31 @@ export const AttachmentPropertiesPanel = () => {
 
   const handleUpdate = (field: string, value: number) => {
     if (field === 'opacity' && mode === 'animate') {
-      setAttachmentOpacityKeyframe(getMeshAttachmentKey(attachment), clampOpacity(value));
+      const attachmentKey = getMeshAttachmentKey(attachment);
+      const existingFrames = Object.keys(
+        attachmentOpacityKeyframes[attachmentKey] ?? {},
+      ).map(Number);
+      const currentBoneEasing = normalizeKeyframeEasing(
+        keyframes[selectedBoneId]?.[frame]?.easing,
+      );
+
+      if (
+        frame > 0 &&
+        !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
+      ) {
+        setAttachmentOpacityKeyframeAtFrame(
+          attachmentKey,
+          0,
+          attachment.opacity ?? 1,
+        );
+      }
+
+      setAttachmentOpacityKeyframe(attachmentKey, clampOpacity(value));
+      updateAttachmentOpacityKeyframeEasing(
+        attachmentKey,
+        frame,
+        currentBoneEasing,
+      );
       return;
     }
 
