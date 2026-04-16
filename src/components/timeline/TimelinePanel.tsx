@@ -162,6 +162,7 @@ export const TimelinePanel = () => {
     moveAttachmentOpacityKeyframe,
     updateAttachmentOpacityKeyframeEasing,
     deleteKeyframe,
+    deleteMeshDeformKeyframe,
     deleteAttachmentOpacityKeyframe,
     clearKeyframes,
   } = useAnimationStore();
@@ -198,6 +199,24 @@ export const TimelinePanel = () => {
         ).map(Number);
         attachmentFrames.forEach((targetFrame) =>
           deleteAttachmentOpacityKeyframe(attachmentKey, targetFrame),
+        );
+      });
+  };
+
+  const clearMeshDeformKeysForBone = (boneId: number) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const deformFrames = Object.keys(
+          meshDeformKeyframes[attachmentKey] ?? {},
+        ).map(Number);
+        deformFrames.forEach((targetFrame) =>
+          deleteMeshDeformKeyframe(attachmentKey, targetFrame),
         );
       });
   };
@@ -868,13 +887,21 @@ export const TimelinePanel = () => {
   };
 
   const handleClearKeyframes = () => {
-    if (selectedBoneIds.length === 0) return;
+    const targetBoneIds = Array.from(
+      new Set([
+        ...bones.map((bone) => bone.id),
+        ...slots.map((slot) => slot.boneId),
+      ]),
+    );
+    if (targetBoneIds.length === 0) return;
 
     captureSnapshot();
-    selectedBoneIds.forEach((boneId) => {
+    targetBoneIds.forEach((boneId) => {
       clearKeyframes(boneId);
       clearAttachmentOpacityKeysForBone(boneId);
+      clearMeshDeformKeysForBone(boneId);
     });
+    setSelectedKeyframes([]);
   };
 
   const handleLoopKeyframes = () => {
@@ -1089,6 +1116,11 @@ export const TimelinePanel = () => {
           return values.every((value) => value === first) ? first : "";
         })();
 
+  const hasAnyAnimationData =
+    Object.keys(keyframes).length > 0 ||
+    Object.keys(attachmentOpacityKeyframes).length > 0 ||
+    Object.keys(meshDeformKeyframes).length > 0;
+
   const handleEasingChange = (value: string) => {
     if (!value || selectedKeyframes.length === 0) return;
 
@@ -1216,9 +1248,9 @@ export const TimelinePanel = () => {
         </button>
         <button
           onClick={handleClearKeyframes}
-          disabled={selectedBoneIds.length === 0}
+          disabled={!hasAnyAnimationData}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-[10px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Clear keyframes for selected bones"
+          title="Clear all keyframes in the timeline"
         >
           <X size={12} />
           Clear
