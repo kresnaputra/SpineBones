@@ -69,6 +69,7 @@ export const useSlotStore = create<SlotState>((set, get) => ({
     const newAttachment: Attachment = {
       ...attachment,
       slotId,
+      opacity: attachment.opacity ?? 1,
     };
 
     set((state) => ({
@@ -80,7 +81,11 @@ export const useSlotStore = create<SlotState>((set, get) => ({
     set((state) => ({
       attachments: state.attachments.map((att) =>
         att.slotId === slotId && att.name === name
-          ? { ...att, ...updates }
+          ? {
+              ...att,
+              ...updates,
+              opacity: updates.opacity ?? att.opacity ?? 1,
+            }
           : att
       ),
     }));

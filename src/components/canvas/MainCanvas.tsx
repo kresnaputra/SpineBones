@@ -26,7 +26,16 @@ export const MainCanvas = () => {
   
   const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
-  const { keyframes, meshDeformKeyframes, frame, duration, insertKeyframe, setMeshDeformKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
+  const {
+    keyframes,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+    frame,
+    duration,
+    insertKeyframe,
+    setMeshDeformKeyframe,
+    remapBoneKeyframesForParentChange,
+  } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
@@ -186,8 +195,13 @@ export const MainCanvas = () => {
     ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName) ?? null
     : null;
   const resolvedActiveAttachment =
-    activeAttachment?.type === 'mesh'
-      ? resolveAttachmentAtFrame(activeAttachment, frame, meshDeformKeyframes)
+    activeAttachment
+      ? resolveAttachmentAtFrame(
+          activeAttachment,
+          frame,
+          meshDeformKeyframes,
+          attachmentOpacityKeyframes,
+        )
       : activeAttachment;
   const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;
 
@@ -280,7 +294,12 @@ export const MainCanvas = () => {
     const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
 
     const resolvedAttachments = attachments.map((attachment) =>
-      resolveAttachmentAtFrame(attachment, frame, meshDeformKeyframes),
+      resolveAttachmentAtFrame(
+        attachment,
+        frame,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
+      ),
     );
     drawSlots(ctx, slots, resolvedAttachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
 
@@ -368,7 +387,7 @@ export const MainCanvas = () => {
       });
     }
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, attachmentOpacityKeyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -534,7 +553,12 @@ export const MainCanvas = () => {
       }
       const displayAttachment =
         mode === 'animate'
-          ? resolveAttachmentAtFrame(ensuredAttachment, frame, meshDeformKeyframes)
+          ? resolveAttachmentAtFrame(
+              ensuredAttachment,
+              frame,
+              meshDeformKeyframes,
+              attachmentOpacityKeyframes,
+            )
           : ensuredAttachment;
       const screenVertices = getAttachmentMeshScreenVertices(displayAttachment, activeBone, worldToScreen, camZoom);
       const targetVertexIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);

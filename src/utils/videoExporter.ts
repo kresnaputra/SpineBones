@@ -1,4 +1,11 @@
-import type { Bone, Slot, Attachment, Keyframes, MeshDeformKeyframes } from '../types';
+import type {
+  Attachment,
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  MeshDeformKeyframes,
+  Slot,
+} from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
@@ -11,6 +18,7 @@ export const exportVideo = async (
   attachments: Attachment[],
   keyframes: Keyframes,
   meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
   duration: number,
   fps: number,
   camX: number,
@@ -151,7 +159,12 @@ export const exportVideo = async (
 
       computeAllWorldTransforms(bones);
       const resolvedAttachments = attachments.map((attachment) =>
-        resolveAttachmentAtFrame(attachment, currentFrame, meshDeformKeyframes),
+        resolveAttachmentAtFrame(
+          attachment,
+          currentFrame,
+          meshDeformKeyframes,
+          attachmentOpacityKeyframes,
+        ),
       );
       drawSlots(ctx, slots, resolvedAttachments, bones, worldToScreen, camZoom);
 

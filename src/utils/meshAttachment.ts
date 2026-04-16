@@ -1,4 +1,10 @@
-import type { Attachment, MeshDeformKeyframes, MeshTriangle, MeshVertex } from '../types';
+import type {
+  Attachment,
+  AttachmentOpacityKeyframes,
+  MeshDeformKeyframes,
+  MeshTriangle,
+  MeshVertex,
+} from '../types';
 
 export const createGridMeshVertices = (
   attachment: Attachment,
@@ -60,6 +66,50 @@ export const getMeshAttachmentKey = (attachment: Pick<Attachment, 'slotId' | 'na
   `${attachment.slotId}:${attachment.name}`;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+export const resolveAttachmentOpacityAtFrame = (
+  attachment: Attachment,
+  frame: number,
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
+) => {
+  const baseOpacity = attachment.opacity ?? 1;
+  const attachmentKeyframes = attachmentOpacityKeyframes[getMeshAttachmentKey(attachment)];
+  if (!attachmentKeyframes) return baseOpacity;
+
+  const frames = Object.keys(attachmentKeyframes).map(Number).sort((a, b) => a - b);
+  if (frames.length === 0) return baseOpacity;
+
+  let prev: number | null = null;
+  let next: number | null = null;
+
+  for (const keyframe of frames) {
+    if (keyframe <= frame) prev = keyframe;
+    if (keyframe >= frame && next === null) next = keyframe;
+  }
+
+  if (prev === null && next !== null) {
+    return attachmentKeyframes[next]?.opacity ?? baseOpacity;
+  }
+
+  if (prev !== null && next === null) {
+    return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
+  }
+
+  if (prev !== null && next !== null) {
+    if (prev === next) {
+      return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
+    }
+
+    const t = (frame - prev) / (next - prev);
+    return lerp(
+      attachmentKeyframes[prev]?.opacity ?? baseOpacity,
+      attachmentKeyframes[next]?.opacity ?? baseOpacity,
+      t,
+    );
+  }
+
+  return baseOpacity;
+};
 
 export const resolveMeshVerticesAtFrame = (
   attachment: Attachment,
@@ -128,10 +178,14 @@ export const resolveAttachmentAtFrame = (
   attachment: Attachment,
   frame: number,
   meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes = {},
 ): Attachment => {
-  if (attachment.type !== 'mesh') return attachment;
   return {
     ...attachment,
-    meshVertices: resolveMeshVerticesAtFrame(attachment, frame, meshDeformKeyframes),
+    opacity: resolveAttachmentOpacityAtFrame(attachment, frame, attachmentOpacityKeyframes),
+    meshVertices:
+      attachment.type === 'mesh'
+        ? resolveMeshVerticesAtFrame(attachment, frame, meshDeformKeyframes)
+        : attachment.meshVertices,
   };
 };

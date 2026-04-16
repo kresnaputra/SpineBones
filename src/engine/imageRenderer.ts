@@ -190,7 +190,7 @@ export const drawAttachment = (
   }
 
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = alpha * (attachment.opacity ?? 1);
 
   if (attachment.type === 'mesh' && attachment.meshVertices?.length && attachment.meshTriangles?.length) {
     const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);

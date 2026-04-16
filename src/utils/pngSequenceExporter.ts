@@ -1,15 +1,25 @@
 import JSZip from 'jszip';
-import type { Attachment, Bone, Keyframes, Slot } from '../types';
+import type {
+  Attachment,
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  MeshDeformKeyframes,
+  Slot,
+} from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { resolveAttachmentAtFrame } from './meshAttachment';
 
 interface ExportPngSequenceOptions {
   bones: Bone[];
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   duration: number;
   fps: number;
   camX: number;
@@ -159,6 +169,8 @@ const getAutoFitTransform = ({
   slots,
   attachments,
   keyframes,
+  meshDeformKeyframes = {},
+  attachmentOpacityKeyframes = {},
   totalFrames,
   frameWidth,
   frameHeight,
@@ -170,6 +182,8 @@ const getAutoFitTransform = ({
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   totalFrames: number;
   frameWidth: number;
   frameHeight: number;
@@ -198,10 +212,17 @@ const getAutoFitTransform = ({
       const bone = bonesCopy.find((item) => item.id === slot.boneId);
       if (!bone) return;
 
-      const attachment = attachments.find(
+      const baseAttachment = attachments.find(
         (item) => item.slotId === slot.id && item.name === slot.attachmentName,
       );
-      if (!attachment) return;
+      if (!baseAttachment) return;
+
+      const attachment = resolveAttachmentAtFrame(
+        baseAttachment,
+        frame,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
+      );
 
       const bounds = getAttachmentBounds(attachment, bone, baseWorldToScreen, camZoom);
       minX = Math.min(minX, bounds.minX);
@@ -235,6 +256,8 @@ export const exportPngSequence = async ({
   slots,
   attachments,
   keyframes,
+  meshDeformKeyframes = {},
+  attachmentOpacityKeyframes = {},
   duration,
   fps,
   camX,
@@ -282,6 +305,8 @@ export const exportPngSequence = async ({
         slots,
         attachments,
         keyframes,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
         totalFrames,
         frameWidth,
         frameHeight,
@@ -313,7 +338,15 @@ export const exportPngSequence = async ({
       ctx.clearRect(0, 0, frameWidth, frameHeight);
       applyFramePose(bonesCopy, keyframes, frame);
       computeAllWorldTransforms(bonesCopy);
-      drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+      const resolvedAttachments = attachments.map((attachment) =>
+        resolveAttachmentAtFrame(
+          attachment,
+          frame,
+          meshDeformKeyframes,
+          attachmentOpacityKeyframes,
+        ),
+      );
+      drawSlots(ctx, slots, resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
       const bounds = getTrimmedBounds(ctx, frameWidth, frameHeight);
       if (!bounds.empty) {
         if (bounds.x < unionMinX) unionMinX = bounds.x;
@@ -373,7 +406,15 @@ export const exportPngSequence = async ({
 
     applyFramePose(bonesCopy, keyframes, frame);
     computeAllWorldTransforms(bonesCopy);
-    drawSlots(ctx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+    const resolvedAttachments = attachments.map((attachment) =>
+      resolveAttachmentAtFrame(
+        attachment,
+        frame,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
+      ),
+    );
+    drawSlots(ctx, slots, resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
 
     // Apply crop if needed
     let outputCanvas = canvas;

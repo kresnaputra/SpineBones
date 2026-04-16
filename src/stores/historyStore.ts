@@ -27,6 +27,7 @@ interface ProjectSnapshot {
   animation: {
     keyframes: ReturnType<typeof useAnimationStore.getState>['keyframes'];
     meshDeformKeyframes: ReturnType<typeof useAnimationStore.getState>['meshDeformKeyframes'];
+    attachmentOpacityKeyframes: ReturnType<typeof useAnimationStore.getState>['attachmentOpacityKeyframes'];
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
@@ -86,6 +87,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     animation: {
       keyframes: animation.keyframes,
       meshDeformKeyframes: animation.meshDeformKeyframes,
+      attachmentOpacityKeyframes: animation.attachmentOpacityKeyframes,
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
@@ -127,6 +129,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   useAnimationStore.setState({
     keyframes: cloneSnapshot(snapshot.animation.keyframes),
     meshDeformKeyframes: cloneSnapshot(snapshot.animation.meshDeformKeyframes),
+    attachmentOpacityKeyframes: cloneSnapshot(snapshot.animation.attachmentOpacityKeyframes),
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,

@@ -1,8 +1,16 @@
 import { useEditorStore } from '../../stores/editorStore';
+import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
+import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled } = useEditorStore();
+  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
+  const {
+    frame,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+    setAttachmentOpacityKeyframe,
+  } = useAnimationStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
 
   if (selectedBoneId === null) {
@@ -40,7 +48,20 @@ export const AttachmentPropertiesPanel = () => {
 
   if (!attachment) return null;
 
+  const clampOpacity = (value: number) => Math.min(1, Math.max(0, value));
+  const resolvedAttachment = resolveAttachmentAtFrame(
+    attachment,
+    frame,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+  );
+
   const handleUpdate = (field: string, value: number) => {
+    if (field === 'opacity' && mode === 'animate') {
+      setAttachmentOpacityKeyframe(getMeshAttachmentKey(attachment), clampOpacity(value));
+      return;
+    }
+
     updateAttachment(activeSlot.id, activeSlot.attachmentName!, {
       [field]: value,
     });
@@ -121,6 +142,37 @@ export const AttachmentPropertiesPanel = () => {
             className="flex-1 bg-panel2 border border-border rounded px-2 py-1 text-text text-[11px]"
             step="0.1"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-text-dim w-16">Opacity</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
+            onChange={(e) =>
+              handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
+            }
+            className="flex-1 accent-accent"
+          />
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
+            onChange={(e) =>
+              handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
+            }
+            className="w-14 bg-panel2 border border-border rounded px-2 py-1 text-text text-[11px]"
+            step="1"
+          />
+        </div>
+
+        <div className="text-[9px] text-text-dim">
+          {mode === 'animate'
+            ? 'Animate mode: changing opacity adds fade keyframes on the current frame.'
+            : 'Setup mode: changing opacity updates the default attachment opacity.'}
         </div>
       </div>
     </div>

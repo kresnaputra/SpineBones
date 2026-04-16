@@ -21,6 +21,7 @@ export interface Attachment {
   type: 'image' | 'mesh';
   imagePath: string;
   imageData?: string;
+  opacity?: number;
   width: number;
   height: number;
   x: number;
@@ -89,6 +90,10 @@ export type MeshDeformKeyframes = Record<
   string,
   Record<number, { vertices: Array<Pick<MeshVertex, 'x' | 'y'>> }>
 >;
+export type AttachmentOpacityKeyframes = Record<
+  string,
+  Record<number, { opacity: number }>
+>;
 
 export interface CameraState {
   x: number;
@@ -113,6 +118,7 @@ export interface ProjectData {
   attachments: Attachment[];
   keyframes: Keyframes;
   meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   duration: number;
   fps: number;
   backgroundImage?: string | null;

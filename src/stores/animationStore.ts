@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import type { Bone, Keyframes, KeyframeData, KeyframeEasing, MeshDeformKeyframes } from '../types';
+import type {
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  KeyframeData,
+  KeyframeEasing,
+  MeshDeformKeyframes,
+} from '../types';
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
@@ -7,6 +14,7 @@ import { sampleBonesAtFrame } from '../utils/animationPose';
 interface AnimationState {
   keyframes: Keyframes;
   meshDeformKeyframes: MeshDeformKeyframes;
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes;
   frame: number;
   duration: number;
   fps: number;
@@ -18,6 +26,8 @@ interface AnimationState {
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
   setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
   deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
+  setAttachmentOpacityKeyframe: (attachmentKey: string, opacity: number) => void;
+  deleteAttachmentOpacityKeyframe: (attachmentKey: string, frame: number) => void;
   moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
@@ -63,6 +73,7 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
   meshDeformKeyframes: {},
+  attachmentOpacityKeyframes: {},
   frame: 0,
   duration: 60,
   fps: 24,
@@ -111,6 +122,36 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       }
 
       return { meshDeformKeyframes: nextMeshDeformKeyframes };
+    });
+  },
+
+  setAttachmentOpacityKeyframe: (attachmentKey, opacity) => {
+    set((state) => ({
+      attachmentOpacityKeyframes: {
+        ...state.attachmentOpacityKeyframes,
+        [attachmentKey]: {
+          ...state.attachmentOpacityKeyframes[attachmentKey],
+          [state.frame]: {
+            opacity: Math.min(1, Math.max(0, opacity)),
+          },
+        },
+      },
+    }));
+  },
+
+  deleteAttachmentOpacityKeyframe: (attachmentKey, frame) => {
+    set((state) => {
+      const attachmentKeyframes = { ...(state.attachmentOpacityKeyframes[attachmentKey] ?? {}) };
+      delete attachmentKeyframes[frame];
+
+      const nextAttachmentOpacityKeyframes = { ...state.attachmentOpacityKeyframes };
+      if (Object.keys(attachmentKeyframes).length === 0) {
+        delete nextAttachmentOpacityKeyframes[attachmentKey];
+      } else {
+        nextAttachmentOpacityKeyframes[attachmentKey] = attachmentKeyframes;
+      }
+
+      return { attachmentOpacityKeyframes: nextAttachmentOpacityKeyframes };
     });
   },
 
