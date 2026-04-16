@@ -8,6 +8,13 @@ import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
 import { drawAttachmentOutline, drawSlotOutlines, drawSlots, hitTestAttachment } from '../../engine/imageRenderer';
+import {
+  getViewportRect,
+  getViewportScale,
+  getViewportEffectiveZoom,
+  createViewportWorldToScreen,
+  createViewportScreenToWorld,
+} from '../../engine/viewport';
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
@@ -23,12 +30,21 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
   const { keyframes, frame, duration, insertKeyframe, remapBoneKeyframesForParentChange } = useAnimationStore();
-  const { x: camX, y: camY, zoom: camZoom, setCanvasSize, pan, zoomBy, worldToScreen, screenToWorld } = useCameraStore();
+  const { x: camX, y: camY, zoom: camZoom, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
+
+  // Derive the shared viewport transform helpers for the current frame.
+  // These are recomputed from camX/camY/camZoom/canvasSize on every render,
+  // ensuring the editor preview and the video export use the same math.
+  const viewportRect = getViewportRect(canvasWidth, canvasHeight);
+  const vpScale = getViewportScale(viewportRect);
+  const effectiveZoom = getViewportEffectiveZoom(viewportRect, camZoom);
+  const previewWorldToScreen = createViewportWorldToScreen(viewportRect, camX, camY, camZoom);
+  const previewScreenToWorld = createViewportScreenToWorld(viewportRect, camX, camY, camZoom);
 
   const isDescendantOfBone = (boneId: number, ancestorId: number) => {
     let current = bones.find((bone) => bone.id === boneId) ?? null;
@@ -210,20 +226,72 @@ export const MainCanvas = () => {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    if (backgroundImageRef.current) {
-      const scale = Math.max(canvas.width / backgroundImageRef.current.width, canvas.height / backgroundImageRef.current.height);
-      const w = backgroundImageRef.current.width * scale;
-      const h = backgroundImageRef.current.height * scale;
-      const x = (canvas.width - w) / 2;
-      const y = (canvas.height - h) / 2;
-      ctx.globalAlpha = 0.3;
-      ctx.drawImage(backgroundImageRef.current, x, y, w, h);
-      ctx.globalAlpha = 1.0;
+    const viewportRect = getViewportRect(canvas.width, canvas.height);
+
+    ctx.fillStyle = '#05070d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (showViewport) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, canvas.height);
+      ctx.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.52)';
+      ctx.fill('evenodd');
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(15, 23, 42, 0.32)';
+      ctx.shadowBlur = 28;
+      ctx.shadowOffsetY = 10;
+      ctx.fillRect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+      ctx.restore();
+
+      if (backgroundImageRef.current) {
+        const scale = Math.max(
+          viewportRect.width / backgroundImageRef.current.width,
+          viewportRect.height / backgroundImageRef.current.height,
+        );
+        const w = backgroundImageRef.current.width * scale;
+        const h = backgroundImageRef.current.height * scale;
+        const x = viewportRect.x + (viewportRect.width - w) / 2;
+        const y = viewportRect.y + (viewportRect.height - h) / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+        ctx.clip();
+        ctx.globalAlpha = 0.3;
+        ctx.drawImage(backgroundImageRef.current, x, y, w, h);
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(
+        viewportRect.x + 0.5,
+        viewportRect.y + 0.5,
+        viewportRect.width - 1,
+        viewportRect.height - 1,
+      );
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.4)';
+      ctx.strokeRect(
+        viewportRect.x + 0.5,
+        viewportRect.y + 0.5,
+        viewportRect.width - 1,
+        viewportRect.height - 1,
+      );
+      ctx.font = '11px JetBrains Mono';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+      ctx.fillText('VIDEO VIEWPORT 16:9', viewportRect.x + 12, viewportRect.y + 20);
+      ctx.restore();
     }
     
-    drawGrid(ctx, camX, camY, camZoom, canvas.width, canvas.height);
-    drawOriginCross(ctx, worldToScreen);
+    drawGrid(ctx, camX, camY, effectiveZoom, canvas.width, canvas.height);
+    drawOriginCross(ctx, previewWorldToScreen);
 
     computeAllWorldTransforms(bones);
 
@@ -254,7 +322,13 @@ export const MainCanvas = () => {
     const previousMovedBones = previousFrame ? getMovedGhostBones(previousFrame) : [];
     const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
 
-    drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom, 1, handleImageLoad);
+    ctx.save();
+    if (showViewport) {
+      ctx.beginPath();
+      ctx.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+      ctx.clip();
+    }
+    drawSlots(ctx, slots, attachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad);
 
     if (attachmentDragEnabled && selectedBoneId !== null) {
       const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
@@ -264,7 +338,7 @@ export const MainCanvas = () => {
         : null;
 
       if (activeSlot && selectedBone && activeAttachment) {
-        drawAttachmentOutline(ctx, activeAttachment, selectedBone, worldToScreen, camZoom);
+        drawAttachmentOutline(ctx, activeAttachment, selectedBone, previewWorldToScreen, effectiveZoom);
       }
     }
 
@@ -281,7 +355,7 @@ export const MainCanvas = () => {
           hoveredBoneId === bone.id ||
           hoveredBoneId === parent.id;
 
-        drawBoneRelation(ctx, parent, bone, isHighlighted, worldToScreen);
+        drawBoneRelation(ctx, parent, bone, isHighlighted, previewWorldToScreen);
       });
 
       bones.forEach((bone) => {
@@ -290,7 +364,7 @@ export const MainCanvas = () => {
         const isHovered = hoveredBoneId === bone.id;
         const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
 
-        drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, worldToScreen);
+        drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, previewWorldToScreen);
       });
     }
 
@@ -299,7 +373,7 @@ export const MainCanvas = () => {
     if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
       const ikChain = getIkChain(activeIkRootId, bones);
       if (ikChain) {
-        const handle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        const handle = previewWorldToScreen(ikChain.target.x, ikChain.target.y);
         ctx.save();
         ctx.beginPath();
         ctx.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
@@ -319,30 +393,31 @@ export const MainCanvas = () => {
     }
 
     if (previousMovedBones.length > 0) {
-      drawSlots(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, attachments, previousMovedBones, worldToScreen, camZoom, {
+      drawSlots(ctx, slots, attachments, previousMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, previousMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(8,145,178,0.9)',
         lineWidth: 2,
         dash: [6, 4],
       });
       previousMovedBones.forEach((bone) => {
-        drawGhostBone(ctx, bone, '#0891b2', 0.4, worldToScreen);
+        drawGhostBone(ctx, bone, '#0891b2', 0.4, previewWorldToScreen);
       });
     }
 
     if (nextMovedBones.length > 0) {
-      drawSlots(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, attachments, nextMovedBones, worldToScreen, camZoom, {
+      drawSlots(ctx, slots, attachments, nextMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
+      drawSlotOutlines(ctx, slots, attachments, nextMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(219,39,119,0.9)',
         lineWidth: 2,
         dash: [6, 4],
       });
       nextMovedBones.forEach((bone) => {
-        drawGhostBone(ctx, bone, '#db2777', 0.4, worldToScreen);
+        drawGhostBone(ctx, bone, '#db2777', 0.4, previewWorldToScreen);
       });
     }
+    ctx.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, worldToScreen, slots, attachments, showBoneIndicators, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, attachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, canvasWidth, canvasHeight]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -351,7 +426,9 @@ export const MainCanvas = () => {
     const sy = e.clientY - rect.top;
 
     if (isPanning && panStart) {
-      pan(sx - panStart.x, sy - panStart.y);
+      // Divide by vpScale so that the camera store's zoom-division gives
+      // world-unit delta = screenDelta / effectiveZoom (= camZoom * vpScale).
+      pan((sx - panStart.x) / vpScale, (sy - panStart.y) / vpScale);
       setPanStart({ x: sx, y: sy });
       return;
     }
@@ -361,8 +438,8 @@ export const MainCanvas = () => {
       const dy = sy - attachmentDragStart.startSy;
       const cos = Math.cos(-attachmentDragStart.totalRotation);
       const sin = Math.sin(-attachmentDragStart.totalRotation);
-      const localDx = (dx * cos - dy * sin) / camZoom;
-      const localDy = (dx * sin + dy * cos) / camZoom;
+      const localDx = (dx * cos - dy * sin) / effectiveZoom;
+      const localDy = (dx * sin + dy * cos) / effectiveZoom;
 
       useSlotStore.getState().updateAttachment(attachmentDragStart.slotId, attachmentDragStart.attachmentName, {
         x: attachmentDragStart.initialX + localDx,
@@ -372,7 +449,7 @@ export const MainCanvas = () => {
     }
 
     if (ikDragStart) {
-      const world = screenToWorld(sx, sy);
+      const world = previewScreenToWorld(sx, sy);
       const solution = solveTwoBoneIk(ikDragStart.rootId, world, bones);
       if (!solution) return;
 
@@ -386,7 +463,7 @@ export const MainCanvas = () => {
     }
 
     if (isDragging && dragStart) {
-      const world = screenToWorld(sx, sy);
+      const world = previewScreenToWorld(sx, sy);
       const transformTargetIds = getTransformTargetIds();
       const anchorBone = bones.find((b) => b.id === dragStart.anchorBoneId);
       if (!anchorBone || transformTargetIds.length === 0) return;
@@ -423,7 +500,7 @@ export const MainCanvas = () => {
         });
       } else if (tool === 'rotate') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
+        const bs = previewWorldToScreen(anchorBone._wx, anchorBone._wy);
         const angle = (Math.atan2(sy - bs.y, sx - bs.x) * 180) / Math.PI;
         const initAngle = (Math.atan2(dragStart.sy - bs.y, dragStart.sx - bs.x) * 180) / Math.PI;
         const rotationDelta = angle - initAngle;
@@ -438,7 +515,7 @@ export const MainCanvas = () => {
         });
       } else if (tool === 'scale') {
         computeAllWorldTransforms(bones);
-        const bs = worldToScreen(anchorBone._wx, anchorBone._wy);
+        const bs = previewWorldToScreen(anchorBone._wx, anchorBone._wy);
         const dist = Math.hypot(sx - bs.x, sy - bs.y);
         const initDist = Math.hypot(dragStart.sx - bs.x, dragStart.sy - bs.y);
         if (initDist > 0) {
@@ -457,7 +534,7 @@ export const MainCanvas = () => {
       return;
     }
 
-    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+    const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
     setHoveredBoneId(hit?.id || null);
   };
 
@@ -467,7 +544,7 @@ export const MainCanvas = () => {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    const hit = hitTestBone({ x: sx, y: sy }, bones, worldToScreen);
+    const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
 
     if (e.button === 2) {
       if (mode !== 'setup' && selectedBoneId !== null && hit && hit.id !== selectedBoneId) {
@@ -488,14 +565,14 @@ export const MainCanvas = () => {
       return;
     }
 
-    const world = screenToWorld(sx, sy);
+    const world = previewScreenToWorld(sx, sy);
 
     const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
 
     if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
       const ikChain = getIkChain(activeIkRootId, bones);
       if (ikChain) {
-        const ikHandle = worldToScreen(ikChain.target.x, ikChain.target.y);
+        const ikHandle = previewWorldToScreen(ikChain.target.x, ikChain.target.y);
         if (Math.hypot(sx - ikHandle.x, sy - ikHandle.y) <= IK_HANDLE_RADIUS + 2) {
           captureSnapshot();
           setIkDragStart({ rootId: ikChain.root.id, childId: ikChain.child.id });
@@ -528,7 +605,7 @@ export const MainCanvas = () => {
         activeSlot &&
         selectedBone &&
         activeAttachment &&
-        hitTestAttachment(sx, sy, activeAttachment, selectedBone, worldToScreen, camZoom)
+        hitTestAttachment(sx, sy, activeAttachment, selectedBone, previewWorldToScreen, effectiveZoom)
       ) {
         captureSnapshot();
         setAttachmentDragStart({

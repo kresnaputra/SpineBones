@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -57,6 +57,8 @@ export const Toolbar = () => {
     selectedBoneIds,
     onionSkinEnabled,
     toggleOnionSkin,
+    showViewport,
+    toggleViewport,
     setBackgroundImage,
     setShowProjectBrowser,
   } = useEditorStore();
@@ -432,6 +434,19 @@ export const Toolbar = () => {
       >
         <Eye size={14} />
         Onion
+      </button>
+
+      <button
+        onClick={toggleViewport}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
+          showViewport
+            ? 'bg-violet-600/20 text-violet-300 border-violet-500/50 hover:bg-violet-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle 16:9 video viewport overlay"
+      >
+        <Monitor size={14} />
+        Viewport
       </button>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
