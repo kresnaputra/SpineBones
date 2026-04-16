@@ -24,6 +24,11 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  setMeshDeformKeyframeAtFrame: (
+    attachmentKey: string,
+    frame: number,
+    vertices: Array<{ x: number; y: number }>,
+  ) => void;
   setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
   deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
   setAttachmentOpacityKeyframeAtFrame: (attachmentKey: string, frame: number, opacity: number) => void;
@@ -93,6 +98,20 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         [boneId]: {
           ...state.keyframes[boneId],
           [state.frame]: normalizeKeyframeData(frameData),
+        },
+      },
+    }));
+  },
+
+  setMeshDeformKeyframeAtFrame: (attachmentKey, frame, vertices) => {
+    set((state) => ({
+      meshDeformKeyframes: {
+        ...state.meshDeformKeyframes,
+        [attachmentKey]: {
+          ...state.meshDeformKeyframes[attachmentKey],
+          [Math.max(0, Math.round(frame))]: {
+            vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+          },
         },
       },
     }));

@@ -133,6 +133,7 @@ export const TimelinePanel = () => {
   const { captureSnapshot } = useHistoryStore();
   const {
     keyframes,
+    meshDeformKeyframes,
     attachmentOpacityKeyframes,
     frame,
     duration,
@@ -154,6 +155,8 @@ export const TimelinePanel = () => {
     applyKeyframes,
     getKeyframesForBone,
     insertKeyframe,
+    setMeshDeformKeyframeAtFrame,
+    setAttachmentOpacityKeyframeAtFrame,
     updateKeyframeEasing,
     moveKeyframe,
     moveAttachmentOpacityKeyframe,
@@ -876,37 +879,118 @@ export const TimelinePanel = () => {
 
   const handleLoopKeyframes = () => {
     const animState = useAnimationStore.getState();
-    const allKeyframes = animState.keyframes;
-    const boneIds = Object.keys(allKeyframes).map(Number);
-    if (boneIds.length === 0) return;
+    const targetBoneIds = Array.from(
+      new Set([
+        ...Object.keys(animState.keyframes).map(Number),
+        ...slots.map((slot) => slot.boneId),
+      ]),
+    );
+    if (targetBoneIds.length === 0) return;
 
     captureSnapshot();
 
     let globalMax = 0;
-    for (const boneId of boneIds) {
-      const frames = Object.keys(allKeyframes[boneId]).map(Number);
+    for (const boneId of targetBoneIds) {
+      const boneFrames = Object.keys(animState.keyframes[boneId] ?? {}).map(Number);
+      const slotAttachmentKeys = slots
+        .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+        .map((slot) =>
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName!,
+          }),
+        );
+      const opacityFrames = slotAttachmentKeys.flatMap((attachmentKey) =>
+        Object.keys(animState.attachmentOpacityKeyframes[attachmentKey] ?? {}).map(Number),
+      );
+      const meshFrames = slotAttachmentKeys.flatMap((attachmentKey) =>
+        Object.keys(animState.meshDeformKeyframes[attachmentKey] ?? {}).map(Number),
+      );
+      const frames = [...boneFrames, ...opacityFrames, ...meshFrames];
+      if (frames.length === 0) continue;
       const max = Math.max(...frames);
       if (max > globalMax) globalMax = max;
     }
 
-    for (const boneId of boneIds) {
-      const boneKfs = allKeyframes[boneId];
-      const frames = Object.keys(boneKfs)
+    for (const boneId of targetBoneIds) {
+      const boneKfs = animState.keyframes[boneId];
+      const boneFrames = Object.keys(boneKfs ?? {})
         .map(Number)
         .sort((a, b) => a - b);
-      if (frames.length < 2) continue;
 
-      const lastFrame = frames[frames.length - 1];
-      const reversed = frames.slice(0, -1).reverse();
+      if (boneKfs && boneFrames.length >= 2) {
+        const lastFrame = boneFrames[boneFrames.length - 1];
+        const reversed = boneFrames.slice(0, -1).reverse();
 
-      for (const srcFrame of reversed) {
-        const gap = lastFrame - srcFrame;
-        const destFrame = globalMax + gap;
-        useAnimationStore.getState().setFrame(destFrame);
-        useAnimationStore
-          .getState()
-          .insertKeyframe(boneId, { ...boneKfs[srcFrame] });
+        for (const srcFrame of reversed) {
+          const gap = lastFrame - srcFrame;
+          const destFrame = globalMax + gap;
+          useAnimationStore.getState().setFrame(destFrame);
+          useAnimationStore
+            .getState()
+            .insertKeyframe(boneId, { ...boneKfs[srcFrame] });
+        }
       }
+
+      slots
+        .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+        .forEach((slot) => {
+          if (!slot.attachmentName) return;
+
+          const attachmentKey = getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          });
+
+          const opacityFrames = Object.keys(
+            attachmentOpacityKeyframes[attachmentKey] ?? {},
+          )
+            .map(Number)
+            .sort((a, b) => a - b);
+
+          if (opacityFrames.length >= 2) {
+            const lastFrame = opacityFrames[opacityFrames.length - 1];
+            const reversed = opacityFrames.slice(0, -1).reverse();
+
+            reversed.forEach((srcFrame) => {
+              const source = attachmentOpacityKeyframes[attachmentKey]?.[srcFrame];
+              if (!source) return;
+              const gap = lastFrame - srcFrame;
+              const destFrame = globalMax + gap;
+              setAttachmentOpacityKeyframeAtFrame(
+                attachmentKey,
+                destFrame,
+                source.opacity,
+              );
+              updateAttachmentOpacityKeyframeEasing(
+                attachmentKey,
+                destFrame,
+                normalizeKeyframeEasing(source.easing),
+              );
+            });
+          }
+
+          const deformFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {})
+            .map(Number)
+            .sort((a, b) => a - b);
+
+          if (deformFrames.length >= 2) {
+            const lastFrame = deformFrames[deformFrames.length - 1];
+            const reversed = deformFrames.slice(0, -1).reverse();
+
+            reversed.forEach((srcFrame) => {
+              const source = meshDeformKeyframes[attachmentKey]?.[srcFrame];
+              if (!source) return;
+              const gap = lastFrame - srcFrame;
+              const destFrame = globalMax + gap;
+              setMeshDeformKeyframeAtFrame(
+                attachmentKey,
+                destFrame,
+                source.vertices,
+              );
+            });
+          }
+        });
     }
 
     useAnimationStore.getState().setFrame(0);
@@ -929,6 +1013,39 @@ export const TimelinePanel = () => {
 
     captureSnapshot();
     insertKeyframe(selectedBoneId, { ...firstKey });
+
+    slots
+      .filter((slot) => slot.boneId === selectedBoneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const opacityFrames = Object.keys(
+          attachmentOpacityKeyframes[attachmentKey] ?? {},
+        )
+          .map(Number)
+          .sort((a, b) => a - b);
+        if (opacityFrames.length === 0) return;
+
+        const firstOpacityFrame = opacityFrames[0];
+        const firstOpacityKey =
+          attachmentOpacityKeyframes[attachmentKey]?.[firstOpacityFrame];
+        if (!firstOpacityKey) return;
+
+        setAttachmentOpacityKeyframeAtFrame(
+          attachmentKey,
+          frame,
+          firstOpacityKey.opacity,
+        );
+        updateAttachmentOpacityKeyframeEasing(
+          attachmentKey,
+          frame,
+          normalizeKeyframeEasing(firstOpacityKey.easing),
+        );
+      });
   };
 
   const handleSelectFrameKeyframes = () => {
@@ -998,12 +1115,20 @@ export const TimelinePanel = () => {
     handleSelectFrameKeyframes();
   });
 
+  const handleCopyFirstKeyUiEvent = useEffectEvent(() => {
+    handleCopyFirstKeyframe();
+  });
+
   useEffect(() => {
     window.addEventListener("spine:timeline-prev-key", handlePrevKeyUiEvent);
     window.addEventListener("spine:timeline-next-key", handleNextKeyUiEvent);
     window.addEventListener(
       "spine:timeline-select-frame-keys",
       handleSelectFrameKeysUiEvent,
+    );
+    window.addEventListener(
+      "spine:timeline-copy-first-key",
+      handleCopyFirstKeyUiEvent,
     );
 
     return () => {
@@ -1018,6 +1143,10 @@ export const TimelinePanel = () => {
       window.removeEventListener(
         "spine:timeline-select-frame-keys",
         handleSelectFrameKeysUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-copy-first-key",
+        handleCopyFirstKeyUiEvent,
       );
     };
   }, []);
