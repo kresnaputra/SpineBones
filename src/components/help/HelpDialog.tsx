@@ -123,7 +123,7 @@ const sections: HelpSection[] = [
       <>
         Mesh <InlineIcon icon={Scan} /> deforms the active attachment by
         letting you drag mesh points directly on the canvas. Select a bone with
-        an attachment first, then press <span className="help-kbd">M</span> or
+        an attachment first, then press <span className="help-kbd">H</span> or
         choose Mesh from the toolbar.
       </>,
       <>
@@ -140,7 +140,7 @@ const sections: HelpSection[] = [
     items: [
       <>
         Select a bone that has an image attachment, then press{" "}
-        <span className="help-kbd">M</span> or choose Mesh{" "}
+        <span className="help-kbd">H</span> or choose Mesh{" "}
         <InlineIcon icon={Scan} /> from the toolbar to enter mesh edit mode.
       </>,
       "The default mesh is a 2×2 grid of cells — 9 control points arranged in a 3×3 layout — covering the full attachment area.",
@@ -378,7 +378,7 @@ const sections: HelpSection[] = [
     title: "Keyboard Shortcuts",
     icon: Diamond,
     items: [
-      "Q, B, M, R, and S switch tools for Pose, Bone, Move, Rotate, and Scale.",
+      "Q, B, M, R, S, and H switch tools for Pose, Bone, Move, Rotate, Scale, and Mesh.",
       "W switches to Setup mode and E switches to Animate mode.",
       "O toggles onion skin preview while you are in Animate mode.",
       "K inserts keyframes for the current bone selection.",

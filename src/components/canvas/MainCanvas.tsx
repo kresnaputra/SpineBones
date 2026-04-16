@@ -691,6 +691,55 @@ export const MainCanvas = () => {
       if (targetVertexIndex >= 0 && displayAttachment.meshVertices) {
         if (activeBone.id !== selectedBoneId) selectBone(activeBone.id);
         if (meshDragStart === null) captureSnapshot();
+        if (mode === 'animate') {
+          const attachmentKey = getMeshAttachmentKey({
+            slotId: activeSlot.id,
+            name: ensuredAttachment.name,
+          });
+          const existingFrames = Object.keys(
+            meshDeformKeyframes[attachmentKey] ?? {},
+          ).map(Number);
+          const currentBoneEasing = normalizeKeyframeEasing(
+            keyframes[activeBone.id]?.[frame]?.easing,
+          );
+
+          if (
+            frame > 0 &&
+            ensuredAttachment.meshVertices &&
+            !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
+          ) {
+            setMeshDeformKeyframeAtFrame(
+              attachmentKey,
+              0,
+              ensuredAttachment.meshVertices.map((vertex) => ({
+                x: vertex.x,
+                y: vertex.y,
+              })),
+            );
+            updateMeshDeformKeyframeEasing(attachmentKey, 0, currentBoneEasing);
+          }
+
+          setMeshDeformKeyframeAtFrame(
+            attachmentKey,
+            frame,
+            displayAttachment.meshVertices.map((vertex) => ({
+              x: vertex.x,
+              y: vertex.y,
+            })),
+          );
+          updateMeshDeformKeyframeEasing(
+            attachmentKey,
+            frame,
+            currentBoneEasing,
+          );
+          insertKeyframe(activeBone.id, {
+            x: activeBone.x,
+            y: activeBone.y,
+            rotation: activeBone.rotation,
+            scaleX: activeBone.scaleX,
+            scaleY: activeBone.scaleY,
+          });
+        }
         setMeshDragStart({
           slotId: activeSlot.id,
           attachmentName: ensuredAttachment.name,
