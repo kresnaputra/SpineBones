@@ -1,0 +1,17 @@
+{
+  "model_path": "best_mobilenetv3.onnx",
+  "model_name": "mobilenet_v3_small",
+  "image_size": 224,
+  "input_layout": "NCHW",
+  "input_channels": 3,
+  "color_mode": "RGB",
+  "mean": [0.485, 0.456, 0.406],
+  "std": [0.229, 0.224, 0.225],
+  "labels": ["head", "other", "torso"],
+  "class_to_idx": {
+    "head": 0,
+    "other": 1,
+    "torso": 2
+  },
+  "output_name": "logits"
+}

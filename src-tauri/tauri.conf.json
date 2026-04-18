@@ -30,7 +30,9 @@
     "active": true,
     "targets": "app",
     "resources": [
-      "../scripts/spinebones-mcp-server.bundle.mjs"
+      "../scripts/spinebones-mcp-server.bundle.mjs",
+      "../src/models/best_mobilenetv3.onnx",
+      "../src/models/model_config.json"
     ],
     "fileAssociations": [
       {

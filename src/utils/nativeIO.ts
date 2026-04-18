@@ -37,6 +37,12 @@ export interface LoadedBinaryFile {
   bytes: Uint8Array;
 }
 
+export interface SpritePartPrediction {
+  classIndex: number;
+  label: string;
+  confidence: number;
+}
+
 export interface McpBridgeInfo {
   port: number;
   url: string;
@@ -105,6 +111,20 @@ export const startMcpServer = async (): Promise<McpServerStatus | null> => {
 export const stopMcpServer = async () => {
   if (!isDesktopApp()) return;
   await invoke('stop_mcp_server');
+};
+
+export const classifySpritePart = async (path: string): Promise<SpritePartPrediction | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<SpritePartPrediction>('classify_sprite_part', { path });
+};
+
+export const classifySpritePartBytes = async (
+  bytes: Uint8Array,
+): Promise<SpritePartPrediction | null> => {
+  if (!isDesktopApp()) return null;
+  return invoke<SpritePartPrediction>('classify_sprite_part_bytes', {
+    bytes: Array.from(bytes),
+  });
 };
 
 export const getFileNameFromPath = (path: string) => {

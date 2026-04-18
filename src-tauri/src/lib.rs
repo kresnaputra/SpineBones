@@ -1,5 +1,6 @@
 use std::{
   env,
+  fs,
   io::{Read, Write},
   net::{TcpListener, TcpStream},
   path::PathBuf,
@@ -10,6 +11,9 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
+use image::imageops::FilterType;
+use ndarray::Array4;
+use ort::{session::Session, value::TensorRef};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
@@ -53,6 +57,28 @@ struct McpServerStatus {
   last_error: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpritePartPrediction {
+  class_index: usize,
+  label: String,
+  confidence: f32,
+}
+
+#[derive(serde::Deserialize)]
+struct SpriteModelConfig {
+  model_path: String,
+  image_size: usize,
+  input_layout: String,
+  input_channels: usize,
+  color_mode: String,
+  mean: Vec<f32>,
+  std: Vec<f32>,
+  labels: Vec<String>,
+  class_to_idx: Option<std::collections::HashMap<String, usize>>,
+  output_name: Option<String>,
+}
+
 #[tauri::command]
 fn get_launch_project_path(state: tauri::State<'_, LaunchProjectPath>) -> Option<String> {
   state.0.lock().ok().and_then(|guard| guard.clone())
@@ -67,6 +93,75 @@ fn read_project_file(path: String) -> Result<Vec<u8>, String> {
 fn write_project_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
   std::fs::write(&path, bytes)
     .map_err(|error| format!("Failed to write project file '{path}': {error}"))
+}
+
+#[tauri::command]
+fn classify_sprite_part(app: AppHandle, path: String) -> Result<SpritePartPrediction, String> {
+  let config = load_sprite_model_config(&app)?;
+  let model_path = resolve_sprite_model_path(&app, &config);
+  if !model_path.exists() {
+    return Err(format!(
+      "Sprite classifier model not found at {}",
+      model_path.to_string_lossy()
+    ));
+  }
+
+  let bytes = fs::read(&path)
+    .map_err(|error| format!("Failed to read sprite image '{path}': {error}"))?;
+  classify_sprite_part_from_bytes(&model_path, &config, &bytes)
+}
+
+#[tauri::command]
+fn classify_sprite_part_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<SpritePartPrediction, String> {
+  let config = load_sprite_model_config(&app)?;
+  let model_path = resolve_sprite_model_path(&app, &config);
+  if !model_path.exists() {
+    return Err(format!(
+      "Sprite classifier model not found at {}",
+      model_path.to_string_lossy()
+    ));
+  }
+
+  classify_sprite_part_from_bytes(&model_path, &config, &bytes)
+}
+
+fn classify_sprite_part_from_bytes(
+  model_path: &PathBuf,
+  config: &SpriteModelConfig,
+  bytes: &[u8],
+) -> Result<SpritePartPrediction, String> {
+  let input = preprocess_sprite_image(bytes, config)?;
+  let mut session = Session::builder()
+    .map_err(|error| format!("Failed to create ONNX Runtime session builder: {error}"))?
+    .commit_from_file(model_path)
+    .map_err(|error| format!("Failed to load sprite classifier model: {error}"))?;
+
+  let outputs = session
+    .run(ort::inputs![TensorRef::from_array_view(&input)
+      .map_err(|error| format!("Failed to prepare ONNX Runtime input tensor: {error}"))?])
+    .map_err(|error| format!("Failed to run sprite classifier: {error}"))?;
+  let output = outputs[0]
+    .try_extract_array::<f32>()
+    .map_err(|error| format!("Failed to read sprite classifier output: {error}"))?;
+  let scores = extract_first_batch_scores(output.view())?;
+  let probabilities = softmax(&scores);
+  let (class_index, confidence) = probabilities
+    .iter()
+    .copied()
+    .enumerate()
+    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    .ok_or_else(|| "Sprite classifier did not return any scores".to_string())?;
+  let labels = ordered_sprite_labels(config);
+  let label = labels
+    .get(class_index)
+    .cloned()
+    .unwrap_or_else(|| "unknown".to_string());
+
+  Ok(SpritePartPrediction {
+    class_index,
+    label,
+    confidence,
+  })
 }
 
 #[tauri::command]
@@ -576,6 +671,192 @@ fn create_mcp_process_command(script_path: &PathBuf, bridge_port: u16, server_po
   command
 }
 
+fn resolve_sprite_model_config_path(app: &AppHandle) -> PathBuf {
+  if let Ok(resource_dir) = app.path().resource_dir() {
+    let bundled_config_up = resource_dir
+      .join("_up_")
+      .join("src")
+      .join("models")
+      .join("model_config.json");
+    if bundled_config_up.exists() {
+      return bundled_config_up;
+    }
+
+    let bundled_config = resource_dir.join("model_config.json");
+    if bundled_config.exists() {
+      return bundled_config;
+    }
+
+    let bundled_config_nested = resource_dir
+      .join("src")
+      .join("models")
+      .join("model_config.json");
+    if bundled_config_nested.exists() {
+      return bundled_config_nested;
+    }
+  }
+
+  PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    .parent()
+    .map(PathBuf::from)
+    .unwrap_or_else(|| PathBuf::from("."))
+    .join("src")
+    .join("models")
+    .join("model_config.json")
+}
+
+fn load_sprite_model_config(app: &AppHandle) -> Result<SpriteModelConfig, String> {
+  let config_path = resolve_sprite_model_config_path(app);
+  let config_text = fs::read_to_string(&config_path).map_err(|error| {
+    format!(
+      "Failed to read sprite model config '{}': {error}",
+      config_path.to_string_lossy()
+    )
+  })?;
+  let config: SpriteModelConfig = serde_json::from_str(&config_text).map_err(|error| {
+    format!(
+      "Failed to parse sprite model config '{}': {error}",
+      config_path.to_string_lossy()
+    )
+  })?;
+
+  if config.input_layout.to_uppercase() != "NCHW" {
+    return Err(format!(
+      "Unsupported sprite model input layout '{}'. Only NCHW is supported right now.",
+      config.input_layout
+    ));
+  }
+  if config.color_mode.to_uppercase() != "RGB" {
+    return Err(format!(
+      "Unsupported sprite model color mode '{}'. Only RGB is supported right now.",
+      config.color_mode
+    ));
+  }
+  if config.input_channels != 3 {
+    return Err(format!(
+      "Unsupported sprite model channel count '{}'. Only 3-channel RGB models are supported right now.",
+      config.input_channels
+    ));
+  }
+  if config.mean.len() != config.input_channels || config.std.len() != config.input_channels {
+    return Err("Sprite model config mean/std length does not match input_channels".to_string());
+  }
+  if config.labels.is_empty() {
+    return Err("Sprite model config has no labels".to_string());
+  }
+  if let Some(output_name) = &config.output_name {
+    if output_name.trim().is_empty() {
+      return Err("Sprite model config output_name is empty".to_string());
+    }
+  }
+
+  Ok(config)
+}
+
+fn ordered_sprite_labels(config: &SpriteModelConfig) -> Vec<String> {
+  if let Some(class_to_idx) = &config.class_to_idx {
+    let mut labels = vec![String::new(); class_to_idx.len()];
+    for (label, index) in class_to_idx {
+      if *index < labels.len() {
+        labels[*index] = label.clone();
+      }
+    }
+    if labels.iter().all(|label| !label.is_empty()) {
+      return labels;
+    }
+  }
+  config.labels.clone()
+}
+
+fn extract_first_batch_scores(
+  output: ndarray::ArrayViewD<'_, f32>,
+) -> Result<Vec<f32>, String> {
+  match output.ndim() {
+    1 => Ok(output.iter().copied().collect()),
+    2 => {
+      if output.shape()[0] < 1 {
+        return Err("Sprite classifier output batch is empty".to_string());
+      }
+      Ok(output.index_axis(ndarray::Axis(0), 0).iter().copied().collect())
+    }
+    dims => Err(format!(
+      "Unsupported sprite classifier output rank {dims}; expected 1 or 2 dimensions"
+    )),
+  }
+}
+
+fn resolve_sprite_model_path(app: &AppHandle, config: &SpriteModelConfig) -> PathBuf {
+  if let Ok(resource_dir) = app.path().resource_dir() {
+    let bundled_model_up = resource_dir
+      .join("_up_")
+      .join("src")
+      .join("models")
+      .join(&config.model_path);
+    if bundled_model_up.exists() {
+      return bundled_model_up;
+    }
+
+    let bundled_model = resource_dir.join(&config.model_path);
+    if bundled_model.exists() {
+      return bundled_model;
+    }
+
+    let bundled_model_nested = resource_dir
+      .join("src")
+      .join("models")
+      .join(&config.model_path);
+    if bundled_model_nested.exists() {
+      return bundled_model_nested;
+    }
+  }
+
+  PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    .parent()
+    .map(PathBuf::from)
+    .unwrap_or_else(|| PathBuf::from("."))
+    .join("src")
+    .join("models")
+    .join(&config.model_path)
+}
+
+fn preprocess_sprite_image(bytes: &[u8], config: &SpriteModelConfig) -> Result<Array4<f32>, String> {
+  let image = image::load_from_memory(bytes)
+    .map_err(|error| format!("Failed to decode sprite image bytes: {error}"))?;
+  let rgb = image
+    .resize_exact(
+      config.image_size as u32,
+      config.image_size as u32,
+      FilterType::Triangle,
+    )
+    .to_rgb8();
+
+  let mut tensor = Array4::<f32>::zeros((1, 3, config.image_size, config.image_size));
+
+  for y in 0..config.image_size {
+    for x in 0..config.image_size {
+      let pixel = rgb.get_pixel(x as u32, y as u32);
+
+      for channel in 0..3 {
+        let normalized = (f32::from(pixel[channel]) / 255.0 - config.mean[channel])
+          / config.std[channel];
+        tensor[[0, channel, y, x]] = normalized;
+      }
+    }
+  }
+
+  Ok(tensor)
+}
+
+fn softmax(scores: &[f32]) -> Vec<f32> {
+  let max_score = scores
+    .iter()
+    .copied()
+    .fold(f32::NEG_INFINITY, f32::max);
+  let exps: Vec<f32> = scores.iter().map(|score| (score - max_score).exp()).collect();
+  let total = exps.iter().sum::<f32>().max(f32::EPSILON);
+  exps.into_iter().map(|value| value / total).collect()
+}
+
 fn pick_bridge_port() -> u16 {
   (48_570..48_590)
     .find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok())
@@ -822,6 +1103,8 @@ pub fn run() {
       get_launch_project_path,
       read_project_file,
       write_project_file,
+      classify_sprite_part,
+      classify_sprite_part_bytes,
       update_mcp_editor_state,
       get_mcp_bridge_info,
       get_mcp_server_status,

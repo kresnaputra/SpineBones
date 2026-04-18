@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { Upload, Plus, Trash2 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useSlotStore } from '../../stores/slotStore';
-import { openImageFile } from '../../utils/nativeIO';
+import { classifySpritePartBytes, openImageFile } from '../../utils/nativeIO';
 import { useHistoryStore } from '../../stores/historyStore';
 import { getOpaqueBoundsFromImageData } from '../../utils/meshAttachment';
 
@@ -13,11 +14,28 @@ const IMAGE_FILTERS = [
   },
 ];
 
+const getUniqueBoneName = (
+  existingNames: string[],
+  targetName: string,
+  currentName: string,
+) => {
+  if (targetName === currentName) return currentName;
+  if (!existingNames.includes(targetName)) return targetName;
+
+  let suffix = 2;
+  while (existingNames.includes(`${targetName}_${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${targetName}_${suffix}`;
+};
+
 export const SlotListPanel = () => {
   const { selectedBoneId } = useEditorStore();
   const { bones } = useSkeletonStore();
   const { slots, addSlot, deleteSlot, addAttachment, setSlotAttachment, getAttachmentsBySlot } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
+  const [aiStatusBySlotId, setAiStatusBySlotId] = useState<Record<number, string>>({});
 
   const selectedBone = bones.find((b) => b.id === selectedBoneId);
   const boneSlots = selectedBone ? slots.filter((s) => s.boneId === selectedBone.id) : [];
@@ -36,7 +54,13 @@ export const SlotListPanel = () => {
 
       const img = new Image();
       img.onload = async () => {
+        captureSnapshot();
         const attachmentName = imageFile.name.replace(/\.[^/.]+$/, '');
+        const imageBytes = new Uint8Array(await (await fetch(imageFile.dataUrl)).arrayBuffer());
+        setAiStatusBySlotId((state) => ({
+          ...state,
+          [slotId]: 'AI: menganalisis sprite...',
+        }));
 
         // Calculate scale to fit scene (target ~200px max dimension)
         const targetSize = 200;
@@ -62,6 +86,42 @@ export const SlotListPanel = () => {
           scaleY: scale,
         });
         setSlotAttachment(slotId, attachmentName);
+
+        const slot = useSlotStore.getState().slots.find((entry) => entry.id === slotId);
+        const bone = slot
+          ? useSkeletonStore.getState().bones.find((entry) => entry.id === slot.boneId)
+          : null;
+
+        if (slot && bone) {
+          try {
+            const prediction = await classifySpritePartBytes(imageBytes);
+            if (prediction?.label) {
+              const existingNames = useSkeletonStore
+                .getState()
+                .bones
+                .filter((entry) => entry.id !== bone.id)
+                .map((entry) => entry.name);
+              const nextName = getUniqueBoneName(existingNames, prediction.label, bone.name);
+              useSkeletonStore.getState().updateBone(bone.id, { name: nextName });
+              setAiStatusBySlotId((state) => ({
+                ...state,
+                [slotId]: `AI: ${prediction.label} (${Math.round(prediction.confidence * 100)}%)`,
+              }));
+            } else {
+              setAiStatusBySlotId((state) => ({
+                ...state,
+                [slotId]: 'AI: tidak ada hasil prediksi',
+              }));
+            }
+          } catch (error) {
+            console.warn('Failed to auto-classify sprite part:', error);
+            const message = error instanceof Error ? error.message : String(error);
+            setAiStatusBySlotId((state) => ({
+              ...state,
+              [slotId]: `AI error: ${message}`,
+            }));
+          }
+        }
       };
       img.onerror = () => {
         alert('Failed to decode image.');
@@ -119,6 +179,11 @@ export const SlotListPanel = () => {
                         {activeAttachment.imagePath}
                       </div>
                     )}
+                    {aiStatusBySlotId[slot.id] ? (
+                      <div className="text-[9px] text-text-dim">
+                        {aiStatusBySlotId[slot.id]}
+                      </div>
+                    ) : null}
                   </div>
                   <button
                     onClick={() => handleUploadImage(slot.id)}
