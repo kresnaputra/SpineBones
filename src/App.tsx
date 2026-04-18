@@ -1371,6 +1371,9 @@ function App() {
       onExportPngSequence: () => {
         window.dispatchEvent(new CustomEvent('spine:file-export-png-sequence'));
       },
+      onExportAnimationJson: () => {
+        window.dispatchEvent(new CustomEvent('spine:file-export-animation-json'));
+      },
       onToggleBoneIndicators: () => {
         const editor = useEditorStore.getState();
         editor.setShowBoneIndicators(!editor.showBoneIndicators);

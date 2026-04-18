@@ -13,6 +13,7 @@ import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripEx
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
+import { exportAnimationJson } from '../../utils/animationJsonExporter';
 import { ensureMeshAttachmentAsync } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
@@ -271,15 +272,21 @@ export const Toolbar = () => {
     setShowPngSequenceDialog(true);
   });
 
+  const handleExportAnimationJsonMenuEvent = useEffectEvent(() => {
+    void exportAnimationJson();
+  });
+
   useEffect(() => {
     window.addEventListener('spine:file-export-video', handleExportVideoMenuEvent);
     window.addEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
     window.addEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
+    window.addEventListener('spine:file-export-animation-json', handleExportAnimationJsonMenuEvent);
 
     return () => {
       window.removeEventListener('spine:file-export-video', handleExportVideoMenuEvent);
       window.removeEventListener('spine:file-export-spritesheet', handleExportSpriteSheetMenuEvent);
       window.removeEventListener('spine:file-export-png-sequence', handleExportPngSequenceMenuEvent);
+      window.removeEventListener('spine:file-export-animation-json', handleExportAnimationJsonMenuEvent);
     };
   }, []);
 
@@ -436,6 +443,15 @@ export const Toolbar = () => {
           >
             <Images size={14} />
             PNG Sequence
+          </button>
+
+          <button
+            onClick={() => void exportAnimationJson()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation keyframes as JSON"
+          >
+            <Save size={14} />
+            Keyframes JSON
           </button>
 
           <div className="w-px h-6 bg-border mx-1" />
