@@ -1,14 +1,27 @@
-import type { Bone, Slot, Attachment, Keyframes } from '../types';
+import type {
+  Attachment,
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  MeshDeformKeyframes,
+  Slot,
+} from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { createExportWorldToScreen } from '../engine/viewport';
+import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveSlotsAtFrame } from './slotAnimation';
 
 export const exportVideo = async (
   bones: Bone[],
   slots: Slot[],
   attachments: Attachment[],
   keyframes: Keyframes,
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
+  slotAttachmentKeyframes: Record<number, Record<number, { attachmentName: string | null }>> = {},
   duration: number,
   fps: number,
   camX: number,
@@ -69,10 +82,10 @@ export const exportVideo = async (
     if (e.data.size > 0) chunks.push(e.data);
   };
 
-  const worldToScreen = (x: number, y: number) => ({
-    x: width / 2 + (x - camX) * camZoom,
-    y: height / 2 + (y - camY) * camZoom,
-  });
+  // Shared export transform: the canvas IS the video frame, so vpScale = 1.
+  // This formula is the canonical "source of truth" for export coordinates;
+  // the editor preview mirrors it via createViewportWorldToScreen (+ vpScale).
+  const worldToScreen = createExportWorldToScreen(width, height, camX, camY, camZoom);
 
   const applyKeyframe = (boneId: number, frame: number) => {
     const boneKeyframes = keyframes[boneId];
@@ -148,7 +161,22 @@ export const exportVideo = async (
       });
 
       computeAllWorldTransforms(bones);
-      drawSlots(ctx, slots, attachments, bones, worldToScreen, camZoom);
+      const resolvedAttachments = attachments.map((attachment) =>
+        resolveAttachmentAtFrame(
+          attachment,
+          currentFrame,
+          meshDeformKeyframes,
+          attachmentOpacityKeyframes,
+        ),
+      );
+      drawSlots(
+        ctx,
+        resolveSlotsAtFrame(slots, currentFrame, slotAttachmentKeyframes),
+        resolvedAttachments,
+        bones,
+        worldToScreen,
+        camZoom,
+      );
 
       currentFrame++;
       setTimeout(renderFrame, 1000 / fps);

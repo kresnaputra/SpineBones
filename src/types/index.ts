@@ -1,4 +1,4 @@
-export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale';
+export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale' | 'mesh';
 export type Mode = 'setup' | 'animate';
 
 export type SetupPose = Record<
@@ -21,6 +21,13 @@ export interface Attachment {
   type: 'image' | 'mesh';
   imagePath: string;
   imageData?: string;
+  opacity?: number;
+  opaqueBounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
   width: number;
   height: number;
   x: number;
@@ -28,7 +35,18 @@ export interface Attachment {
   rotation: number;
   scaleX: number;
   scaleY: number;
+  meshVertices?: MeshVertex[];
+  meshTriangles?: MeshTriangle[];
 }
+
+export interface MeshVertex {
+  x: number;
+  y: number;
+  u: number;
+  v: number;
+}
+
+export type MeshTriangle = [number, number, number];
 
 export interface Bone {
   id: number;
@@ -74,6 +92,24 @@ export interface KeyframeData {
 }
 
 export type Keyframes = Record<number, Record<number, KeyframeData>>;
+export type MeshDeformKeyframes = Record<
+  string,
+  Record<
+    number,
+    {
+      vertices: Array<Pick<MeshVertex, 'x' | 'y'>>;
+      easing?: KeyframeEasing;
+    }
+  >
+>;
+export type AttachmentOpacityKeyframes = Record<
+  string,
+  Record<number, { opacity: number; easing?: KeyframeEasing }>
+>;
+export type SlotAttachmentKeyframes = Record<
+  number,
+  Record<number, { attachmentName: string | null }>
+>;
 
 export interface CameraState {
   x: number;
@@ -97,6 +133,9 @@ export interface ProjectData {
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   duration: number;
   fps: number;
   backgroundImage?: string | null;

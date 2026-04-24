@@ -1,11 +1,22 @@
 import { create } from 'zustand';
-import type { Bone, Keyframes, KeyframeData, KeyframeEasing } from '../types';
+import type {
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  KeyframeData,
+  KeyframeEasing,
+  MeshDeformKeyframes,
+  SlotAttachmentKeyframes,
+} from '../types';
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
   keyframes: Keyframes;
+  slotAttachmentKeyframes: SlotAttachmentKeyframes;
+  meshDeformKeyframes: MeshDeformKeyframes;
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes;
   frame: number;
   duration: number;
   fps: number;
@@ -15,6 +26,27 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  setSlotAttachmentKeyframeAtFrame: (
+    slotId: number,
+    frame: number,
+    attachmentName: string | null,
+  ) => void;
+  setSlotAttachmentKeyframe: (slotId: number, attachmentName: string | null) => void;
+  deleteSlotAttachmentKeyframe: (slotId: number, frame: number) => void;
+  setMeshDeformKeyframeAtFrame: (
+    attachmentKey: string,
+    frame: number,
+    vertices: Array<{ x: number; y: number }>,
+  ) => void;
+  setMeshDeformKeyframe: (attachmentKey: string, vertices: Array<{ x: number; y: number }>) => void;
+  deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
+  moveMeshDeformKeyframe: (attachmentKey: string, fromFrame: number, toFrame: number) => void;
+  updateMeshDeformKeyframeEasing: (attachmentKey: string, frame: number, easing: KeyframeEasing) => void;
+  setAttachmentOpacityKeyframeAtFrame: (attachmentKey: string, frame: number, opacity: number) => void;
+  setAttachmentOpacityKeyframe: (attachmentKey: string, opacity: number) => void;
+  deleteAttachmentOpacityKeyframe: (attachmentKey: string, frame: number) => void;
+  moveAttachmentOpacityKeyframe: (attachmentKey: string, fromFrame: number, toFrame: number) => void;
+  updateAttachmentOpacityKeyframeEasing: (attachmentKey: string, frame: number, easing: KeyframeEasing) => void;
   moveKeyframe: (boneId: number, fromFrame: number, toFrame: number) => void;
   updateKeyframeEasing: (boneId: number, frame: number, easing: KeyframeEasing) => void;
   deleteKeyframe: (boneId: number, frame: number) => void;
@@ -59,6 +91,9 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
+  slotAttachmentKeyframes: {},
+  meshDeformKeyframes: {},
+  attachmentOpacityKeyframes: {},
   frame: 0,
   duration: 60,
   fps: 24,
@@ -78,6 +113,236 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  setSlotAttachmentKeyframeAtFrame: (slotId, frame, attachmentName) => {
+    set((state) => ({
+      slotAttachmentKeyframes: {
+        ...state.slotAttachmentKeyframes,
+        [slotId]: {
+          ...state.slotAttachmentKeyframes[slotId],
+          [Math.max(0, Math.round(frame))]: { attachmentName },
+        },
+      },
+    }));
+  },
+
+  setSlotAttachmentKeyframe: (slotId, attachmentName) => {
+    set((state) => ({
+      slotAttachmentKeyframes: {
+        ...state.slotAttachmentKeyframes,
+        [slotId]: {
+          ...state.slotAttachmentKeyframes[slotId],
+          [state.frame]: { attachmentName },
+        },
+      },
+    }));
+  },
+
+  deleteSlotAttachmentKeyframe: (slotId, frame) => {
+    set((state) => {
+      const slotKeyframes = { ...(state.slotAttachmentKeyframes[slotId] ?? {}) };
+      delete slotKeyframes[frame];
+
+      const nextSlotAttachmentKeyframes = { ...state.slotAttachmentKeyframes };
+      if (Object.keys(slotKeyframes).length === 0) {
+        delete nextSlotAttachmentKeyframes[slotId];
+      } else {
+        nextSlotAttachmentKeyframes[slotId] = slotKeyframes;
+      }
+
+      return { slotAttachmentKeyframes: nextSlotAttachmentKeyframes };
+    });
+  },
+
+  setMeshDeformKeyframeAtFrame: (attachmentKey, frame, vertices) => {
+    set((state) => ({
+      meshDeformKeyframes: {
+        ...state.meshDeformKeyframes,
+        [attachmentKey]: {
+          ...state.meshDeformKeyframes[attachmentKey],
+          [Math.max(0, Math.round(frame))]: {
+            vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+            easing:
+              state.meshDeformKeyframes[attachmentKey]?.[
+                Math.max(0, Math.round(frame))
+              ]?.easing ?? 'linear',
+          },
+        },
+      },
+    }));
+  },
+
+  setMeshDeformKeyframe: (attachmentKey, vertices) => {
+    set((state) => ({
+      meshDeformKeyframes: {
+        ...state.meshDeformKeyframes,
+        [attachmentKey]: {
+          ...state.meshDeformKeyframes[attachmentKey],
+          [state.frame]: {
+            vertices: vertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
+            easing:
+              state.meshDeformKeyframes[attachmentKey]?.[state.frame]?.easing ??
+              'linear',
+          },
+        },
+      },
+    }));
+  },
+
+  deleteMeshDeformKeyframe: (attachmentKey, frame) => {
+    set((state) => {
+      const attachmentKeyframes = { ...(state.meshDeformKeyframes[attachmentKey] ?? {}) };
+      delete attachmentKeyframes[frame];
+
+      const nextMeshDeformKeyframes = { ...state.meshDeformKeyframes };
+      if (Object.keys(attachmentKeyframes).length === 0) {
+        delete nextMeshDeformKeyframes[attachmentKey];
+      } else {
+        nextMeshDeformKeyframes[attachmentKey] = attachmentKeyframes;
+      }
+
+      return { meshDeformKeyframes: nextMeshDeformKeyframes };
+    });
+  },
+
+  moveMeshDeformKeyframe: (attachmentKey, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const attachmentKeyframes = state.meshDeformKeyframes[attachmentKey];
+      const sourceKeyframe = attachmentKeyframes?.[fromFrame];
+      if (!attachmentKeyframes || !sourceKeyframe) return state;
+
+      const nextAttachmentKeyframes = { ...attachmentKeyframes };
+      delete nextAttachmentKeyframes[fromFrame];
+      nextAttachmentKeyframes[toFrame] = {
+        vertices: sourceKeyframe.vertices.map((vertex) => ({
+          x: vertex.x,
+          y: vertex.y,
+        })),
+        easing: sourceKeyframe.easing,
+      };
+
+      return {
+        meshDeformKeyframes: {
+          ...state.meshDeformKeyframes,
+          [attachmentKey]: nextAttachmentKeyframes,
+        },
+      };
+    });
+  },
+
+  updateMeshDeformKeyframeEasing: (attachmentKey, frame, easing) => {
+    set((state) => {
+      const existing = state.meshDeformKeyframes[attachmentKey]?.[frame];
+      if (!existing) return state;
+
+      return {
+        meshDeformKeyframes: {
+          ...state.meshDeformKeyframes,
+          [attachmentKey]: {
+            ...state.meshDeformKeyframes[attachmentKey],
+            [frame]: {
+              ...existing,
+              easing,
+            },
+          },
+        },
+      };
+    });
+  },
+
+  setAttachmentOpacityKeyframeAtFrame: (attachmentKey, frame, opacity) => {
+    set((state) => ({
+      attachmentOpacityKeyframes: {
+        ...state.attachmentOpacityKeyframes,
+        [attachmentKey]: {
+          ...state.attachmentOpacityKeyframes[attachmentKey],
+          [Math.max(0, Math.round(frame))]: {
+            opacity: Math.min(1, Math.max(0, opacity)),
+            easing:
+              state.attachmentOpacityKeyframes[attachmentKey]?.[
+                Math.max(0, Math.round(frame))
+              ]?.easing ?? 'linear',
+          },
+        },
+      },
+    }));
+  },
+
+  setAttachmentOpacityKeyframe: (attachmentKey, opacity) => {
+    set((state) => ({
+      attachmentOpacityKeyframes: {
+        ...state.attachmentOpacityKeyframes,
+        [attachmentKey]: {
+          ...state.attachmentOpacityKeyframes[attachmentKey],
+          [state.frame]: {
+            opacity: Math.min(1, Math.max(0, opacity)),
+            easing:
+              state.attachmentOpacityKeyframes[attachmentKey]?.[state.frame]?.easing ??
+              'linear',
+          },
+        },
+      },
+    }));
+  },
+
+  deleteAttachmentOpacityKeyframe: (attachmentKey, frame) => {
+    set((state) => {
+      const attachmentKeyframes = { ...(state.attachmentOpacityKeyframes[attachmentKey] ?? {}) };
+      delete attachmentKeyframes[frame];
+
+      const nextAttachmentOpacityKeyframes = { ...state.attachmentOpacityKeyframes };
+      if (Object.keys(attachmentKeyframes).length === 0) {
+        delete nextAttachmentOpacityKeyframes[attachmentKey];
+      } else {
+        nextAttachmentOpacityKeyframes[attachmentKey] = attachmentKeyframes;
+      }
+
+      return { attachmentOpacityKeyframes: nextAttachmentOpacityKeyframes };
+    });
+  },
+
+  moveAttachmentOpacityKeyframe: (attachmentKey, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const attachmentKeyframes = state.attachmentOpacityKeyframes[attachmentKey];
+      const sourceKeyframe = attachmentKeyframes?.[fromFrame];
+      if (!attachmentKeyframes || !sourceKeyframe) return state;
+
+      const nextAttachmentKeyframes = { ...attachmentKeyframes };
+      delete nextAttachmentKeyframes[fromFrame];
+      nextAttachmentKeyframes[toFrame] = sourceKeyframe;
+
+      return {
+        attachmentOpacityKeyframes: {
+          ...state.attachmentOpacityKeyframes,
+          [attachmentKey]: nextAttachmentKeyframes,
+        },
+      };
+    });
+  },
+
+  updateAttachmentOpacityKeyframeEasing: (attachmentKey, frame, easing) => {
+    set((state) => {
+      const existing = state.attachmentOpacityKeyframes[attachmentKey]?.[frame];
+      if (!existing) return state;
+
+      return {
+        attachmentOpacityKeyframes: {
+          ...state.attachmentOpacityKeyframes,
+          [attachmentKey]: {
+            ...state.attachmentOpacityKeyframes[attachmentKey],
+            [frame]: {
+              ...existing,
+              easing,
+            },
+          },
+        },
+      };
+    });
   },
 
   moveKeyframe: (boneId, fromFrame, toFrame) => {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Slot, Attachment } from '../types';
+import { clearAttachmentCache } from '../engine/imageRenderer';
 
 interface SlotState {
   slots: Slot[];
@@ -49,9 +50,18 @@ export const useSlotStore = create<SlotState>((set, get) => ({
   },
 
   deleteSlot: (id) => {
+    const { attachments } = get();
+    const toDelete = attachments.filter((att) => att.slotId === id);
+    const remaining = attachments.filter((att) => att.slotId !== id);
+    const remainingImageData = new Set(remaining.map((att) => att.imageData).filter(Boolean));
+    for (const att of toDelete) {
+      if (att.imageData && !remainingImageData.has(att.imageData)) {
+        clearAttachmentCache(att.imageData);
+      }
+    }
     set((state) => ({
       slots: state.slots.filter((slot) => slot.id !== id),
-      attachments: state.attachments.filter((att) => att.slotId !== id),
+      attachments: remaining,
     }));
   },
 
@@ -59,6 +69,7 @@ export const useSlotStore = create<SlotState>((set, get) => ({
     const newAttachment: Attachment = {
       ...attachment,
       slotId,
+      opacity: attachment.opacity ?? 1,
     };
 
     set((state) => ({
@@ -70,18 +81,27 @@ export const useSlotStore = create<SlotState>((set, get) => ({
     set((state) => ({
       attachments: state.attachments.map((att) =>
         att.slotId === slotId && att.name === name
-          ? { ...att, ...updates }
+          ? {
+              ...att,
+              ...updates,
+              opacity: updates.opacity ?? att.opacity ?? 1,
+            }
           : att
       ),
     }));
   },
 
   deleteAttachment: (slotId, name) => {
-    set((state) => ({
-      attachments: state.attachments.filter(
-        (att) => !(att.slotId === slotId && att.name === name)
-      ),
-    }));
+    const { attachments } = get();
+    const target = attachments.find((att) => att.slotId === slotId && att.name === name);
+    const remaining = attachments.filter((att) => !(att.slotId === slotId && att.name === name));
+    if (target?.imageData) {
+      const stillUsed = remaining.some((att) => att.imageData === target.imageData);
+      if (!stillUsed) {
+        clearAttachmentCache(target.imageData);
+      }
+    }
+    set({ attachments: remaining });
   },
 
   setSlotAttachment: (slotId, attachmentName) => {

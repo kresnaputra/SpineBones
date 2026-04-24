@@ -24,10 +24,12 @@ import {
   FilePlus2,
   Video,
   Grid2x2,
+  Bot,
   Link2,
   FolderTree,
   Keyboard,
   Eye,
+  Scan,
 } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
 
@@ -59,7 +61,7 @@ const sections: HelpSection[] = [
       </>,
       "Build the default rig in Setup mode first, because Setup becomes the base pose for your animation workflow.",
       "When the rig feels correct, switch to Animate mode to start adding keyframes on the timeline.",
-      "Save the project as JSON so bones, slots, groups, IK, timeline data, audio, and background settings stay preserved.",
+      "Save the project as a .sbn file so bones, slots, groups, IK, keyframes, audio, images, and background settings stay preserved in one package.",
     ],
   },
   {
@@ -72,8 +74,10 @@ const sections: HelpSection[] = [
       </>,
       <>
         Use Save or Save As <InlineIcon icon={Save} /> to write the current
-        project to disk as a SpineBones JSON file.
+        project to disk as a SpineBones .sbn package.
       </>,
+      "Each .sbn package now stores a manifest, project data, a generated thumbnail preview, and bundled assets for images/audio.",
+      "Use Project Browser on desktop to reopen recent .sbn packages with thumbnail previews.",
       <>
         Use Open <InlineIcon icon={FolderOpen} /> to load an existing project.
       </>,
@@ -117,11 +121,39 @@ const sections: HelpSection[] = [
         the corresponding transform mode.
       </>,
       <>
+        Mesh <InlineIcon icon={Scan} /> deforms the active attachment by
+        letting you drag mesh points directly on the canvas. Select a bone with
+        an attachment first, then press <span className="help-kbd">H</span> or
+        choose Mesh from the toolbar.
+      </>,
+      <>
         Mirror H <InlineIcon icon={ArrowLeftRight} /> and Mirror V{" "}
         <InlineIcon icon={ArrowUpDown} /> flip the selected bones horizontally
         or vertically.
       </>,
       "Delete or Backspace removes the selected bones.",
+    ],
+  },
+  {
+    title: "Mesh Deformation",
+    icon: Scan,
+    items: [
+      <>
+        Select a bone that has an image attachment, then press{" "}
+        <span className="help-kbd">H</span> or choose Mesh{" "}
+        <InlineIcon icon={Scan} /> from the toolbar to enter mesh edit mode.
+      </>,
+      "The default mesh is a 2×2 grid of cells — 9 control points arranged in a 3×3 layout — covering the full attachment area.",
+      "Drag any control point to warp that region of the attachment image. Surrounding triangles deform using an affine transform so the image stretches smoothly.",
+      <>
+        Click <span className="text-text">OK</span> in the overlay to apply
+        the deformation, or <span className="text-text">Cancel</span> to
+        discard changes and restore the previous shape.
+      </>,
+      "In Setup mode, confirming a mesh edit updates the attachment's base mesh grid — this becomes the resting shape that animation keyframes deform relative to.",
+      "In Animate mode, dragging a control point and releasing the mouse automatically inserts a mesh keyframe at the current frame. You do not need to press K manually for mesh edits.",
+      "To animate a shape change, move the playhead to the first frame and drag points to the desired shape, then move to another frame and reshape again. SpineBones interpolates smoothly between mesh keyframes during playback and export.",
+      "Mesh keyframes are stored per slot and attachment name, so each attachment maintains its own independent deformation timeline.",
     ],
   },
   {
@@ -132,6 +164,7 @@ const sections: HelpSection[] = [
       "Changing numeric values in Animate mode also records the updated transform into the current keyframe.",
       "The Parent dropdown can be used for manual re-parenting while preserving world placement.",
       "Attachment settings appear above the bone properties when relevant.",
+      "In Animate mode, changing attachment opacity creates a fade keyframe for the current frame and interpolates smoothly to the next opacity keyframe.",
     ],
   },
   {
@@ -197,6 +230,7 @@ const sections: HelpSection[] = [
         Use Onion <InlineIcon icon={Eye} /> in Animate mode to preview the
         nearest previous and next moving poses directly on the canvas.
       </>,
+      "To animate mesh deformation, switch to Animate mode, shape the mesh on one frame, then move to another frame and shape it again. Playback and export interpolate the mesh smoothly between those frames.",
       "Frame Keys selects every keyframe on the active frame, then Delete or Backspace removes them all at once.",
       "Click a keyframe to select it, then Shift+click to build a multi-selection.",
       "Drag selected keyframes to move them together to a new frame.",
@@ -240,13 +274,115 @@ const sections: HelpSection[] = [
     ],
   },
   {
+    title: "AI / MCP — Setup",
+    icon: Bot,
+    items: [
+      <>
+        Open the <span className="text-text">MCP Server</span> panel on the
+        right sidebar. It shows the bridge URL and the current server status.
+      </>,
+      <>
+        Click <span className="text-text">Start MCP</span> to launch the
+        local MCP server. The status indicator turns green when it is running.
+        Click <span className="text-text">Stop MCP</span> to shut it down.
+      </>,
+      <>
+        Click <span className="text-text">Check Bridge</span> to verify that
+        the internal bridge is reachable, then click{" "}
+        <span className="text-text">Copy URL</span> to copy the MCP server
+        URL to the clipboard.
+      </>,
+      <>
+        Click <span className="text-text">MCP Config</span> to see the
+        connection settings. Use those details when adding SpineBones as an MCP
+        server in your AI client — transport is{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          Streamable HTTP
+        </code>
+        , authentication is none.
+      </>,
+      "The MCP server starts automatically on a free port each time SpineBones launches, so the port number may change between sessions — always copy the URL from the panel.",
+    ],
+  },
+  {
+    title: "AI / MCP — Connecting Claude Code",
+    icon: Bot,
+    items: [
+      <>
+        In your terminal, run{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          claude mcp add spinebones --transport http --url &lt;paste URL&gt;
+        </code>{" "}
+        using the URL copied from the MCP Config panel.
+      </>,
+      "Once registered, Claude Code can read and drive the live editor — bones, keyframes, skins, slots, attachments, IK, timeline, and playback are all accessible as MCP tools.",
+      <>
+        Verify the connection by asking Claude:{" "}
+        <em className="text-text">"List all bones in the current SpineBones project."</em>{" "}
+        It will call{" "}
+        <code className="rounded bg-panel px-1 text-accent2">
+          spinebones_list_bones
+        </code>{" "}
+        and return the live bone data.
+      </>,
+      "Any other MCP-compatible client (Cursor, Continue, Windsurf, etc.) can connect the same way using the Streamable HTTP URL.",
+    ],
+  },
+  {
+    title: "AI / MCP — What You Can Do",
+    icon: Bot,
+    items: [
+      <>
+        <span className="text-text">Read state —</span> list bones,
+        keyframes, skins, slots, attachments, IK roots, bone groups, camera, and
+        timeline summary at any time.
+      </>,
+      <>
+        <span className="text-text">Edit bones —</span> add, rename, delete,
+        reorder, reparent, mirror, and set transforms, all from a prompt.
+      </>,
+      <>
+        <span className="text-text">Keyframe animation —</span> set or
+        overwrite individual keyframes, batch multiple keyframes in one call,
+        duplicate or remove keyframes, and clear a frame range.
+      </>,
+      <>
+        <span className="text-text">Timeline control —</span> change FPS,
+        duration, current frame, playback range, and trigger play or stop.
+      </>,
+      <>
+        <span className="text-text">Slots and attachments —</span> add
+        slots, create image attachments from local paths, update attachment
+        transforms, and set the active attachment per slot.
+      </>,
+      <>
+        <span className="text-text">Skins, groups, and IK —</span> create
+        and switch skins, manage bone groups, and toggle IK chains or set IK
+        targets.
+      </>,
+    ],
+  },
+  {
+    title: "AI / MCP — Example Prompts",
+    icon: Bot,
+    items: [
+      <><em className="text-text">"Create a breathing animation for the body and breast bones over 120 frames at 50 fps using easeInOut keyframes."</em></>,
+      <><em className="text-text">"List all bones, then add keyframe at frame 0 and frame 30 for each bone using their current transforms."</em></>,
+      <><em className="text-text">"Set the timeline to 60 frames and 24 fps, then play the animation."</em></>,
+      <><em className="text-text">"Mirror all selected bones horizontally and save the new setup pose."</em></>,
+      <><em className="text-text">"Add a slot to the body bone, create an attachment from ~/Downloads/body.png, and set it as active."</em></>,
+      "Be specific with bone names or IDs when prompting — the AI will use the exact names returned by the list tools to avoid ambiguity.",
+    ],
+  },
+  {
     title: "Keyboard Shortcuts",
     icon: Diamond,
     items: [
-      "Q, B, M, R, and S switch tools for Pose, Bone, Move, Rotate, and Scale.",
+      "Q, B, M, R, S, and H switch tools for Pose, Bone, Move, Rotate, Scale, and Mesh.",
       "W switches to Setup mode and E switches to Animate mode.",
       "O toggles onion skin preview while you are in Animate mode.",
       "K inserts keyframes for the current bone selection.",
+      "F copies the first keyframe of the selected bone to the current frame. With nothing selected, it copies the first keyframe of every bone at once.",
       "C toggles IK for the selected valid chain.",
       "Delete or Backspace deletes selected bones or selected timeline keyframes.",
       "Cmd/Ctrl+N creates a new project, Cmd/Ctrl+O opens a project, and Cmd/Ctrl+S saves.",
@@ -269,6 +405,7 @@ const iconLegend = [
   { label: "Move", icon: Move },
   { label: "Rotate", icon: RotateCw },
   { label: "Scale", icon: Maximize2 },
+  { label: "Mesh", icon: Scan },
   { label: "Mirror H", icon: ArrowLeftRight },
   { label: "Mirror V", icon: ArrowUpDown },
   { label: "Key / Loop", icon: Diamond },
@@ -279,6 +416,7 @@ const iconLegend = [
   { label: "Audio", icon: Music2 },
   { label: "Background", icon: Image },
   { label: "Remove BG", icon: XCircle },
+  { label: "MCP Server", icon: Bot },
   { label: "Parent / IK", icon: Link2 },
   { label: "Groups", icon: FolderTree },
   { label: "Shortcuts", icon: Keyboard },

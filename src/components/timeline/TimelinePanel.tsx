@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useEffectEvent } from "react";
 import type { KeyframeEasing } from "../../types";
 import {
   Play,
@@ -14,14 +14,20 @@ import { useEditorStore } from "../../stores/editorStore";
 import { useSkeletonStore } from "../../stores/skeletonStore";
 import { useAnimationStore } from "../../stores/animationStore";
 import { useHistoryStore } from "../../stores/historyStore";
-import { drawTimeline } from "../../engine/timelineRenderer";
+import { useSlotStore } from "../../stores/slotStore";
+import {
+  drawTimeline,
+  drawTimelineHeader,
+} from "../../engine/timelineRenderer";
 import { openAudioFile } from "../../utils/nativeIO";
 import { normalizeKeyframeEasing } from "../../utils/easing";
+import { getMeshAttachmentKey } from "../../utils/meshAttachment";
 
 const HEADER_H = 20;
 const ROW_H = 28;
 const AUDIO_ROW_H = 36;
 const HEADER_W = 120;
+const TIMELINE_PADDING_RIGHT = 50;
 const MAX_WAVEFORM_SAMPLES = 240;
 
 const AUDIO_FILTERS = [
@@ -83,6 +89,7 @@ const extractWaveformPeaks = (channelData: Float32Array, samples: number) => {
 
 export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const headerCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -114,13 +121,20 @@ export const TimelinePanel = () => {
   const [resizeTick, setResizeTick] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [fpsInput, setFpsInput] = useState<string>("");
+  const [durationInput, setDurationInput] = useState<string>("");
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [scrollOffsetX, setScrollOffsetX] = useState(0);
 
   const { mode, selectedBoneId, selectedBoneIds, selectBone } =
     useEditorStore();
   const { bones, skins } = useSkeletonStore();
+  const { slots } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
   const {
     keyframes,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
     frame,
     duration,
     fps,
@@ -141,11 +155,195 @@ export const TimelinePanel = () => {
     applyKeyframes,
     getKeyframesForBone,
     insertKeyframe,
+    setMeshDeformKeyframeAtFrame,
+    setAttachmentOpacityKeyframeAtFrame,
     updateKeyframeEasing,
     moveKeyframe,
+    moveMeshDeformKeyframe,
+    moveAttachmentOpacityKeyframe,
+    updateMeshDeformKeyframeEasing,
+    updateAttachmentOpacityKeyframeEasing,
     deleteKeyframe,
+    deleteMeshDeformKeyframe,
+    deleteAttachmentOpacityKeyframe,
     clearKeyframes,
   } = useAnimationStore();
+
+  const deleteAttachmentOpacityKeysAtFrame = (
+    boneId: number,
+    targetFrame: number,
+  ) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        deleteAttachmentOpacityKeyframe(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          targetFrame,
+        );
+      });
+  };
+
+  const clearAttachmentOpacityKeysForBone = (boneId: number) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const attachmentFrames = Object.keys(
+          attachmentOpacityKeyframes[attachmentKey] ?? {},
+        ).map(Number);
+        attachmentFrames.forEach((targetFrame) =>
+          deleteAttachmentOpacityKeyframe(attachmentKey, targetFrame),
+        );
+      });
+  };
+
+  const clearMeshDeformKeysForBone = (boneId: number) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const deformFrames = Object.keys(
+          meshDeformKeyframes[attachmentKey] ?? {},
+        ).map(Number);
+        deformFrames.forEach((targetFrame) =>
+          deleteMeshDeformKeyframe(attachmentKey, targetFrame),
+        );
+      });
+  };
+
+  const deleteMeshDeformKeysAtFrame = (boneId: number, targetFrame: number) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        deleteMeshDeformKeyframe(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          targetFrame,
+        );
+      });
+  };
+
+  const moveAttachmentOpacityKeysAtFrame = (
+    boneId: number,
+    fromFrame: number,
+    toFrame: number,
+  ) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        moveAttachmentOpacityKeyframe(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          fromFrame,
+          toFrame,
+        );
+      });
+  };
+
+  const moveMeshDeformKeysAtFrame = (
+    boneId: number,
+    fromFrame: number,
+    toFrame: number,
+  ) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        moveMeshDeformKeyframe(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          fromFrame,
+          toFrame,
+        );
+      });
+  };
+
+  const updateAttachmentOpacityEasingAtFrame = (
+    boneId: number,
+    targetFrame: number,
+    easing: KeyframeEasing,
+  ) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        updateAttachmentOpacityKeyframeEasing(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          targetFrame,
+          easing,
+        );
+      });
+  };
+
+  const updateMeshDeformEasingAtFrame = (
+    boneId: number,
+    targetFrame: number,
+    easing: KeyframeEasing,
+  ) => {
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+        updateMeshDeformKeyframeEasing(
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          }),
+          targetFrame,
+          easing,
+        );
+      });
+  };
+
+  useEffect(() => {
+    setFpsInput(String(fps));
+  }, [fps]);
+  useEffect(() => {
+    setDurationInput(String(duration));
+  }, [duration]);
+
+  const commitFps = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(120, parsed))
+      : 1;
+    captureSnapshot();
+    setFps(clamped);
+    setFpsInput(String(clamped));
+  };
+
+  const commitDuration = (raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const clamped = Number.isFinite(parsed)
+      ? Math.max(10, Math.min(300, parsed))
+      : 10;
+    captureSnapshot();
+    setDuration(clamped);
+    setDurationInput(String(clamped));
+  };
 
   useEffect(() => {
     if (audioRef.current) {
@@ -264,10 +462,14 @@ export const TimelinePanel = () => {
       if (!canvasRef.current || !wrapRef.current) return;
       const { clientWidth } = wrapRef.current;
       const audioRowH = audioData ? AUDIO_ROW_H : 0;
-      const requiredHeight = HEADER_H + audioRowH + bones.length * ROW_H;
+      const bodyHeight = audioRowH + bones.length * ROW_H;
 
       canvasRef.current.width = clientWidth;
-      canvasRef.current.height = requiredHeight;
+      canvasRef.current.height = bodyHeight;
+      if (headerCanvasRef.current) {
+        headerCanvasRef.current.width = clientWidth;
+        headerCanvasRef.current.height = HEADER_H;
+      }
       setResizeTick((tick) => tick + 1);
     };
 
@@ -318,6 +520,8 @@ export const TimelinePanel = () => {
       },
       canvas.width,
       canvas.height,
+      scrollOffsetX,
+      getFrameW(canvas.width),
     );
   }, [
     bones,
@@ -335,7 +539,25 @@ export const TimelinePanel = () => {
     audioDurationSeconds,
     fps,
     waveformPeaks,
+    scrollOffsetX,
+    timelineZoom,
   ]);
+
+  useEffect(() => {
+    const canvas = headerCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    drawTimelineHeader(
+      ctx,
+      frame,
+      duration,
+      canvas.width,
+      canvas.height,
+      scrollOffsetX,
+      getFrameW(canvas.width),
+    );
+  }, [frame, duration, resizeTick, scrollOffsetX, timelineZoom]);
 
   useEffect(() => {
     setSelectedKeyframes((current) =>
@@ -375,6 +597,18 @@ export const TimelinePanel = () => {
     }
   }, [frame, playing, mode, applyKeyframes]);
 
+  const getFrameW = (canvasWidth: number) =>
+    Math.max(8, (canvasWidth - HEADER_W - TIMELINE_PADDING_RIGHT) / duration) *
+    timelineZoom;
+
+  const getMaxScrollX = (canvasWidth: number) =>
+    Math.max(
+      0,
+      getFrameW(canvasWidth) * duration +
+        TIMELINE_PADDING_RIGHT -
+        (canvasWidth - HEADER_W),
+    );
+
   const getKeyframeAtPosition = (
     sx: number,
     sy: number,
@@ -383,11 +617,11 @@ export const TimelinePanel = () => {
     if (!rect) return null;
 
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const frameW = Math.max(8, (rect.width - HEADER_W) / duration);
+    const frameW = getFrameW(rect.width);
 
     if (sx < HEADER_W) return null;
 
-    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
+    const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
 
     const bone = bones[boneIndex];
@@ -396,8 +630,8 @@ export const TimelinePanel = () => {
 
     for (const kf of Object.keys(boneKeyframes)) {
       const kfFrame = parseInt(kf);
-      const kfX = HEADER_W + kfFrame * frameW;
-      const kfY = HEADER_H + audioRowH + boneIndex * ROW_H + ROW_H / 2;
+      const kfX = HEADER_W + kfFrame * frameW - scrollOffsetX;
+      const kfY = audioRowH + boneIndex * ROW_H + ROW_H / 2;
 
       const dist = Math.hypot(sx - kfX, sy - kfY);
       if (dist < 8) {
@@ -410,18 +644,32 @@ export const TimelinePanel = () => {
 
   const getBoneAtPosition = (sy: number) => {
     const audioRowH = audioData ? AUDIO_ROW_H : 0;
-    const boneIndex = Math.floor((sy - HEADER_H - audioRowH) / ROW_H);
+    const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
 
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
     return bones[boneIndex] ?? null;
   };
 
   const isAudioTrackHit = (sy: number) =>
-    audioData && sy >= HEADER_H && sy <= HEADER_H + AUDIO_ROW_H;
+    audioData && sy >= 0 && sy <= AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
-    const frameW = Math.max(8, (width - HEADER_W) / duration);
-    return Math.round(clamp((sx - HEADER_W) / frameW, 0, duration));
+    const frameW = getFrameW(width);
+    return Math.round(
+      clamp((sx - HEADER_W + scrollOffsetX) / frameW, 0, duration),
+    );
+  };
+
+  const handleHeaderMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = headerCanvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    if (sx <= HEADER_W) return;
+    const newFrame = getFrameFromX(sx, rect.width);
+    setFrame(newFrame);
+    if (mode === "animate") applyKeyframes();
+    setIsDragging(true);
+    setDragMode("playhead");
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -435,12 +683,20 @@ export const TimelinePanel = () => {
 
     if (boneHit) {
       selectBone(boneHit.id);
-    } else if (sy <= 20) {
-      selectBone(null);
+      if (sx < HEADER_W) {
+        const boneKeyframes = keyframes[boneHit.id];
+        if (boneKeyframes) {
+          const allFrames = Object.keys(boneKeyframes).map(Number);
+          setSelectedKeyframes(allFrames.map((f) => ({ boneId: boneHit.id, frame: f })));
+        }
+        return;
+      }
     }
 
     if (e.detail === 2 && keyframeHit) {
       deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
+      deleteAttachmentOpacityKeysAtFrame(keyframeHit.boneId, keyframeHit.frame);
+      deleteMeshDeformKeysAtFrame(keyframeHit.boneId, keyframeHit.frame);
       return;
     }
 
@@ -533,6 +789,16 @@ export const TimelinePanel = () => {
 
         activeSelection.forEach((keyframe) => {
           moveKeyframe(keyframe.boneId, keyframe.frame, keyframe.frame + delta);
+          moveAttachmentOpacityKeysAtFrame(
+            keyframe.boneId,
+            keyframe.frame,
+            keyframe.frame + delta,
+          );
+          moveMeshDeformKeysAtFrame(
+            keyframe.boneId,
+            keyframe.frame,
+            keyframe.frame + delta,
+          );
         });
 
         setDraggedKeyframeSelection((current) =>
@@ -580,12 +846,16 @@ export const TimelinePanel = () => {
     if (keyframeHit) {
       captureSnapshot();
       deleteKeyframe(keyframeHit.boneId, keyframeHit.frame);
+      deleteAttachmentOpacityKeysAtFrame(keyframeHit.boneId, keyframeHit.frame);
+      deleteMeshDeformKeysAtFrame(keyframeHit.boneId, keyframeHit.frame);
     }
   };
 
   const handleDeleteFromContextMenu = () => {
     if (contextMenu) {
       deleteKeyframe(contextMenu.boneId, contextMenu.frame);
+      deleteAttachmentOpacityKeysAtFrame(contextMenu.boneId, contextMenu.frame);
+      deleteMeshDeformKeysAtFrame(contextMenu.boneId, contextMenu.frame);
       setContextMenu(null);
     }
   };
@@ -597,9 +867,12 @@ export const TimelinePanel = () => {
         selectedKeyframes.length > 0
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         captureSnapshot();
         selectedKeyframes.forEach((keyframe) => {
           deleteKeyframe(keyframe.boneId, keyframe.frame);
+          deleteAttachmentOpacityKeysAtFrame(keyframe.boneId, keyframe.frame);
+          deleteMeshDeformKeysAtFrame(keyframe.boneId, keyframe.frame);
         });
         setSelectedKeyframes([]);
         return;
@@ -610,7 +883,16 @@ export const TimelinePanel = () => {
         hoveredKeyframe
       ) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         deleteKeyframe(hoveredKeyframe.boneId, hoveredKeyframe.frame);
+        deleteAttachmentOpacityKeysAtFrame(
+          hoveredKeyframe.boneId,
+          hoveredKeyframe.frame,
+        );
+        deleteMeshDeformKeysAtFrame(
+          hoveredKeyframe.boneId,
+          hoveredKeyframe.frame,
+        );
       }
     };
 
@@ -618,14 +900,24 @@ export const TimelinePanel = () => {
       setContextMenu(null);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("click", handleClickOutside);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("click", handleClickOutside);
     };
-  }, [hoveredKeyframe, selectedKeyframes, captureSnapshot, deleteKeyframe]);
+  }, [
+    hoveredKeyframe,
+    selectedKeyframes,
+    captureSnapshot,
+    deleteKeyframe,
+    slots,
+    attachmentOpacityKeyframes,
+    meshDeformKeyframes,
+    deleteAttachmentOpacityKeyframe,
+    deleteMeshDeformKeyframe,
+  ]);
 
   const handlePrevKey = () => {
     if (selectedBoneId === null) return;
@@ -675,45 +967,149 @@ export const TimelinePanel = () => {
   };
 
   const handleClearKeyframes = () => {
-    if (selectedBoneIds.length === 0) return;
+    const targetBoneIds = Array.from(
+      new Set([
+        ...bones.map((bone) => bone.id),
+        ...slots.map((slot) => slot.boneId),
+      ]),
+    );
+    if (targetBoneIds.length === 0) return;
 
     captureSnapshot();
-    selectedBoneIds.forEach((boneId) => clearKeyframes(boneId));
+    targetBoneIds.forEach((boneId) => {
+      clearKeyframes(boneId);
+      clearAttachmentOpacityKeysForBone(boneId);
+      clearMeshDeformKeysForBone(boneId);
+    });
+    setSelectedKeyframes([]);
   };
 
   const handleLoopKeyframes = () => {
     const animState = useAnimationStore.getState();
-    const allKeyframes = animState.keyframes;
-    const boneIds = Object.keys(allKeyframes).map(Number);
-    if (boneIds.length === 0) return;
+    const targetBoneIds = Array.from(
+      new Set([
+        ...Object.keys(animState.keyframes).map(Number),
+        ...slots.map((slot) => slot.boneId),
+      ]),
+    );
+    if (targetBoneIds.length === 0) return;
+
+    const visibleBoneFrames = targetBoneIds.flatMap((boneId) =>
+      Object.keys(animState.keyframes[boneId] ?? {}).map(Number),
+    );
+    const allAttachmentFrames = targetBoneIds.flatMap((boneId) => {
+      const slotAttachmentKeys = slots
+        .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+        .map((slot) =>
+          getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName!,
+          }),
+        );
+
+      return [
+        ...slotAttachmentKeys.flatMap((attachmentKey) =>
+          Object.keys(animState.attachmentOpacityKeyframes[attachmentKey] ?? {}).map(Number),
+        ),
+        ...slotAttachmentKeys.flatMap((attachmentKey) =>
+          Object.keys(animState.meshDeformKeyframes[attachmentKey] ?? {}).map(Number),
+        ),
+      ];
+    });
+
+    const loopFrames =
+      visibleBoneFrames.length > 0 ? visibleBoneFrames : allAttachmentFrames;
+    if (loopFrames.length < 2) return;
 
     captureSnapshot();
 
-    let globalMax = 0;
-    for (const boneId of boneIds) {
-      const frames = Object.keys(allKeyframes[boneId]).map(Number);
-      const max = Math.max(...frames);
-      if (max > globalMax) globalMax = max;
-    }
+    const loopStart = Math.min(...loopFrames);
+    const loopEnd = Math.max(...loopFrames);
 
-    for (const boneId of boneIds) {
-      const boneKfs = allKeyframes[boneId];
-      const frames = Object.keys(boneKfs)
+    for (const boneId of targetBoneIds) {
+      const boneKfs = animState.keyframes[boneId];
+      const boneFrames = Object.keys(boneKfs ?? {})
         .map(Number)
         .sort((a, b) => a - b);
-      if (frames.length < 2) continue;
 
-      const lastFrame = frames[frames.length - 1];
-      const reversed = frames.slice(0, -1).reverse();
+      if (boneKfs && boneFrames.length >= 2) {
+        const reversed = boneFrames
+          .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+          .reverse();
 
-      for (const srcFrame of reversed) {
-        const gap = lastFrame - srcFrame;
-        const destFrame = globalMax + gap;
-        useAnimationStore.getState().setFrame(destFrame);
-        useAnimationStore
-          .getState()
-          .insertKeyframe(boneId, { ...boneKfs[srcFrame] });
+        for (const srcFrame of reversed) {
+          const destFrame = loopEnd + (loopEnd - srcFrame);
+          useAnimationStore.getState().setFrame(destFrame);
+          useAnimationStore
+            .getState()
+            .insertKeyframe(boneId, { ...boneKfs[srcFrame] });
+        }
       }
+
+      slots
+        .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+        .forEach((slot) => {
+          if (!slot.attachmentName) return;
+
+          const attachmentKey = getMeshAttachmentKey({
+            slotId: slot.id,
+            name: slot.attachmentName,
+          });
+
+          const opacityFrames = Object.keys(
+            attachmentOpacityKeyframes[attachmentKey] ?? {},
+          )
+            .map(Number)
+            .sort((a, b) => a - b);
+
+          if (opacityFrames.length >= 2) {
+            const reversed = opacityFrames
+              .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+              .reverse();
+
+            reversed.forEach((srcFrame) => {
+              const source = attachmentOpacityKeyframes[attachmentKey]?.[srcFrame];
+              if (!source) return;
+              const destFrame = loopEnd + (loopEnd - srcFrame);
+              setAttachmentOpacityKeyframeAtFrame(
+                attachmentKey,
+                destFrame,
+                source.opacity,
+              );
+              updateAttachmentOpacityKeyframeEasing(
+                attachmentKey,
+                destFrame,
+                normalizeKeyframeEasing(source.easing),
+              );
+            });
+          }
+
+          const deformFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {})
+            .map(Number)
+            .sort((a, b) => a - b);
+
+          if (deformFrames.length >= 2) {
+            const reversed = deformFrames
+              .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+              .reverse();
+
+            reversed.forEach((srcFrame) => {
+              const source = meshDeformKeyframes[attachmentKey]?.[srcFrame];
+              if (!source) return;
+              const destFrame = loopEnd + (loopEnd - srcFrame);
+              setMeshDeformKeyframeAtFrame(
+                attachmentKey,
+                destFrame,
+                source.vertices,
+              );
+              updateMeshDeformKeyframeEasing(
+                attachmentKey,
+                destFrame,
+                normalizeKeyframeEasing(source.easing),
+              );
+            });
+          }
+        });
     }
 
     useAnimationStore.getState().setFrame(0);
@@ -736,6 +1132,60 @@ export const TimelinePanel = () => {
 
     captureSnapshot();
     insertKeyframe(selectedBoneId, { ...firstKey });
+
+    slots
+      .filter((slot) => slot.boneId === selectedBoneId && slot.attachmentName)
+      .forEach((slot) => {
+        if (!slot.attachmentName) return;
+
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const opacityFrames = Object.keys(
+          attachmentOpacityKeyframes[attachmentKey] ?? {},
+        )
+          .map(Number)
+          .sort((a, b) => a - b);
+        if (opacityFrames.length > 0) {
+          const firstOpacityFrame = opacityFrames[0];
+          const firstOpacityKey =
+            attachmentOpacityKeyframes[attachmentKey]?.[firstOpacityFrame];
+          if (firstOpacityKey) {
+            setAttachmentOpacityKeyframeAtFrame(
+              attachmentKey,
+              frame,
+              firstOpacityKey.opacity,
+            );
+            updateAttachmentOpacityKeyframeEasing(
+              attachmentKey,
+              frame,
+              normalizeKeyframeEasing(firstOpacityKey.easing),
+            );
+          }
+        }
+
+        const deformFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {})
+          .map(Number)
+          .sort((a, b) => a - b);
+        if (deformFrames.length > 0) {
+          const firstDeformFrame = deformFrames[0];
+          const firstDeformKey =
+            meshDeformKeyframes[attachmentKey]?.[firstDeformFrame];
+          if (firstDeformKey) {
+            setMeshDeformKeyframeAtFrame(
+              attachmentKey,
+              frame,
+              firstDeformKey.vertices,
+            );
+            updateMeshDeformKeyframeEasing(
+              attachmentKey,
+              frame,
+              normalizeKeyframeEasing(firstDeformKey.easing),
+            );
+          }
+        }
+      });
   };
 
   const handleSelectFrameKeyframes = () => {
@@ -779,17 +1229,106 @@ export const TimelinePanel = () => {
           return values.every((value) => value === first) ? first : "";
         })();
 
+  const hasAnyAnimationData =
+    Object.keys(keyframes).length > 0 ||
+    Object.keys(attachmentOpacityKeyframes).length > 0 ||
+    Object.keys(meshDeformKeyframes).length > 0;
+
   const handleEasingChange = (value: string) => {
     if (!value || selectedKeyframes.length === 0) return;
 
     captureSnapshot();
     selectedKeyframes.forEach(({ boneId, frame: keyframeFrame }) => {
       updateKeyframeEasing(boneId, keyframeFrame, value as KeyframeEasing);
+      updateAttachmentOpacityEasingAtFrame(
+        boneId,
+        keyframeFrame,
+        value as KeyframeEasing,
+      );
+      updateMeshDeformEasingAtFrame(
+        boneId,
+        keyframeFrame,
+        value as KeyframeEasing,
+      );
     });
   };
 
+  const handlePrevKeyUiEvent = useEffectEvent(() => {
+    handlePrevKey();
+  });
+
+  const handleNextKeyUiEvent = useEffectEvent(() => {
+    handleNextKey();
+  });
+
+  const handleSelectFrameKeysUiEvent = useEffectEvent(() => {
+    handleSelectFrameKeyframes();
+  });
+
+  const handleCopyFirstKeyUiEvent = useEffectEvent(() => {
+    handleCopyFirstKeyframe();
+  });
+
+  useEffect(() => {
+    window.addEventListener("spine:timeline-prev-key", handlePrevKeyUiEvent);
+    window.addEventListener("spine:timeline-next-key", handleNextKeyUiEvent);
+    window.addEventListener(
+      "spine:timeline-select-frame-keys",
+      handleSelectFrameKeysUiEvent,
+    );
+    window.addEventListener(
+      "spine:timeline-copy-first-key",
+      handleCopyFirstKeyUiEvent,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "spine:timeline-prev-key",
+        handlePrevKeyUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-next-key",
+        handleNextKeyUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-select-frame-keys",
+        handleSelectFrameKeysUiEvent,
+      );
+      window.removeEventListener(
+        "spine:timeline-copy-first-key",
+        handleCopyFirstKeyUiEvent,
+      );
+    };
+  }, []);
+
+  const handleCanvasWheel = useEffectEvent((e: WheelEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const maxX = getMaxScrollX(canvas.width);
+    if (e.altKey) {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setTimelineZoom((z) => Math.max(1, Math.min(20, z * zoomFactor)));
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev)));
+    } else if (e.shiftKey) {
+      e.preventDefault();
+      const delta = e.deltaY || e.deltaX;
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + delta)));
+    } else if (Math.abs(e.deltaX) > 0) {
+      e.preventDefault();
+      setScrollOffsetX((prev) => Math.max(0, Math.min(maxX, prev + e.deltaX)));
+    }
+  });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener("wheel", handleCanvasWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleCanvasWheel);
+  }, []);
+
   return (
-    <div className="h-[180px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
+    <div className="h-[190px] flex-shrink-0 bg-panel border-t border-border flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-panel2 panel-padding-left">
         <button
           onClick={playing ? stop : play}
@@ -827,9 +1366,9 @@ export const TimelinePanel = () => {
         </button>
         <button
           onClick={handleClearKeyframes}
-          disabled={selectedBoneIds.length === 0}
+          disabled={!hasAnyAnimationData}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-[10px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Clear keyframes for selected bones"
+          title="Clear all keyframes in the timeline"
         >
           <X size={12} />
           Clear
@@ -846,7 +1385,7 @@ export const TimelinePanel = () => {
           onClick={handleCopyFirstKeyframe}
           disabled={selectedBoneId === null}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-accent hover:border-accent transition-all text-[10px] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Copy first keyframe to current frame"
+          title="Copy first keyframe to current frame — no selection copies all bones (F)"
         >
           <Diamond size={12} />
           1st Key
@@ -932,10 +1471,14 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">FPS:</span>
         <input
           type="number"
-          value={fps}
-          onChange={(e) => {
-            captureSnapshot();
-            setFps(Math.max(1, Math.min(120, parseInt(e.target.value) || 24)));
+          value={fpsInput}
+          onChange={(e) => setFpsInput(e.target.value)}
+          onBlur={(e) => commitFps(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commitFps((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            }
           }}
           className="w-10 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="1"
@@ -944,12 +1487,14 @@ export const TimelinePanel = () => {
         <span className="text-text-dim text-[10px]">Duration:</span>
         <input
           type="number"
-          value={duration}
-          onChange={(e) => {
-            captureSnapshot();
-            setDuration(
-              Math.max(10, Math.min(300, parseInt(e.target.value) || 60)),
-            );
+          value={durationInput}
+          onChange={(e) => setDurationInput(e.target.value)}
+          onBlur={(e) => commitDuration(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              commitDuration((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            }
           }}
           className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="10"
@@ -960,6 +1505,14 @@ export const TimelinePanel = () => {
         ref={wrapRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin"
       >
+        <canvas
+          ref={headerCanvasRef}
+          className="block sticky top-0 z-10"
+          onMouseDown={handleHeaderMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          style={{ cursor: "default" }}
+        />
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -991,6 +1544,47 @@ export const TimelinePanel = () => {
             </button>
           </div>
         )}
+      </div>
+      {/* Horizontal scrollbar */}
+      <div
+        className="h-2.5 bg-panel2 border-t border-border flex-shrink-0 relative"
+        style={{ paddingLeft: HEADER_W }}
+        onMouseDown={(e) => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const maxScroll = getMaxScrollX(canvas.width);
+          if (maxScroll <= 0) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const trackW = canvas.width - HEADER_W;
+          const thumbW = Math.max(20, (trackW * trackW) / (trackW + maxScroll));
+          const ratio = Math.max(
+            0,
+            Math.min(1, (clickX - thumbW / 2) / (trackW - thumbW)),
+          );
+          setScrollOffsetX(ratio * maxScroll);
+        }}
+      >
+        <div className="relative h-full w-full">
+          {(() => {
+            const canvas = canvasRef.current;
+            if (!canvas) return null;
+            const maxScroll = getMaxScrollX(canvas.width);
+            if (maxScroll <= 0) return null;
+            const trackW = canvas.width - HEADER_W;
+            const thumbW = Math.max(
+              20,
+              (trackW * trackW) / (trackW + maxScroll),
+            );
+            const thumbLeft = (scrollOffsetX / maxScroll) * (trackW - thumbW);
+            return (
+              <div
+                className="absolute top-0.5 bottom-0.5 bg-border hover:bg-accent/60 rounded-full cursor-pointer transition-colors"
+                style={{ left: thumbLeft, width: thumbW }}
+              />
+            );
+          })()}
+        </div>
       </div>
     </div>
   );

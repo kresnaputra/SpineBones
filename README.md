@@ -1,31 +1,32 @@
 # SpineBones
 
-SpineBones is a 2D skeleton editor for building simple rigs, attaching images to bones through slots, animating them with keyframes, and exporting the result as project JSON, a Spine-like package, or WebM video.
+SpineBones is a 2D skeletal animation editor for building rigs, attaching images through slots, animating them on a timeline, previewing a video-safe viewport, and exporting the result as `.sbn` projects, WebM video, PNG sequences, or sprite sheets.
 
 This README is written as a practical user guide so someone new to the project can understand what the application already supports and how to use it effectively.
 
 ## Main Features
 
-- Create bones directly on the canvas
-- Build parent-child bone hierarchies
-- Reorder bones with drag and drop in the Bones panel
-- Edit bone properties such as name, position, length, rotation, scale, and parent
-- Add slots to the selected bone
-- Upload image attachments per slot
-- Switch the active attachment on a slot
-- Manage the active skin
-- Show or hide bone indicators
-- Add a background image as visual reference
-- Use `SETUP` and `ANIMATE` modes
-- Scrub and play animation in the timeline
-- Insert, clear, delete, and loop keyframes
-- Preview previous and next moving sprite poses with onion skin overlays
-- Undo and redo edits
-- Create a new empty project
-- Save and load project JSON files
-- Export a Spine-like ZIP package
-- Export animation as WebM video
-- Use desktop menu actions for file and view controls
+- Create and edit 2D bone rigs directly on the canvas
+- Build parent-child hierarchies, re-parent bones, and organize them into groups
+- Use `SETUP` and `ANIMATE` modes with a shared rig workflow
+- Add slots to bones and assign multiple image attachments per slot
+- Switch attachments per frame for sprite-style animation
+- Edit attachment offset, rotation, scale, and opacity
+- Animate attachment opacity with smooth fade interpolation and timeline easing
+- Convert attachments into editable mesh attachments
+- Deform mesh attachments on the canvas and animate mesh deformation per frame
+- Preview a centered 16:9 video viewport in the editor
+- Pan and zoom the camera while keeping the viewport preview aligned to export framing
+- Use onion skin previews for previous and next moving poses
+- Play animation in the timeline with audio import, offset, and volume controls
+- Insert, clear, delete, move, copy first, and loop keyframes
+- Use IK controls for supported chains
+- Undo and redo edits across rigging, timeline, attachment, mesh, and project changes
+- Save and load `.sbn` project packages with bundled assets
+- Open legacy `.json` projects and resave them as `.sbn`
+- Browse recent projects with thumbnail previews in the desktop app
+- Export WebM video, PNG sequence ZIPs, and sprite sheet ZIPs
+- Control the app from desktop menus and the MCP bridge
 
 ## Tech Stack
 
@@ -109,15 +110,14 @@ When the application starts and the project is empty, SpineBones automatically l
 
 The top toolbar contains:
 
-- Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`
+- Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`, `Mesh`
 - `Undo` and `Redo`
-- `Key` to insert a keyframe
-- `Clear` to remove all keyframes from the selected bone
-- `Loop` to mirror keyframes into a loop
-- `1st Key` to copy the first keyframe of the selected bone to the current frame
-- `Save`, `Load`, `Export Spine`, and `Export Video` in web or non-desktop mode
-- `Background` to upload a reference image
-- `Remove BG` to clear the background image
+- `Key` to insert keyframes for the selected bones
+- `Clear` to remove all animation keyframes from the timeline
+- `Loop` to mirror the existing animation range into a continuation
+- `1st Key` to copy the first keyframe state to the current frame
+- save/load/export actions
+- background image controls
 - `SETUP` and `ANIMATE` mode buttons
 
 ### Left Sidebar
@@ -139,12 +139,11 @@ This side is used to:
 
 The canvas is the main workspace for:
 
-- creating bones
-- selecting bones
-- moving bones
-- rotating bones
-- scaling bones
-- previewing attachments
+- creating and selecting bones
+- moving, rotating, and scaling rigs
+- dragging attachments
+- editing mesh vertices directly on the artwork
+- previewing the 16:9 export viewport
 - viewing the background reference image
 - panning and zooming the camera
 
@@ -161,15 +160,13 @@ If no bone is selected, the panel shows a helper message.
 
 The timeline is used for:
 
-- frame scrubbing
-- animation playback
-- onion skin preview of the nearest previous and next moving poses
+- frame scrubbing and playback
 - previous and next keyframe navigation
-- stopping and returning to frame 0
-- editing FPS
-- editing duration
-- selecting bones from timeline rows
-- deleting keyframes with double click, right click, or keyboard shortcuts
+- editing FPS and duration
+- inserting, deleting, moving, copying, clearing, and looping keyframes
+- editing easing
+- importing preview audio and adjusting audio offset/volume
+- driving bone transforms, attachment fades, and mesh deformation
 
 ### Status Bar
 

@@ -19,6 +19,8 @@ export const useKeyboardShortcuts = () => {
     attachmentDragEnabled,
     setAttachmentDragEnabled,
     toggleOnionSkin,
+    showBoneIndicators,
+    setShowBoneIndicators,
   } = useEditorStore();
   const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
   const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
@@ -66,12 +68,19 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
+      if (isModifierPressed && key === 'b') {
+        e.preventDefault();
+        setShowBoneIndicators(!showBoneIndicators);
+        return;
+      }
+
       const toolMap: Record<string, typeof tool> = {
         q: 'pose',
         b: 'bone',
         m: 'move',
         r: 'rotate',
         s: 'scale',
+        h: 'mesh',
       };
 
       if (toolMap[key]) {
@@ -80,12 +89,16 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'w') {
+        if (e.repeat) return;
+        if (mode === 'setup') return;
         restoreSetupPose();
         setMode('setup');
         return;
       }
 
       if (key === 'e') {
+        if (e.repeat) return;
+        if (mode === 'animate') return;
         const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
         const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
         let hasDeltas = false;
@@ -132,6 +145,11 @@ export const useKeyboardShortcuts = () => {
             scaleY: bone.scaleY,
           });
         });
+        return;
+      }
+
+      if (key === 'f') {
+        window.dispatchEvent(new CustomEvent('spine:timeline-copy-first-key'));
         return;
       }
 
@@ -229,5 +247,7 @@ export const useKeyboardShortcuts = () => {
     applyKeyframes,
     undo,
     redo,
+    showBoneIndicators,
+    setShowBoneIndicators,
   ]);
 };

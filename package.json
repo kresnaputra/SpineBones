@@ -1,20 +1,23 @@
 {
   "name": "spinebones",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:mcp-server": "bun build ./scripts/spinebones-mcp-server.mjs --target=node --format=esm --outfile ./scripts/spinebones-mcp-server.bundle.mjs",
     "pixi:test": "python3 -m http.server 4175 --directory pixi-export-test",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "eslint .",
+    "mcp:server": "node scripts/spinebones-mcp-server.mjs",
     "preview": "bun run build && wrangler dev",
     "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.30.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",

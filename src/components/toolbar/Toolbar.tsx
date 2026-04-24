@@ -1,5 +1,7 @@
-import { useEffect, useEffectEvent } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images } from 'lucide-react';
+import { useEffect, useEffectEvent, useState } from 'react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Scan, Monitor } from 'lucide-react';
+import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
+import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -11,6 +13,7 @@ import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripEx
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
+import { ensureMeshAttachmentAsync } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -19,6 +22,7 @@ const TOOL_ICONS = {
   move: Move,
   rotate: RotateCw,
   scale: Maximize2,
+  mesh: Scan,
 };
 
 const TOOL_LABELS = {
@@ -27,6 +31,7 @@ const TOOL_LABELS = {
   move: 'Move',
   rotate: 'Rotate',
   scale: 'Scale',
+  mesh: 'Mesh',
 };
 
 const TOOL_SHORTCUTS = {
@@ -35,6 +40,7 @@ const TOOL_SHORTCUTS = {
   move: 'G',
   rotate: 'R',
   scale: 'S',
+  mesh: 'M',
 };
 
 const IMAGE_FILTERS = [
@@ -45,49 +51,52 @@ const IMAGE_FILTERS = [
 ];
 
 export const Toolbar = () => {
+  const [showSpriteSheetDialog, setShowSpriteSheetDialog] = useState(false);
+  const [showPngSequenceDialog, setShowPngSequenceDialog] = useState(false);
   const {
     tool,
     mode,
     setTool,
     setMode,
+    selectedBoneId,
     selectedBoneIds,
+    selectedSlotId,
     onionSkinEnabled,
     toggleOnionSkin,
+    showViewport,
+    toggleViewport,
     setBackgroundImage,
+    setShowProjectBrowser,
   } = useEditorStore();
   const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
   const { insertKeyframe } = useAnimationStore();
   const { bones } = useSkeletonStore();
+  const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
+  const showProjectBrowserButton = isDesktopApp();
 
-  const getExportFrameSize = () => {
-    if (isDesktopApp()) {
-      return {
-        width: 1024,
-        height: 1024,
-      };
-    }
+  const activeSlot =
+    selectedBoneId === null
+      ? null
+      : ((selectedSlotId !== null
+          ? slots.find(
+              (slot) =>
+                slot.id === selectedSlotId &&
+                slot.boneId === selectedBoneId &&
+                slot.attachmentName,
+            ) ?? null
+          : null) ??
+        slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
+        null);
+  const activeAttachment =
+    activeSlot && activeSlot.attachmentName
+      ? attachments.find(
+          (attachment) =>
+            attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName,
+        ) ?? null
+      : null;
 
-    const response = window.prompt(
-      'Frame resolution for export (square, in pixels).\nExamples: 512, 1024, 1536',
-      '1024',
-    );
-
-    if (response === null) return null;
-
-    const parsed = Number.parseInt(response.trim(), 10);
-    if (!Number.isFinite(parsed) || parsed < 64) {
-      alert('Please enter a valid resolution of at least 64 pixels.');
-      return null;
-    }
-
-    const clamped = Math.min(4096, parsed);
-    return {
-      width: clamped,
-      height: clamped,
-    };
-  };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -151,6 +160,9 @@ export const Toolbar = () => {
         slotState.slots,
         slotState.attachments,
         animationState.keyframes,
+        animationState.meshDeformKeyframes,
+        animationState.attachmentOpacityKeyframes,
+        animationState.slotAttachmentKeyframes,
         animationState.duration,
         animationState.fps,
         cameraState.x,
@@ -172,14 +184,13 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportSpriteSheet = async () => {
+  const handleExportSpriteSheet = async (settings: { resolution: number; maxFramesPerSheet: number }) => {
     try {
+      setShowSpriteSheetDialog(false);
       const skeletonState = useSkeletonStore.getState();
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
-      const frameSize = getExportFrameSize();
-      if (!frameSize) return;
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -188,13 +199,17 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
+        meshDeformKeyframes: animationState.meshDeformKeyframes,
+        attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
         fps: animationState.fps,
         camX: cameraState.x,
         camY: cameraState.y,
         camZoom: cameraState.zoom,
-        frameWidth: frameSize.width,
-        frameHeight: frameSize.height,
+        frameWidth: settings.resolution,
+        frameHeight: settings.resolution,
+        maxFramesPerSheet: settings.maxFramesPerSheet,
       });
 
       const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
@@ -210,15 +225,17 @@ export const Toolbar = () => {
     }
   };
 
-  const handleExportPngSequence = async () => {
+  const handleExportPngSequence = async (settings: { resolution: number }) => {
     try {
+      setShowPngSequenceDialog(false);
+      const clamped = Math.min(4096, settings.resolution);
+      const frameSize = { width: clamped, height: clamped };
+
       const skeletonState = useSkeletonStore.getState();
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
       const editorState = useEditorStore.getState();
-      const frameSize = getExportFrameSize();
-      if (!frameSize) return;
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -227,6 +244,9 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
+        meshDeformKeyframes: animationState.meshDeformKeyframes,
+        attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
         fps: animationState.fps,
         camX: cameraState.x,
@@ -236,6 +256,7 @@ export const Toolbar = () => {
         frameHeight: frameSize.height,
         backgroundImage: editorState.backgroundImage,
         includeBackground: false,
+        crop: true,
       });
 
       const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
@@ -256,11 +277,11 @@ export const Toolbar = () => {
   });
 
   const handleExportSpriteSheetMenuEvent = useEffectEvent(() => {
-    void handleExportSpriteSheet();
+    setShowSpriteSheetDialog(true);
   });
 
   const handleExportPngSequenceMenuEvent = useEffectEvent(() => {
-    void handleExportPngSequence();
+    setShowPngSequenceDialog(true);
   });
 
   useEffect(() => {
@@ -300,13 +321,27 @@ export const Toolbar = () => {
         return (
           <button
             key={t}
-            onClick={() => setTool(t)}
+            onClick={async () => {
+              if (t === 'mesh') {
+                if (!activeSlot || !activeAttachment) return;
+                if (activeAttachment.type !== 'mesh') {
+                  captureSnapshot();
+                  updateAttachment(
+                    activeSlot.id,
+                    activeAttachment.name,
+                    await ensureMeshAttachmentAsync(activeAttachment),
+                  );
+                }
+              }
+              setTool(t);
+            }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
               tool === t
                 ? 'bg-accent text-white border-accent'
                 : 'bg-transparent text-text-dim border-transparent hover:bg-panel2 hover:text-text hover:border-border'
             }`}
             title={`${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})`}
+            disabled={t === 'mesh' && !activeAttachment}
           >
             <Icon size={14} />
             {TOOL_LABELS[t]}
@@ -336,6 +371,17 @@ export const Toolbar = () => {
 
       <div className="w-px h-6 bg-border mx-1" />
 
+      {showProjectBrowserButton ? (
+        <button
+          onClick={() => setShowProjectBrowser(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+          title="Open project browser"
+        >
+          <FolderOpen size={14} />
+          Browser
+        </button>
+      ) : null}
+
       <button
         onClick={undo}
         disabled={past.length === 0}
@@ -363,19 +409,19 @@ export const Toolbar = () => {
           <button
             onClick={handleSave}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Save Project"
+            title="Save project package (.sbn)"
           >
             <Save size={14} />
-            Save
+            Save Package
           </button>
 
           <button
             onClick={handleLoad}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Load Project"
+            title="Open project package (.sbn)"
           >
             <Upload size={14} />
-            Load
+            Import Project
           </button>
 
           <button
@@ -388,7 +434,7 @@ export const Toolbar = () => {
           </button>
 
           <button
-            onClick={handleExportSpriteSheet}
+            onClick={() => setShowSpriteSheetDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
             title="Export animation as sprite sheet PNG + JSON"
           >
@@ -397,7 +443,7 @@ export const Toolbar = () => {
           </button>
 
           <button
-            onClick={handleExportPngSequence}
+            onClick={() => setShowPngSequenceDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
             title="Export animation as PNG sequence ZIP"
           >
@@ -439,6 +485,19 @@ export const Toolbar = () => {
       >
         <Eye size={14} />
         Onion
+      </button>
+
+      <button
+        onClick={toggleViewport}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
+          showViewport
+            ? 'bg-violet-600/20 text-violet-300 border-violet-500/50 hover:bg-violet-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle 16:9 video viewport overlay"
+      >
+        <Monitor size={14} />
+        Viewport
       </button>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
@@ -497,6 +556,20 @@ export const Toolbar = () => {
           ANIMATE
         </button>
       </div>
+
+      {showSpriteSheetDialog && (
+        <SpriteSheetExportDialog
+          onExport={handleExportSpriteSheet}
+          onClose={() => setShowSpriteSheetDialog(false)}
+        />
+      )}
+
+      {showPngSequenceDialog && (
+        <PngSequenceExportDialog
+          onExport={handleExportPngSequence}
+          onClose={() => setShowPngSequenceDialog(false)}
+        />
+      )}
     </div>
   );
 };

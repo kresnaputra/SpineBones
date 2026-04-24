@@ -1,15 +1,28 @@
 import JSZip from 'jszip';
-import type { Attachment, Bone, Keyframes, Slot } from '../types';
+import type {
+  Attachment,
+  AttachmentOpacityKeyframes,
+  Bone,
+  Keyframes,
+  MeshDeformKeyframes,
+  Slot,
+} from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveSlotsAtFrame } from './slotAnimation';
+import type { SlotAttachmentKeyframes } from '../types';
 
 interface ExportSpriteSheetOptions {
   bones: Bone[];
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
   fps: number;
   camX: number;
@@ -19,6 +32,7 @@ interface ExportSpriteSheetOptions {
   frameHeight?: number;
   includeBackground?: boolean;
   backgroundImage?: string | null;
+  maxFramesPerSheet?: number;
 }
 
 interface SpriteSheetFrameData {
@@ -62,7 +76,7 @@ interface SpriteSheetArchiveManifest {
 
 const MAX_SPRITESHEET_SIDE = 8192;
 const MAX_SPRITESHEET_PIXELS = 16_000_000;
-const MAX_FRAMES_PER_SHEET = 10;
+const MAX_FRAMES_PER_SHEET = 15;
 
 const getMaxFramesPerSheet = (frameWidth: number, frameHeight: number) => {
   const maxByPixels = Math.max(
@@ -180,6 +194,8 @@ const getAutoFitTransform = ({
   slots,
   attachments,
   keyframes,
+  meshDeformKeyframes = {},
+  attachmentOpacityKeyframes = {},
   totalFrames,
   frameWidth,
   frameHeight,
@@ -191,6 +207,8 @@ const getAutoFitTransform = ({
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   totalFrames: number;
   frameWidth: number;
   frameHeight: number;
@@ -220,10 +238,17 @@ const getAutoFitTransform = ({
       const bone = bonesCopy.find((item) => item.id === slot.boneId);
       if (!bone) return;
 
-      const attachment = attachments.find(
+      const baseAttachment = attachments.find(
         (item) => item.slotId === slot.id && item.name === slot.attachmentName,
       );
-      if (!attachment) return;
+      if (!baseAttachment) return;
+
+      const attachment = resolveAttachmentAtFrame(
+        baseAttachment,
+        frame,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
+      );
 
       const bounds = getAttachmentBounds(attachment, bone, baseWorldToScreen, camZoom);
       minX = Math.min(minX, bounds.minX);
@@ -336,6 +361,9 @@ export const exportSpriteSheet = async ({
   slots,
   attachments,
   keyframes,
+  meshDeformKeyframes = {},
+  attachmentOpacityKeyframes = {},
+  slotAttachmentKeyframes = {},
   duration,
   fps,
   camX,
@@ -345,9 +373,15 @@ export const exportSpriteSheet = async ({
   frameHeight = 512,
   includeBackground = false,
   backgroundImage = null,
+  maxFramesPerSheet: userMaxFramesPerSheet,
 }: ExportSpriteSheetOptions): Promise<Blob> => {
-  const totalFrames = Math.max(1, duration);
-  const maxFramesPerSheet = getMaxFramesPerSheet(frameWidth, frameHeight);
+  const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
+    const frames = Object.keys(boneKfs).map(Number);
+    return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
+  }, -1);
+  const totalFrames = Math.max(1, lastKeyframe >= 0 ? lastKeyframe + 1 : duration);
+  const calculatedMaxFrames = getMaxFramesPerSheet(frameWidth, frameHeight);
+  const maxFramesPerSheet = userMaxFramesPerSheet ?? calculatedMaxFrames;
   const sheetRanges = Array.from(
     { length: Math.ceil(totalFrames / maxFramesPerSheet) },
     (_, index) => {
@@ -395,6 +429,8 @@ export const exportSpriteSheet = async ({
         slots,
         attachments,
         keyframes,
+        meshDeformKeyframes,
+        attachmentOpacityKeyframes,
         totalFrames,
         frameWidth: safeFrameWidth,
         frameHeight: safeFrameHeight,
@@ -477,7 +513,15 @@ export const exportSpriteSheet = async ({
 
       applyFramePose(bonesCopy, keyframes, frame);
       computeAllWorldTransforms(bonesCopy);
-      drawSlots(frameCtx, slots, attachments, bonesCopy, worldToScreen, exportZoom);
+      const resolvedAttachments = attachments.map((attachment) =>
+        resolveAttachmentAtFrame(
+          attachment,
+          frame,
+          meshDeformKeyframes,
+          attachmentOpacityKeyframes,
+        ),
+      );
+      drawSlots(frameCtx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
       const trimmed = getTrimmedBounds(frameCtx, safeFrameWidth, safeFrameHeight);
       const trimmedCanvas = document.createElement('canvas');
       trimmedCanvas.width = trimmed.w;

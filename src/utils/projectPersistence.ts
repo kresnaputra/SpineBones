@@ -1,23 +1,500 @@
+import JSZip from 'jszip';
+import { drawSlots, loadImage } from '../engine/imageRenderer';
+import { computeAllWorldTransforms } from '../engine/transforms';
 import { useAnimationStore } from '../stores/animationStore';
 import { useCameraStore } from '../stores/cameraStore';
 import { useEditorStore } from '../stores/editorStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useSlotStore } from '../stores/slotStore';
-import type { ProjectData } from '../types';
+import type { Attachment, Bone, ProjectData, SetupPose } from '../types';
 import {
   getFileNameFromPath,
-  openTextFile,
-  saveTextFile,
+  openBinaryFile,
+  readBinaryFileAtPath,
+  saveBlobFile,
   stripExtension,
 } from './nativeIO';
+import { rememberRecentProject } from './recentProjects';
+
+const PROJECT_ARCHIVE_EXTENSION = 'sbn';
+const PROJECT_JSON_FILE_NAME = 'project.json';
+const PROJECT_ACCEPT = `.${PROJECT_ARCHIVE_EXTENSION},application/zip`;
 
 const PROJECT_FILTERS = [
   {
     name: 'SpineBones Project',
-    extensions: ['json'],
+    extensions: [PROJECT_ARCHIVE_EXTENSION],
   },
 ];
+
+type ProjectArchiveManifest = {
+  app: 'SpineBones';
+  version: string;
+  format: 'project-archive';
+  archiveVersion: '2.0';
+  projectFile: string;
+  assetsDir: string;
+  thumbnailFile: string;
+  createdAt: string;
+};
+
+export type ProjectPreview = {
+  path: string;
+  name: string;
+  format: 'package' | 'legacy-json';
+  projectVersion: string;
+  archiveVersion: string | null;
+  thumbnailDataUrl: string | null;
+  updatedAt: string | null;
+};
+
+type ArchiveAttachment = Attachment & {
+  assetPath?: string;
+};
+
+type ArchiveProjectData = Omit<ProjectData, 'attachments'> & {
+  attachments: ArchiveAttachment[];
+  backgroundAssetPath?: string | null;
+  audioAssetPath?: string | null;
+};
+
+const isJsonProjectPath = (path: string | null | undefined) =>
+  (path ?? '').toLowerCase().endsWith('.json');
+const isSbnProjectPath = (path: string | null | undefined) =>
+  (path ?? '').toLowerCase().endsWith(`.${PROJECT_ARCHIVE_EXTENSION}`);
+
+const sanitizeFileSegment = (value: string) =>
+  value
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'asset';
+
+const getExtensionFromMimeType = (mimeType: string) => {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === 'image/jpeg') return 'jpg';
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'image/svg+xml') return 'svg';
+  if (normalized === 'audio/mpeg') return 'mp3';
+  if (normalized === 'audio/wav') return 'wav';
+  if (normalized === 'audio/ogg') return 'ogg';
+  if (normalized === 'audio/mp4') return 'm4a';
+  if (normalized === 'audio/aac') return 'aac';
+  if (normalized === 'audio/webm') return 'webm';
+  return 'bin';
+};
+
+const parseDataUrl = (dataUrl: string) => {
+  const match = dataUrl.match(/^data:([^;,]+)(;base64)?,(.*)$/);
+  if (!match) {
+    throw new Error('Invalid data URL in project asset');
+  }
+
+  const [, mimeType, , payload] = match;
+  const binary =
+    typeof atob === 'function'
+      ? atob(payload)
+      : Buffer.from(payload, 'base64').toString('binary');
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+  return {
+    mimeType,
+    bytes,
+    extension: getExtensionFromMimeType(mimeType),
+  };
+};
+
+const bytesToDataUrl = (bytes: Uint8Array, mimeType: string) => {
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+  const base64 =
+    typeof btoa === 'function'
+      ? btoa(binary)
+      : Buffer.from(binary, 'binary').toString('base64');
+  return `data:${mimeType};base64,${base64}`;
+};
+
+const blobToDataUrl = async (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read blob'));
+    reader.readAsDataURL(blob);
+  });
+
+const readProjectPreview = async (
+  bytes: Uint8Array,
+  fileName: string,
+  path: string,
+): Promise<ProjectPreview> => {
+  if (fileName.toLowerCase().endsWith('.json')) {
+    const text = new TextDecoder().decode(bytes);
+    const project = JSON.parse(text) as Partial<ProjectData>;
+    return {
+      path,
+      name: getFileNameFromPath(path),
+      format: 'legacy-json',
+      projectVersion: project.version ?? '1.0',
+      archiveVersion: null,
+      thumbnailDataUrl: null,
+      updatedAt: null,
+    };
+  }
+
+  const zip = await JSZip.loadAsync(bytes);
+  const manifestEntry = zip.file('manifest.json');
+  if (!manifestEntry) {
+    throw new Error('Project archive is missing manifest.json');
+  }
+
+  const manifest = JSON.parse(await manifestEntry.async('string')) as ProjectArchiveManifest;
+  let thumbnailDataUrl: string | null = null;
+  if (manifest.thumbnailFile) {
+    const thumbnailEntry = zip.file(manifest.thumbnailFile);
+    if (thumbnailEntry) {
+      thumbnailDataUrl = bytesToDataUrl(
+        await thumbnailEntry.async('uint8array'),
+        getMimeTypeFromAssetPath(manifest.thumbnailFile),
+      );
+    }
+  }
+
+  return {
+    path,
+    name: getFileNameFromPath(path),
+    format: 'package',
+    projectVersion: manifest.version,
+    archiveVersion: manifest.archiveVersion,
+    thumbnailDataUrl,
+    updatedAt: manifest.createdAt ?? null,
+  };
+};
+
+const getMimeTypeFromAssetPath = (assetPath: string) => {
+  const extension = assetPath.split('.').pop()?.toLowerCase() ?? '';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'svg') return 'image/svg+xml';
+  if (extension === 'mp3') return 'audio/mpeg';
+  if (extension === 'wav') return 'audio/wav';
+  if (extension === 'ogg') return 'audio/ogg';
+  if (extension === 'm4a') return 'audio/mp4';
+  if (extension === 'aac') return 'audio/aac';
+  if (extension === 'webm') return 'audio/webm';
+  return 'application/octet-stream';
+};
+
+const getAttachmentWorldBounds = (attachment: Attachment, bone: Bone) => {
+  const rotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
+  const width = attachment.width * Math.abs(attachment.scaleX * bone.scaleX) * 0.5;
+  const height = attachment.height * Math.abs(attachment.scaleY * bone.scaleY) * 0.5;
+  const offsetX = attachment.x;
+  const offsetY = attachment.y;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const centerX = bone._wx + offsetX * cos - offsetY * sin;
+  const centerY = bone._wy + offsetX * sin + offsetY * cos;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+
+  const corners = [
+    { x: -halfWidth, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight },
+    { x: halfWidth, y: halfHeight },
+    { x: -halfWidth, y: halfHeight },
+  ].map((corner) => ({
+    x: centerX + corner.x * cos - corner.y * sin,
+    y: centerY + corner.x * sin + corner.y * cos,
+  }));
+
+  return {
+    minX: Math.min(...corners.map((corner) => corner.x)),
+    maxX: Math.max(...corners.map((corner) => corner.x)),
+    minY: Math.min(...corners.map((corner) => corner.y)),
+    maxY: Math.max(...corners.map((corner) => corner.y)),
+  };
+};
+
+const renderProjectThumbnail = async (projectData: ProjectData) => {
+  const size = 384;
+  const padding = 0.82;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not get thumbnail canvas context');
+  }
+
+  const attachmentSources = [
+    ...projectData.attachments.map((attachment) => attachment.imageData).filter(Boolean),
+    projectData.backgroundImage ?? undefined,
+  ].filter(Boolean) as string[];
+  await Promise.all(attachmentSources.map((source) => loadImage(source)));
+
+  const bones = JSON.parse(JSON.stringify(projectData.bones)) as ProjectData['bones'];
+  computeAllWorldTransforms(bones);
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  projectData.slots.forEach((slot) => {
+    if (!slot.attachmentName) return;
+    const attachment = projectData.attachments.find(
+      (item) => item.slotId === slot.id && item.name === slot.attachmentName,
+    );
+    if (!attachment) return;
+    const bone = bones.find((item) => item.id === slot.boneId);
+    if (!bone) return;
+    const bounds = getAttachmentWorldBounds(attachment, bone);
+    minX = Math.min(minX, bounds.minX);
+    minY = Math.min(minY, bounds.minY);
+    maxX = Math.max(maxX, bounds.maxX);
+    maxY = Math.max(maxY, bounds.maxY);
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || maxX <= minX || maxY <= minY) {
+    minX = -100;
+    maxX = 100;
+    minY = -100;
+    maxY = 100;
+  }
+
+  const contentWidth = Math.max(1, maxX - minX);
+  const contentHeight = Math.max(1, maxY - minY);
+  const zoom = Math.min((size * padding) / contentWidth, (size * padding) / contentHeight);
+  const centerX = minX + contentWidth / 2;
+  const centerY = minY + contentHeight / 2;
+
+  if (projectData.backgroundImage) {
+    const bg = await loadImage(projectData.backgroundImage);
+    const scale = Math.max(size / bg.width, size / bg.height);
+    const drawWidth = bg.width * scale;
+    const drawHeight = bg.height * scale;
+    ctx.drawImage(
+      bg,
+      (size - drawWidth) / 2,
+      (size - drawHeight) / 2,
+      drawWidth,
+      drawHeight,
+    );
+  } else {
+    const gradient = ctx.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, '#121221');
+    gradient.addColorStop(1, '#1b1b30');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  const worldToScreen = (x: number, y: number) => ({
+    x: size / 2 + (x - centerX) * zoom,
+    y: size / 2 + (y - centerY) * zoom,
+  });
+
+  drawSlots(ctx, projectData.slots, projectData.attachments, bones, worldToScreen, zoom);
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to encode project thumbnail'));
+        return;
+      }
+      resolve(blob);
+    }, 'image/png');
+  });
+};
+
+const createCachedProjectPreview = async (
+  projectData: ProjectData,
+  path: string,
+): Promise<ProjectPreview> => {
+  const isLegacyJson = path.toLowerCase().endsWith('.json');
+  return {
+    path,
+    name: getFileNameFromPath(path),
+    format: isLegacyJson ? 'legacy-json' : 'package',
+    projectVersion: projectData.version,
+    archiveVersion: isLegacyJson ? null : '2.0',
+    thumbnailDataUrl: isLegacyJson ? null : await blobToDataUrl(await renderProjectThumbnail(projectData)),
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const serializeProjectArchive = async (projectData: ProjectData) => {
+  const zip = new JSZip();
+  const manifest: ProjectArchiveManifest = {
+    app: 'SpineBones',
+    version: projectData.version,
+    format: 'project-archive',
+    archiveVersion: '2.0',
+    projectFile: PROJECT_JSON_FILE_NAME,
+    assetsDir: 'assets',
+    thumbnailFile: 'thumbnails/preview.png',
+    createdAt: new Date().toISOString(),
+  };
+
+  const assetPathByDataUrl = new Map<string, string>();
+  let assetIndex = 0;
+  const createAssetPath = (baseName: string, extension: string) =>
+    `${manifest.assetsDir}/${String(++assetIndex).padStart(4, '0')}-${sanitizeFileSegment(baseName)}.${extension}`;
+  const archiveProject: ArchiveProjectData = {
+    ...projectData,
+    attachments: projectData.attachments.map((attachment) => {
+      const nextAttachment: ArchiveAttachment = {
+        ...attachment,
+      };
+
+      if (attachment.imageData) {
+        const existingAssetPath = assetPathByDataUrl.get(attachment.imageData);
+        if (existingAssetPath) {
+          nextAttachment.assetPath = existingAssetPath;
+        } else {
+          const parsed = parseDataUrl(attachment.imageData);
+          const assetPath = createAssetPath(
+            `${attachment.slotId}-${attachment.name || 'attachment'}`,
+            parsed.extension,
+          );
+          assetPathByDataUrl.set(attachment.imageData, assetPath);
+          zip.file(assetPath, parsed.bytes);
+          nextAttachment.assetPath = assetPath;
+        }
+
+        delete nextAttachment.imageData;
+      }
+
+      return nextAttachment;
+    }),
+  };
+
+  if (projectData.backgroundImage) {
+    const existingAssetPath = assetPathByDataUrl.get(projectData.backgroundImage);
+    archiveProject.backgroundAssetPath = existingAssetPath ?? createAssetPath('background', parseDataUrl(projectData.backgroundImage).extension);
+    if (!existingAssetPath) {
+      const parsed = parseDataUrl(projectData.backgroundImage);
+      zip.file(archiveProject.backgroundAssetPath, parsed.bytes);
+      assetPathByDataUrl.set(projectData.backgroundImage, archiveProject.backgroundAssetPath);
+    }
+    archiveProject.backgroundImage = null;
+  }
+
+  if (projectData.audioData) {
+    const existingAssetPath = assetPathByDataUrl.get(projectData.audioData);
+    archiveProject.audioAssetPath =
+      existingAssetPath ??
+      createAssetPath(
+        projectData.audioName || 'audio-track',
+        parseDataUrl(projectData.audioData).extension,
+      );
+    if (!existingAssetPath) {
+      const parsed = parseDataUrl(projectData.audioData);
+      zip.file(archiveProject.audioAssetPath, parsed.bytes);
+      assetPathByDataUrl.set(projectData.audioData, archiveProject.audioAssetPath);
+    }
+    archiveProject.audioData = null;
+  }
+
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file(PROJECT_JSON_FILE_NAME, JSON.stringify(archiveProject, null, 2));
+  zip.file(manifest.thumbnailFile, await renderProjectThumbnail(projectData));
+  return zip.generateAsync({ type: 'blob' });
+};
+
+const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
+  if (fileName.toLowerCase().endsWith('.json')) {
+    const text = new TextDecoder().decode(bytes);
+    return JSON.parse(text) as ProjectData;
+  }
+
+  const zip = await JSZip.loadAsync(bytes);
+  const manifestEntry = zip.file('manifest.json');
+  const manifest = manifestEntry
+    ? (JSON.parse(await manifestEntry.async('string')) as ProjectArchiveManifest)
+    : null;
+  const projectEntry = zip.file(manifest?.projectFile ?? PROJECT_JSON_FILE_NAME);
+
+  if (!projectEntry) {
+    throw new Error('Project archive is missing project.json');
+  }
+
+  const archiveProject = JSON.parse(
+    await projectEntry.async('string'),
+  ) as ArchiveProjectData;
+
+  const attachments = await Promise.all(
+    archiveProject.attachments.map(async (attachment) => {
+      if (!attachment.assetPath) {
+        return {
+          ...attachment,
+          opacity: attachment.opacity ?? 1,
+        } as Attachment;
+      }
+
+      const assetEntry = zip.file(attachment.assetPath);
+      if (!assetEntry) {
+        throw new Error(`Project archive is missing attachment asset: ${attachment.assetPath}`);
+      }
+
+      const data = await assetEntry.async('uint8array');
+      const { assetPath, ...restAttachment } = attachment;
+      return {
+        ...restAttachment,
+        opacity: restAttachment.opacity ?? 1,
+        imageData: bytesToDataUrl(data, getMimeTypeFromAssetPath(assetPath)),
+      } as Attachment;
+    }),
+  );
+
+  const backgroundImage = archiveProject.backgroundAssetPath
+    ? await (async () => {
+        const assetEntry = zip.file(archiveProject.backgroundAssetPath!);
+        if (!assetEntry) {
+          throw new Error(`Project archive is missing background asset: ${archiveProject.backgroundAssetPath}`);
+        }
+        const data = await assetEntry.async('uint8array');
+        return bytesToDataUrl(
+          data,
+          getMimeTypeFromAssetPath(archiveProject.backgroundAssetPath!),
+        );
+      })()
+    : archiveProject.backgroundImage ?? null;
+
+  const audioData = archiveProject.audioAssetPath
+    ? await (async () => {
+        const assetEntry = zip.file(archiveProject.audioAssetPath!);
+        if (!assetEntry) {
+          throw new Error(`Project archive is missing audio asset: ${archiveProject.audioAssetPath}`);
+        }
+        const data = await assetEntry.async('uint8array');
+        return bytesToDataUrl(
+          data,
+          getMimeTypeFromAssetPath(archiveProject.audioAssetPath!),
+        );
+      })()
+    : archiveProject.audioData ?? null;
+
+  const {
+    attachments: archivedAttachments,
+    backgroundAssetPath,
+    audioAssetPath,
+    ...projectRest
+  } = archiveProject;
+  void archivedAttachments;
+  void backgroundAssetPath;
+  void audioAssetPath;
+
+  return {
+    ...projectRest,
+    attachments,
+    backgroundImage,
+    audioData,
+  };
+};
 
 export const buildProjectData = (): ProjectData => {
   const skeletonState = useSkeletonStore.getState();
@@ -47,17 +524,77 @@ export const buildProjectData = (): ProjectData => {
     Object.assign(normalizedKeyframes, originalKeyframes);
   }
 
-  // Save bones with their setup pose positions, not current animation positions
-  const savedBones = skeletonState.bones.map((bone) => {
-    const pose = skeletonState.setupPose[bone.id];
-    if (pose) {
-      return { ...bone, ...pose };
+  const originalMeshDeformKeyframes = animationState.meshDeformKeyframes;
+  const normalizedMeshDeformKeyframes: typeof originalMeshDeformKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const attachmentKey of Object.keys(originalMeshDeformKeyframes)) {
+      normalizedMeshDeformKeyframes[attachmentKey] = {};
+      for (const frameStr of Object.keys(originalMeshDeformKeyframes[attachmentKey])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedMeshDeformKeyframes[attachmentKey][normalizedFrame] =
+          originalMeshDeformKeyframes[attachmentKey][Number(frameStr)];
+      }
     }
-    return bone;
+  } else {
+    Object.assign(normalizedMeshDeformKeyframes, originalMeshDeformKeyframes);
+  }
+
+  const originalAttachmentOpacityKeyframes = animationState.attachmentOpacityKeyframes;
+  const normalizedAttachmentOpacityKeyframes: typeof originalAttachmentOpacityKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const attachmentKey of Object.keys(originalAttachmentOpacityKeyframes)) {
+      normalizedAttachmentOpacityKeyframes[attachmentKey] = {};
+      for (const frameStr of Object.keys(originalAttachmentOpacityKeyframes[attachmentKey])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedAttachmentOpacityKeyframes[attachmentKey][normalizedFrame] =
+          originalAttachmentOpacityKeyframes[attachmentKey][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedAttachmentOpacityKeyframes, originalAttachmentOpacityKeyframes);
+  }
+
+  const originalSlotAttachmentKeyframes = animationState.slotAttachmentKeyframes;
+  const normalizedSlotAttachmentKeyframes: typeof originalSlotAttachmentKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const slotId of Object.keys(originalSlotAttachmentKeyframes)) {
+      normalizedSlotAttachmentKeyframes[Number(slotId)] = {};
+      for (const frameStr of Object.keys(originalSlotAttachmentKeyframes[Number(slotId)])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedSlotAttachmentKeyframes[Number(slotId)][normalizedFrame] =
+          originalSlotAttachmentKeyframes[Number(slotId)][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedSlotAttachmentKeyframes, originalSlotAttachmentKeyframes);
+  }
+
+  const currentSetupPose = skeletonState.bones.reduce<SetupPose>((acc, bone) => {
+    acc[bone.id] = {
+      x: bone.x,
+      y: bone.y,
+      rotation: bone.rotation,
+      scaleX: bone.scaleX,
+      scaleY: bone.scaleY,
+    };
+    return acc;
+  }, {});
+
+  const setupPoseToSave: SetupPose =
+    editorState.mode === 'setup'
+      ? currentSetupPose
+      : Object.keys(skeletonState.setupPose).length > 0
+        ? skeletonState.setupPose
+        : currentSetupPose;
+
+  // Save bones using the setup pose so package preview and reload match the rig base pose.
+  const savedBones = skeletonState.bones.map((bone) => {
+    const pose = setupPoseToSave[bone.id];
+    return pose ? { ...bone, ...pose } : bone;
   });
 
   return {
-    version: '1.1',
+    version: '1.3',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -70,10 +607,13 @@ export const buildProjectData = (): ProjectData => {
       savedBones.some((bone) => bone.id === rootId) &&
       savedBones.filter((bone) => bone.parentId === rootId).length === 1,
     ),
-    setupPose: skeletonState.setupPose,
+    setupPose: setupPoseToSave,
     slots: slotState.slots,
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
+    slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
+    meshDeformKeyframes: normalizedMeshDeformKeyframes,
+    attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -106,12 +646,18 @@ export const applyProjectData = (
 
   useSlotStore.setState({
     slots,
-    attachments: projectData.attachments ?? [],
+    attachments: (projectData.attachments ?? []).map((attachment) => ({
+      ...attachment,
+      opacity: attachment.opacity ?? 1,
+    })),
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
+    slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
+    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
+    attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
@@ -127,6 +673,7 @@ export const applyProjectData = (
     currentProjectPath: sourcePath,
     selectedBoneId: null,
     selectedBoneIds: [],
+    selectedSlotId: null,
   });
 
   if (!projectData.setupPose || Object.keys(projectData.setupPose).length === 0) {
@@ -160,6 +707,9 @@ export const createNewProject = () => {
 
   useAnimationStore.setState({
     keyframes: {},
+    slotAttachmentKeyframes: {},
+    meshDeformKeyframes: {},
+    attachmentOpacityKeyframes: {},
     frame: 0,
     duration: 60,
     fps: 24,
@@ -175,6 +725,7 @@ export const createNewProject = () => {
     mode: 'setup',
     selectedBoneId: null,
     selectedBoneIds: [],
+    selectedSlotId: null,
     showBoneIndicators: state.showBoneIndicators,
     onionSkinEnabled: state.onionSkinEnabled,
     attachmentDragEnabled: false,
@@ -195,36 +746,88 @@ export const createNewProject = () => {
 
 export const getSuggestedProjectFileName = () => {
   const currentProjectPath = useEditorStore.getState().currentProjectPath;
-  if (!currentProjectPath) return 'spinebones-project.json';
+  if (!currentProjectPath) return `spinebones-project.${PROJECT_ARCHIVE_EXTENSION}`;
 
-  return `${stripExtension(getFileNameFromPath(currentProjectPath))}.json`;
+  return `${stripExtension(getFileNameFromPath(currentProjectPath))}.${PROJECT_ARCHIVE_EXTENSION}`;
 };
 
 export const saveProject = async (forceDialog = false) => {
   const projectData = buildProjectData();
   const currentProjectPath = useEditorStore.getState().currentProjectPath;
-  const targetPath = await saveTextFile(
+  const shouldPromptForPackagePath =
+    forceDialog || !currentProjectPath || isJsonProjectPath(currentProjectPath);
+  const targetPath = await saveBlobFile(
     getSuggestedProjectFileName(),
-    JSON.stringify(projectData, null, 2),
+    await serializeProjectArchive(projectData),
     PROJECT_FILTERS,
-    currentProjectPath,
-    forceDialog,
+    shouldPromptForPackagePath ? null : currentProjectPath,
+    shouldPromptForPackagePath,
   );
 
   if (targetPath) {
     useEditorStore.getState().setCurrentProjectPath(targetPath);
+    rememberRecentProject(await createCachedProjectPreview(projectData, targetPath));
   }
 
   return targetPath;
 };
 
+export const loadProjectFromPath = async (path: string) => {
+  const bytes = await readBinaryFileAtPath(path);
+  const preview = await readProjectPreview(bytes, getFileNameFromPath(path), path);
+  applyProjectData(
+    await parseProjectFile(bytes, getFileNameFromPath(path)),
+    path,
+  );
+  rememberRecentProject(preview);
+  return path;
+};
+
+export const loadProjectFromRecentPath = async (path: string) => {
+  try {
+    return await loadProjectFromPath(path);
+  } catch (directReadError) {
+    const loadedProject = await openBinaryFile(PROJECT_ACCEPT, {
+      defaultPath: path,
+    });
+
+    if (!loadedProject) {
+      throw directReadError;
+    }
+
+    if (loadedProject.path) {
+      return loadProjectFromPath(loadedProject.path);
+    }
+
+    applyProjectData(
+      await parseProjectFile(loadedProject.bytes, loadedProject.name),
+      null,
+    );
+    return null;
+  }
+};
+
 export const loadProject = async () => {
-  const loadedProject = await openTextFile('.json,application/json', {
-    filters: PROJECT_FILTERS,
-  });
+  const loadedProject = await openBinaryFile(PROJECT_ACCEPT);
 
   if (!loadedProject) return null;
 
-  applyProjectData(JSON.parse(loadedProject.text) as ProjectData, loadedProject.path);
-  return loadedProject.path;
+  if (!isSbnProjectPath(loadedProject.path ?? loadedProject.name)) {
+    alert('Please choose a SpineBones project file with the .sbn extension.');
+    return null;
+  }
+
+  if (loadedProject.path) {
+    await loadProjectFromPath(loadedProject.path);
+    return loadedProject.path;
+  }
+
+  applyProjectData(
+    await parseProjectFile(loadedProject.bytes, loadedProject.name),
+    null,
+  );
+  return null;
 };
+
+export const readProjectPreviewFromPath = async (path: string) =>
+  readProjectPreview(await readBinaryFileAtPath(path), getFileNameFromPath(path), path);
