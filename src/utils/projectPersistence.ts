@@ -552,6 +552,21 @@ export const buildProjectData = (): ProjectData => {
     Object.assign(normalizedAttachmentOpacityKeyframes, originalAttachmentOpacityKeyframes);
   }
 
+  const originalSlotAttachmentKeyframes = animationState.slotAttachmentKeyframes;
+  const normalizedSlotAttachmentKeyframes: typeof originalSlotAttachmentKeyframes = {};
+  if (minFrame !== Infinity && minFrame > 0) {
+    for (const slotId of Object.keys(originalSlotAttachmentKeyframes)) {
+      normalizedSlotAttachmentKeyframes[Number(slotId)] = {};
+      for (const frameStr of Object.keys(originalSlotAttachmentKeyframes[Number(slotId)])) {
+        const normalizedFrame = Number(frameStr) - minFrame;
+        normalizedSlotAttachmentKeyframes[Number(slotId)][normalizedFrame] =
+          originalSlotAttachmentKeyframes[Number(slotId)][Number(frameStr)];
+      }
+    }
+  } else {
+    Object.assign(normalizedSlotAttachmentKeyframes, originalSlotAttachmentKeyframes);
+  }
+
   const currentSetupPose = skeletonState.bones.reduce<SetupPose>((acc, bone) => {
     acc[bone.id] = {
       x: bone.x,
@@ -594,6 +609,7 @@ export const buildProjectData = (): ProjectData => {
     slots: slotState.slots,
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
+    slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
     meshDeformKeyframes: normalizedMeshDeformKeyframes,
     attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
     duration: animationState.duration,
@@ -637,6 +653,7 @@ export const applyProjectData = (
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
+    slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
     meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
     duration: projectData.duration ?? 60,
@@ -654,6 +671,7 @@ export const applyProjectData = (
     currentProjectPath: sourcePath,
     selectedBoneId: null,
     selectedBoneIds: [],
+    selectedSlotId: null,
   });
 
   if (!projectData.setupPose || Object.keys(projectData.setupPose).length === 0) {
@@ -687,6 +705,7 @@ export const createNewProject = () => {
 
   useAnimationStore.setState({
     keyframes: {},
+    slotAttachmentKeyframes: {},
     meshDeformKeyframes: {},
     attachmentOpacityKeyframes: {},
     frame: 0,
@@ -704,6 +723,7 @@ export const createNewProject = () => {
     mode: 'setup',
     selectedBoneId: null,
     selectedBoneIds: [],
+    selectedSlotId: null,
     showBoneIndicators: state.showBoneIndicators,
     onionSkinEnabled: state.onionSkinEnabled,
     attachmentDragEnabled: false,

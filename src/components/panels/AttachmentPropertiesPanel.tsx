@@ -5,7 +5,7 @@ import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/mesh
 import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
+  const { selectedBoneId, selectedSlotId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
   const {
     frame,
     keyframes,
@@ -31,7 +31,10 @@ export const AttachmentPropertiesPanel = () => {
   }
 
   const boneSlots = slots.filter((s) => s.boneId === selectedBoneId);
-  const activeSlot = boneSlots.find((s) => s.attachmentName !== null);
+  const activeSlot =
+    (selectedSlotId !== null
+      ? boneSlots.find((s) => s.id === selectedSlotId && s.attachmentName !== null)
+      : null) ?? boneSlots.find((s) => s.attachmentName !== null);
   
   if (!activeSlot || !activeSlot.attachmentName) {
     return (

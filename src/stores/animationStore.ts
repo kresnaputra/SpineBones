@@ -6,6 +6,7 @@ import type {
   KeyframeData,
   KeyframeEasing,
   MeshDeformKeyframes,
+  SlotAttachmentKeyframes,
 } from '../types';
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
@@ -13,6 +14,7 @@ import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
   keyframes: Keyframes;
+  slotAttachmentKeyframes: SlotAttachmentKeyframes;
   meshDeformKeyframes: MeshDeformKeyframes;
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes;
   frame: number;
@@ -24,6 +26,13 @@ interface AnimationState {
   audioVolume: number;
   audioOffsetFrames: number;
   insertKeyframe: (boneId: number, frameData: KeyframeData) => void;
+  setSlotAttachmentKeyframeAtFrame: (
+    slotId: number,
+    frame: number,
+    attachmentName: string | null,
+  ) => void;
+  setSlotAttachmentKeyframe: (slotId: number, attachmentName: string | null) => void;
+  deleteSlotAttachmentKeyframe: (slotId: number, frame: number) => void;
   setMeshDeformKeyframeAtFrame: (
     attachmentKey: string,
     frame: number,
@@ -82,6 +91,7 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
   keyframes: {},
+  slotAttachmentKeyframes: {},
   meshDeformKeyframes: {},
   attachmentOpacityKeyframes: {},
   frame: 0,
@@ -103,6 +113,46 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         },
       },
     }));
+  },
+
+  setSlotAttachmentKeyframeAtFrame: (slotId, frame, attachmentName) => {
+    set((state) => ({
+      slotAttachmentKeyframes: {
+        ...state.slotAttachmentKeyframes,
+        [slotId]: {
+          ...state.slotAttachmentKeyframes[slotId],
+          [Math.max(0, Math.round(frame))]: { attachmentName },
+        },
+      },
+    }));
+  },
+
+  setSlotAttachmentKeyframe: (slotId, attachmentName) => {
+    set((state) => ({
+      slotAttachmentKeyframes: {
+        ...state.slotAttachmentKeyframes,
+        [slotId]: {
+          ...state.slotAttachmentKeyframes[slotId],
+          [state.frame]: { attachmentName },
+        },
+      },
+    }));
+  },
+
+  deleteSlotAttachmentKeyframe: (slotId, frame) => {
+    set((state) => {
+      const slotKeyframes = { ...(state.slotAttachmentKeyframes[slotId] ?? {}) };
+      delete slotKeyframes[frame];
+
+      const nextSlotAttachmentKeyframes = { ...state.slotAttachmentKeyframes };
+      if (Object.keys(slotKeyframes).length === 0) {
+        delete nextSlotAttachmentKeyframes[slotId];
+      } else {
+        nextSlotAttachmentKeyframes[slotId] = slotKeyframes;
+      }
+
+      return { slotAttachmentKeyframes: nextSlotAttachmentKeyframes };
+    });
   },
 
   setMeshDeformKeyframeAtFrame: (attachmentKey, frame, vertices) => {

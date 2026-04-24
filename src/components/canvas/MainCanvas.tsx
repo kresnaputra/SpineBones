@@ -20,6 +20,7 @@ import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
 import { ensureMeshAttachmentAsync, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
 import { normalizeKeyframeEasing } from '../../utils/easing';
+import { resolveSlotsAtFrame } from '../../utils/slotAnimation';
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
@@ -32,10 +33,11 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectedBoneIds, selectBone, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const { tool, mode, selectedBoneId, selectedBoneIds, selectedSlotId, selectBone, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
   const {
     keyframes,
+    slotAttachmentKeyframes,
     meshDeformKeyframes,
     attachmentOpacityKeyframes,
     frame,
@@ -192,6 +194,8 @@ export const MainCanvas = () => {
     startSx: number;
     startSy: number;
     totalRotation: number;
+    flipX: number;
+    flipY: number;
   } | null>(null);
   const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
   const [hoveredMeshVertexIndex, setHoveredMeshVertexIndex] = useState<number | null>(null);
@@ -204,9 +208,19 @@ export const MainCanvas = () => {
     initialVertices: NonNullable<typeof attachments[number]['meshVertices']>;
   } | null>(null);
 
+  const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
   const activeSlot = selectedBoneId === null
     ? null
-    : slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ?? null;
+    : ((selectedSlotId !== null
+        ? resolvedSlots.find(
+            (slot) =>
+              slot.id === selectedSlotId &&
+              slot.boneId === selectedBoneId &&
+              slot.attachmentName,
+          ) ?? null
+        : null) ??
+      resolvedSlots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
+      null);
   const activeBone = selectedBoneId === null
     ? null
     : bones.find((bone) => bone.id === selectedBoneId) ?? null;
@@ -278,8 +292,20 @@ export const MainCanvas = () => {
     };
 
     handleResize();
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' && wrapRef.current
+        ? new ResizeObserver(() => handleResize())
+        : null;
+
+    if (wrapRef.current && resizeObserver) {
+      resizeObserver.observe(wrapRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
   }, [setCanvasSize]);
 
   useEffect(() => {
@@ -399,7 +425,7 @@ export const MainCanvas = () => {
         attachmentOpacityKeyframes,
       ),
     );
-    drawSlots(ctx, slots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad);
+    drawSlots(ctx, resolvedSlots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad);
 
     if (activeSlot && activeBone && activeAttachment && (attachmentDragEnabled || tool === 'mesh')) {
       drawAttachmentOutline(
@@ -462,7 +488,7 @@ export const MainCanvas = () => {
     }
 
     if (previousMovedBones.length > 0) {
-      drawSlots(ctx, slots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
+      drawSlots(ctx, resolvedSlots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
       drawSlotOutlines(ctx, slots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(8,145,178,0.9)',
         lineWidth: 2,
@@ -474,7 +500,7 @@ export const MainCanvas = () => {
     }
 
     if (nextMovedBones.length > 0) {
-      drawSlots(ctx, slots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
+      drawSlots(ctx, resolvedSlots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
       drawSlotOutlines(ctx, slots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(219,39,119,0.9)',
         lineWidth: 2,
@@ -507,8 +533,10 @@ export const MainCanvas = () => {
       const dy = sy - attachmentDragStart.startSy;
       const cos = Math.cos(-attachmentDragStart.totalRotation);
       const sin = Math.sin(-attachmentDragStart.totalRotation);
-      const localDx = (dx * cos - dy * sin) / effectiveZoom;
-      const localDy = (dx * sin + dy * cos) / effectiveZoom;
+      const localDx =
+        ((dx * cos - dy * sin) / effectiveZoom) * attachmentDragStart.flipX;
+      const localDy =
+        ((dx * sin + dy * cos) / effectiveZoom) * attachmentDragStart.flipY;
 
       useSlotStore.getState().updateAttachment(attachmentDragStart.slotId, attachmentDragStart.attachmentName, {
         x: attachmentDragStart.initialX + localDx,
@@ -801,7 +829,17 @@ export const MainCanvas = () => {
 
     if (attachmentDragEnabled && selectedBoneId !== null) {
       computeAllWorldTransforms(bones);
-      const activeSlot = slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName);
+      const activeSlot =
+        (selectedSlotId !== null
+        ? resolvedSlots.find(
+              (slot) =>
+                slot.id === selectedSlotId &&
+                slot.boneId === selectedBoneId &&
+                slot.attachmentName,
+            ) ?? null
+          : null) ??
+        resolvedSlots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
+        null;
       const selectedBone = bones.find((bone) => bone.id === selectedBoneId);
       const activeAttachment = activeSlot
         ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName)
@@ -822,6 +860,8 @@ export const MainCanvas = () => {
           startSx: sx,
           startSy: sy,
           totalRotation: ((selectedBone._wrot + activeAttachment.rotation) * Math.PI) / 180,
+          flipX: selectedBone.scaleX * activeAttachment.scaleX < 0 ? -1 : 1,
+          flipY: selectedBone.scaleY * activeAttachment.scaleY < 0 ? -1 : 1,
         });
         return;
       }

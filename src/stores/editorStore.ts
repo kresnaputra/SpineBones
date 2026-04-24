@@ -6,6 +6,7 @@ interface EditorState {
   mode: Mode;
   selectedBoneId: number | null;
   selectedBoneIds: number[];
+  selectedSlotId: number | null;
   playbackRangeStart: number;
   playbackRangeEnd: number | null;
   showHelpDialog: boolean;
@@ -19,6 +20,7 @@ interface EditorState {
   setTool: (tool: Tool) => void;
   setMode: (mode: Mode) => void;
   selectBone: (id: number | null) => void;
+  selectSlot: (id: number | null) => void;
   toggleBoneSelection: (id: number) => void;
   setPlaybackRange: (start: number, end: number | null) => void;
   setShowHelpDialog: (show: boolean) => void;
@@ -38,6 +40,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   mode: 'setup',
   selectedBoneId: null,
   selectedBoneIds: [],
+  selectedSlotId: null,
   playbackRangeStart: 0,
   playbackRangeEnd: null,
   showHelpDialog: false,
@@ -50,7 +53,13 @@ export const useEditorStore = create<EditorState>((set) => ({
   currentProjectPath: null,
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
-  selectBone: (id) => set({ selectedBoneId: id, selectedBoneIds: id === null ? [] : [id] }),
+  selectBone: (id) =>
+    set({
+      selectedBoneId: id,
+      selectedBoneIds: id === null ? [] : [id],
+      selectedSlotId: null,
+    }),
+  selectSlot: (id) => set({ selectedSlotId: id }),
   toggleBoneSelection: (id) =>
     set((state) => {
       const isSelected = state.selectedBoneIds.includes(id);

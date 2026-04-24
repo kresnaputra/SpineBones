@@ -106,6 +106,10 @@ export type AttachmentOpacityKeyframes = Record<
   string,
   Record<number, { opacity: number; easing?: KeyframeEasing }>
 >;
+export type SlotAttachmentKeyframes = Record<
+  number,
+  Record<number, { attachmentName: string | null }>
+>;
 
 export interface CameraState {
   x: number;
@@ -129,6 +133,7 @@ export interface ProjectData {
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   duration: number;

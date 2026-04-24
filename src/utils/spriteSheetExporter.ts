@@ -12,6 +12,8 @@ import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
 import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveSlotsAtFrame } from './slotAnimation';
+import type { SlotAttachmentKeyframes } from '../types';
 
 interface ExportSpriteSheetOptions {
   bones: Bone[];
@@ -20,6 +22,7 @@ interface ExportSpriteSheetOptions {
   keyframes: Keyframes;
   meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
   fps: number;
   camX: number;
@@ -360,6 +363,7 @@ export const exportSpriteSheet = async ({
   keyframes,
   meshDeformKeyframes = {},
   attachmentOpacityKeyframes = {},
+  slotAttachmentKeyframes = {},
   duration,
   fps,
   camX,
@@ -517,7 +521,7 @@ export const exportSpriteSheet = async ({
           attachmentOpacityKeyframes,
         ),
       );
-      drawSlots(frameCtx, slots, resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
+      drawSlots(frameCtx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
       const trimmed = getTrimmedBounds(frameCtx, safeFrameWidth, safeFrameHeight);
       const trimmedCanvas = document.createElement('canvas');
       trimmedCanvas.width = trimmed.w;

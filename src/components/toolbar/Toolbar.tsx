@@ -60,6 +60,7 @@ export const Toolbar = () => {
     setMode,
     selectedBoneId,
     selectedBoneIds,
+    selectedSlotId,
     onionSkinEnabled,
     toggleOnionSkin,
     showViewport,
@@ -78,7 +79,16 @@ export const Toolbar = () => {
   const activeSlot =
     selectedBoneId === null
       ? null
-      : slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ?? null;
+      : ((selectedSlotId !== null
+          ? slots.find(
+              (slot) =>
+                slot.id === selectedSlotId &&
+                slot.boneId === selectedBoneId &&
+                slot.attachmentName,
+            ) ?? null
+          : null) ??
+        slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
+        null);
   const activeAttachment =
     activeSlot && activeSlot.attachmentName
       ? attachments.find(
@@ -152,6 +162,7 @@ export const Toolbar = () => {
         animationState.keyframes,
         animationState.meshDeformKeyframes,
         animationState.attachmentOpacityKeyframes,
+        animationState.slotAttachmentKeyframes,
         animationState.duration,
         animationState.fps,
         cameraState.x,
@@ -190,6 +201,7 @@ export const Toolbar = () => {
         keyframes: animationState.keyframes,
         meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
         fps: animationState.fps,
         camX: cameraState.x,
@@ -234,6 +246,7 @@ export const Toolbar = () => {
         keyframes: animationState.keyframes,
         meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
         fps: animationState.fps,
         camX: cameraState.x,

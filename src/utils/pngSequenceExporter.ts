@@ -12,6 +12,8 @@ import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
 import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveSlotsAtFrame } from './slotAnimation';
+import type { SlotAttachmentKeyframes } from '../types';
 
 interface ExportPngSequenceOptions {
   bones: Bone[];
@@ -20,6 +22,7 @@ interface ExportPngSequenceOptions {
   keyframes: Keyframes;
   meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
+  slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
   fps: number;
   camX: number;
@@ -258,6 +261,7 @@ export const exportPngSequence = async ({
   keyframes,
   meshDeformKeyframes = {},
   attachmentOpacityKeyframes = {},
+  slotAttachmentKeyframes = {},
   duration,
   fps,
   camX,
@@ -346,7 +350,7 @@ export const exportPngSequence = async ({
           attachmentOpacityKeyframes,
         ),
       );
-      drawSlots(ctx, slots, resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
+      drawSlots(ctx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
       const bounds = getTrimmedBounds(ctx, frameWidth, frameHeight);
       if (!bounds.empty) {
         if (bounds.x < unionMinX) unionMinX = bounds.x;
@@ -414,7 +418,7 @@ export const exportPngSequence = async ({
         attachmentOpacityKeyframes,
       ),
     );
-    drawSlots(ctx, slots, resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
+    drawSlots(ctx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
 
     // Apply crop if needed
     let outputCanvas = canvas;

@@ -12,6 +12,7 @@ interface ProjectSnapshot {
     mode: ReturnType<typeof useEditorStore.getState>['mode'];
     selectedBoneId: ReturnType<typeof useEditorStore.getState>['selectedBoneId'];
     selectedBoneIds: ReturnType<typeof useEditorStore.getState>['selectedBoneIds'];
+    selectedSlotId: ReturnType<typeof useEditorStore.getState>['selectedSlotId'];
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
@@ -26,6 +27,7 @@ interface ProjectSnapshot {
   };
   animation: {
     keyframes: ReturnType<typeof useAnimationStore.getState>['keyframes'];
+    slotAttachmentKeyframes: ReturnType<typeof useAnimationStore.getState>['slotAttachmentKeyframes'];
     meshDeformKeyframes: ReturnType<typeof useAnimationStore.getState>['meshDeformKeyframes'];
     attachmentOpacityKeyframes: ReturnType<typeof useAnimationStore.getState>['attachmentOpacityKeyframes'];
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
@@ -72,6 +74,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       mode: editor.mode,
       selectedBoneId: editor.selectedBoneId,
       selectedBoneIds: editor.selectedBoneIds,
+      selectedSlotId: editor.selectedSlotId,
     },
     skeleton: {
       bones: skeleton.bones,
@@ -86,6 +89,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     },
     animation: {
       keyframes: animation.keyframes,
+      slotAttachmentKeyframes: animation.slotAttachmentKeyframes,
       meshDeformKeyframes: animation.meshDeformKeyframes,
       attachmentOpacityKeyframes: animation.attachmentOpacityKeyframes,
       frame: animation.frame,
@@ -114,6 +118,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     mode: snapshot.editor.mode,
     selectedBoneId: snapshot.editor.selectedBoneId,
     selectedBoneIds: cloneSnapshot(snapshot.editor.selectedBoneIds),
+    selectedSlotId: snapshot.editor.selectedSlotId,
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),
@@ -128,6 +133,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   });
   useAnimationStore.setState({
     keyframes: cloneSnapshot(snapshot.animation.keyframes),
+    slotAttachmentKeyframes: cloneSnapshot(snapshot.animation.slotAttachmentKeyframes),
     meshDeformKeyframes: cloneSnapshot(snapshot.animation.meshDeformKeyframes),
     attachmentOpacityKeyframes: cloneSnapshot(snapshot.animation.attachmentOpacityKeyframes),
     frame: snapshot.animation.frame,

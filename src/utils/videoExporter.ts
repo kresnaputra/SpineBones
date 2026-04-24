@@ -12,6 +12,7 @@ import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
 import { createExportWorldToScreen } from '../engine/viewport';
 import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveSlotsAtFrame } from './slotAnimation';
 
 export const exportVideo = async (
   bones: Bone[],
@@ -20,6 +21,7 @@ export const exportVideo = async (
   keyframes: Keyframes,
   meshDeformKeyframes: MeshDeformKeyframes,
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
+  slotAttachmentKeyframes: Record<number, Record<number, { attachmentName: string | null }>> = {},
   duration: number,
   fps: number,
   camX: number,
@@ -167,7 +169,14 @@ export const exportVideo = async (
           attachmentOpacityKeyframes,
         ),
       );
-      drawSlots(ctx, slots, resolvedAttachments, bones, worldToScreen, camZoom);
+      drawSlots(
+        ctx,
+        resolveSlotsAtFrame(slots, currentFrame, slotAttachmentKeyframes),
+        resolvedAttachments,
+        bones,
+        worldToScreen,
+        camZoom,
+      );
 
       currentFrame++;
       setTimeout(renderFrame, 1000 / fps);
