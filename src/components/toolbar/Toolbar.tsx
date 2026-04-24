@@ -418,7 +418,7 @@ export const Toolbar = () => {
           <button
             onClick={handleLoad}
             className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
-            title="Import or open project package (.sbn) or legacy JSON"
+            title="Open project package (.sbn)"
           >
             <Upload size={14} />
             Import Project

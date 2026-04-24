@@ -19,12 +19,12 @@ import { rememberRecentProject } from './recentProjects';
 
 const PROJECT_ARCHIVE_EXTENSION = 'sbn';
 const PROJECT_JSON_FILE_NAME = 'project.json';
-const PROJECT_ACCEPT = `.${PROJECT_ARCHIVE_EXTENSION},application/zip,.json,application/json`;
+const PROJECT_ACCEPT = `.${PROJECT_ARCHIVE_EXTENSION},application/zip`;
 
 const PROJECT_FILTERS = [
   {
     name: 'SpineBones Project',
-    extensions: [PROJECT_ARCHIVE_EXTENSION, 'json'],
+    extensions: [PROJECT_ARCHIVE_EXTENSION],
   },
 ];
 
@@ -61,6 +61,8 @@ type ArchiveProjectData = Omit<ProjectData, 'attachments'> & {
 
 const isJsonProjectPath = (path: string | null | undefined) =>
   (path ?? '').toLowerCase().endsWith('.json');
+const isSbnProjectPath = (path: string | null | undefined) =>
+  (path ?? '').toLowerCase().endsWith(`.${PROJECT_ARCHIVE_EXTENSION}`);
 
 const sanitizeFileSegment = (value: string) =>
   value
@@ -809,6 +811,11 @@ export const loadProject = async () => {
   const loadedProject = await openBinaryFile(PROJECT_ACCEPT);
 
   if (!loadedProject) return null;
+
+  if (!isSbnProjectPath(loadedProject.path ?? loadedProject.name)) {
+    alert('Please choose a SpineBones project file with the .sbn extension.');
+    return null;
+  }
 
   if (loadedProject.path) {
     await loadProjectFromPath(loadedProject.path);

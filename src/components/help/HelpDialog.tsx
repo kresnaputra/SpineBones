@@ -74,7 +74,7 @@ const sections: HelpSection[] = [
       </>,
       <>
         Use Save or Save As <InlineIcon icon={Save} /> to write the current
-        project to disk as a SpineBones .sbn package. Legacy .json projects can still be opened and will be converted to .sbn when saved.
+        project to disk as a SpineBones .sbn package.
       </>,
       "Each .sbn package now stores a manifest, project data, a generated thumbnail preview, and bundled assets for images/audio.",
       "Use Project Browser on desktop to reopen recent .sbn packages with thumbnail previews.",

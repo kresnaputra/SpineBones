@@ -89,12 +89,16 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'w') {
+        if (e.repeat) return;
+        if (mode === 'setup') return;
         restoreSetupPose();
         setMode('setup');
         return;
       }
 
       if (key === 'e') {
+        if (e.repeat) return;
+        if (mode === 'animate') return;
         const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
         const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
         let hasDeltas = false;

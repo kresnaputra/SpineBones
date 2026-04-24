@@ -76,7 +76,7 @@ export const ProjectBrowserDialog = () => {
           <div>
             <h2 className="text-lg font-semibold text-text panel-padding-left">Project Browser</h2>
             <p className="mt-1 text-xs text-text-dim panel-padding-left">
-              Browse recent `.sbn` packages and legacy `.json` projects.
+              Browse recent `.sbn` project packages.
             </p>
           </div>
 
