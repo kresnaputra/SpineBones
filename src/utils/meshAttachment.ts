@@ -263,6 +263,331 @@ export const resolveMeshVerticesAtFrame = (
   return attachment.meshVertices;
 };
 
+// ─── Mesh editing helpers ────────────────────────────────────────────────────
+
+type ScreenPoint = { x: number; y: number };
+
+/** Reverse-project a vertex's UV back to the attachment-local base position. */
+export const getVertexBasePosition = (
+  vertex: MeshVertex,
+  attachment: Attachment,
+): { x: number; y: number } => ({
+  x: vertex.u * attachment.width - attachment.width / 2,
+  y: vertex.v * attachment.height - attachment.height / 2,
+});
+
+/** Build a per-vertex neighbour set from triangle data. */
+export const buildMeshAdjacency = (
+  triangles: MeshTriangle[],
+  vertexCount: number,
+): Set<number>[] => {
+  const adj: Set<number>[] = Array.from({ length: vertexCount }, () => new Set<number>());
+  for (const [a, b, c] of triangles) {
+    adj[a]?.add(b); adj[a]?.add(c);
+    adj[b]?.add(a); adj[b]?.add(c);
+    adj[c]?.add(a); adj[c]?.add(b);
+  }
+  return adj;
+};
+
+/**
+ * One step of Laplacian smoothing.
+ * Only moves selected non-pinned vertices toward their neighbour average.
+ */
+export const relaxMeshVertices = (
+  vertices: MeshVertex[],
+  triangles: MeshTriangle[],
+  selectedIndices: number[],
+  pinnedIndices: number[],
+  strength = 0.5,
+): MeshVertex[] => {
+  const adj = buildMeshAdjacency(triangles, vertices.length);
+  const selected = new Set(selectedIndices);
+  const pinned = new Set(pinnedIndices);
+
+  return vertices.map((v, i) => {
+    if (!selected.has(i) || pinned.has(i)) return v;
+    const neighbors = Array.from(adj[i] ?? [])
+      .map(j => vertices[j])
+      .filter((n): n is MeshVertex => !!n);
+    if (neighbors.length === 0) return v;
+    const avgX = neighbors.reduce((s, n) => s + n.x, 0) / neighbors.length;
+    const avgY = neighbors.reduce((s, n) => s + n.y, 0) / neighbors.length;
+    return { ...v, x: v.x + (avgX - v.x) * strength, y: v.y + (avgY - v.y) * strength };
+  });
+};
+
+/**
+ * Rebuild the mesh as a new grid (cols×rows).
+ * Clears pinned/weight data since vertex count changes.
+ */
+export const rebuildMeshGrid = (
+  attachment: Attachment,
+  cols: number,
+  rows: number,
+): Attachment => ({
+  ...attachment,
+  meshVertices: createGridMeshVertices(attachment, cols, rows),
+  meshTriangles: createGridMeshTriangles(cols, rows),
+  meshPinnedVertices: undefined,
+  meshVertexWeights: undefined,
+});
+
+/**
+ * Insert a new vertex by splitting the triangle that contains the given
+ * screen-space point. Interpolates UV and local position via barycentric coords.
+ * All existing deform keyframes receive a new entry for the vertex at its
+ * base position so the animation is unaffected.
+ */
+export const insertMeshVertex = (
+  attachment: Attachment,
+  screenX: number,
+  screenY: number,
+  screenVertices: ScreenPoint[],
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
+  const { meshVertices, meshTriangles } = attachment;
+  if (!meshVertices?.length || !meshTriangles?.length) return null;
+
+  // Find the triangle that contains the click position in screen space.
+  let triIndex = -1;
+  let bary = { t0: 0, t1: 0, t2: 0 };
+
+  for (let ti = 0; ti < meshTriangles.length; ti++) {
+    const [i0, i1, i2] = meshTriangles[ti];
+    const p0 = screenVertices[i0];
+    const p1 = screenVertices[i1];
+    const p2 = screenVertices[i2];
+    if (!p0 || !p1 || !p2) continue;
+
+    const denom =
+      (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+    if (Math.abs(denom) < 1e-6) continue;
+
+    const t0 =
+      ((p1.y - p2.y) * (screenX - p2.x) + (p2.x - p1.x) * (screenY - p2.y)) / denom;
+    const t1 =
+      ((p2.y - p0.y) * (screenX - p2.x) + (p0.x - p2.x) * (screenY - p2.y)) / denom;
+    const t2 = 1 - t0 - t1;
+
+    if (t0 >= -0.001 && t1 >= -0.001 && t2 >= -0.001) {
+      triIndex = ti;
+      bary = { t0, t1, t2 };
+      break;
+    }
+  }
+
+  if (triIndex < 0) return null;
+
+  const [i0, i1, i2] = meshTriangles[triIndex];
+  const v0 = meshVertices[i0]!;
+  const v1 = meshVertices[i1]!;
+  const v2 = meshVertices[i2]!;
+
+  const newVertex: MeshVertex = {
+    x: bary.t0 * v0.x + bary.t1 * v1.x + bary.t2 * v2.x,
+    y: bary.t0 * v0.y + bary.t1 * v1.y + bary.t2 * v2.y,
+    u: bary.t0 * v0.u + bary.t1 * v1.u + bary.t2 * v2.u,
+    v: bary.t0 * v0.v + bary.t1 * v1.v + bary.t2 * v2.v,
+  };
+
+  const newIdx = meshVertices.length;
+  const newVertices = [...meshVertices, newVertex];
+  const newTriangles: MeshTriangle[] = [
+    ...meshTriangles.filter((_, ti) => ti !== triIndex),
+    [i0, i1, newIdx],
+    [i1, i2, newIdx],
+    [i2, i0, newIdx],
+  ];
+
+  // Append the base position to every existing deform keyframe.
+  const nextKeyframes = { ...meshDeformKeyframes };
+  const existing = nextKeyframes[attachmentKey];
+  if (existing) {
+    const updated: typeof existing = {};
+    for (const [frameStr, kf] of Object.entries(existing)) {
+      updated[Number(frameStr)] = {
+        ...kf,
+        vertices: [...kf.vertices, { x: newVertex.x, y: newVertex.y }],
+      };
+    }
+    nextKeyframes[attachmentKey] = updated;
+  }
+
+  return {
+    attachment: {
+      ...attachment,
+      meshVertices: newVertices,
+      meshTriangles: newTriangles,
+      meshPinnedVertices: attachment.meshPinnedVertices
+        ? [...attachment.meshPinnedVertices, false]
+        : undefined,
+      meshVertexWeights: attachment.meshVertexWeights
+        ? [...attachment.meshVertexWeights, []]
+        : undefined,
+    },
+    meshDeformKeyframes: nextKeyframes,
+  };
+};
+
+/**
+ * Simple Delaunay triangulation using Bowyer-Watson algorithm.
+ * Returns triangle indices for the given vertices.
+ */
+const delaunayTriangulate = (vertices: MeshVertex[]): MeshTriangle[] => {
+  if (vertices.length < 3) return [];
+  
+  // Create super-triangle that contains all points
+  const minX = Math.min(...vertices.map(v => v.x));
+  const minY = Math.min(...vertices.map(v => v.y));
+  const maxX = Math.max(...vertices.map(v => v.x));
+  const maxY = Math.max(...vertices.map(v => v.y));
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const deltaMax = Math.max(dx, dy) * 2;
+  
+  const superVertices: MeshVertex[] = [
+    { x: minX - deltaMax, y: minY - deltaMax, u: 0, v: 0 },
+    { x: minX + deltaMax * 2, y: minY - deltaMax, u: 0, v: 0 },
+    { x: minX - deltaMax, y: minY + deltaMax * 2, u: 0, v: 0 },
+  ];
+  
+  const allVertices = [...vertices, ...superVertices];
+  const triangles: MeshTriangle[] = [[vertices.length, vertices.length + 1, vertices.length + 2]];
+  
+  // Helper: check if point is inside triangle's circumcircle
+  const inCircumcircle = (px: number, py: number, tri: MeshTriangle): boolean => {
+    const [i, j, k] = tri;
+    const a = allVertices[i]!;
+    const b = allVertices[j]!;
+    const c = allVertices[k]!;
+    
+    const ax = a.x - px;
+    const ay = a.y - py;
+    const bx = b.x - px;
+    const by = b.y - py;
+    const cx = c.x - px;
+    const cy = c.y - py;
+    
+    const det = (ax * ax + ay * ay) * (bx * cy - cx * by) -
+                (bx * bx + by * by) * (ax * cy - cx * ay) +
+                (cx * cx + cy * cy) * (ax * by - bx * ay);
+    
+    return det > 0;
+  };
+  
+  // Add each vertex one at a time
+  for (let i = 0; i < vertices.length; i++) {
+    const vertex = vertices[i]!;
+    const badTriangles: MeshTriangle[] = [];
+    
+    // Find all triangles whose circumcircle contains the vertex
+    for (const tri of triangles) {
+      if (inCircumcircle(vertex.x, vertex.y, tri)) {
+        badTriangles.push(tri);
+      }
+    }
+    
+    // Find the boundary of the polygonal hole
+    const polygon: Array<[number, number]> = [];
+    for (const tri of badTriangles) {
+      const edges: Array<[number, number]> = [
+        [tri[0], tri[1]],
+        [tri[1], tri[2]],
+        [tri[2], tri[0]],
+      ];
+      
+      for (const edge of edges) {
+        const isShared = badTriangles.some(otherTri => {
+          if (otherTri === tri) return false;
+          return (
+            (otherTri.includes(edge[0]) && otherTri.includes(edge[1]))
+          );
+        });
+        
+        if (!isShared) {
+          polygon.push(edge);
+        }
+      }
+    }
+    
+    // Remove bad triangles
+    for (const tri of badTriangles) {
+      const idx = triangles.indexOf(tri);
+      if (idx >= 0) triangles.splice(idx, 1);
+    }
+    
+    // Re-triangulate the hole with the new vertex
+    for (const edge of polygon) {
+      triangles.push([edge[0], edge[1], i]);
+    }
+  }
+  
+  // Remove triangles that use super-triangle vertices
+  const finalTriangles = triangles.filter(tri => 
+    tri.every(idx => idx < vertices.length)
+  );
+  
+  return finalTriangles;
+};
+
+/**
+ * Remove vertices at the given indices.
+ * Retriangulates the mesh to preserve coverage without leaving holes.
+ * Remaining triangle indices and all deform keyframe entries are remapped.
+ */
+export const removeMeshVertices = (
+  attachment: Attachment,
+  removeIndices: number[],
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } => {
+  const { meshVertices, meshTriangles } = attachment;
+  if (!meshVertices?.length || !meshTriangles?.length) {
+    return { attachment, meshDeformKeyframes };
+  }
+
+  const removeSet = new Set(removeIndices);
+  const indexRemap = new Map<number, number>();
+  let nextIdx = 0;
+  for (let i = 0; i < meshVertices.length; i++) {
+    if (!removeSet.has(i)) indexRemap.set(i, nextIdx++);
+  }
+
+  const newVertices = meshVertices.filter((_, i) => !removeSet.has(i));
+  
+  // Retriangulate to preserve mesh coverage
+  const newTriangles = delaunayTriangulate(newVertices);
+
+  const nextKeyframes = { ...meshDeformKeyframes };
+  const existing = nextKeyframes[attachmentKey];
+  if (existing) {
+    const updated: typeof existing = {};
+    for (const [frameStr, kf] of Object.entries(existing)) {
+      updated[Number(frameStr)] = {
+        ...kf,
+        vertices: kf.vertices.filter((_, i) => !removeSet.has(i)),
+      };
+    }
+    nextKeyframes[attachmentKey] = updated;
+  }
+
+  const newPinned = attachment.meshPinnedVertices?.filter((_, i) => !removeSet.has(i));
+  const newWeights = attachment.meshVertexWeights?.filter((_, i) => !removeSet.has(i));
+
+  return {
+    attachment: {
+      ...attachment,
+      meshVertices: newVertices,
+      meshTriangles: newTriangles,
+      meshPinnedVertices: newPinned?.length ? newPinned : undefined,
+      meshVertexWeights: newWeights?.length ? newWeights : undefined,
+    },
+    meshDeformKeyframes: nextKeyframes,
+  };
+};
+
 export const resolveAttachmentAtFrame = (
   attachment: Attachment,
   frame: number,

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useEffectEvent } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -18,7 +18,13 @@ import {
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
-import { ensureMeshAttachmentAsync, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import {
+  ensureMeshAttachmentAsync,
+  getMeshAttachmentKey,
+  resolveAttachmentAtFrame,
+  insertMeshVertex,
+  removeMeshVertices,
+} from '../../utils/meshAttachment';
 import { normalizeKeyframeEasing } from '../../utils/easing';
 import { resolveSlotsAtFrame } from '../../utils/slotAnimation';
 
@@ -33,7 +39,21 @@ export const MainCanvas = () => {
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectedBoneIds, selectedSlotId, selectBone, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const {
+    tool,
+    mode,
+    selectedBoneId,
+    selectedBoneIds,
+    selectedSlotId,
+    selectBone,
+    showBoneIndicators,
+    showViewport,
+    onionSkinEnabled,
+    attachmentDragEnabled,
+    backgroundImage,
+    selectedMeshVertexIndices,
+    setSelectedMeshVertexIndices,
+  } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
   const {
     keyframes,
@@ -47,6 +67,8 @@ export const MainCanvas = () => {
     setMeshDeformKeyframeAtFrame,
     updateMeshDeformKeyframeEasing,
     remapBoneKeyframesForParentChange,
+    replaceMeshDeformKeyframesForAttachment,
+    clearMeshDeformKeyframesForAttachment,
   } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy } = useCameraStore();
   const { slots, attachments, updateAttachment } = useSlotStore();
@@ -202,10 +224,17 @@ export const MainCanvas = () => {
   const [meshDragStart, setMeshDragStart] = useState<{
     slotId: number;
     attachmentName: string;
-    vertexIndex: number;
+    selectedIndices: number[];
     startScreenX: number;
     startScreenY: number;
     initialVertices: NonNullable<typeof attachments[number]['meshVertices']>;
+  } | null>(null);
+  const [meshMarquee, setMeshMarquee] = useState<{
+    sx: number;
+    sy: number;
+    currentSx: number;
+    currentSy: number;
+    additive: boolean;
   } | null>(null);
 
   const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
@@ -258,6 +287,11 @@ export const MainCanvas = () => {
       cancelled = true;
     };
   }, [tool, activeSlot, activeAttachment, updateAttachment, captureSnapshot]);
+
+  // Clear vertex selection when the mesh tool is exited or the active attachment changes.
+  useEffect(() => {
+    setSelectedMeshVertexIndices([]);
+  }, [tool, activeSlot?.id, activeAttachment?.name, setSelectedMeshVertexIndices]);
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -425,16 +459,43 @@ export const MainCanvas = () => {
         attachmentOpacityKeyframes,
       ),
     );
-    drawSlots(ctx, resolvedSlots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad);
+    drawSlots(ctx, resolvedSlots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad, bones);
 
     if (activeSlot && activeBone && activeAttachment && (attachmentDragEnabled || tool === 'mesh')) {
+      const outlineAttachment = resolvedActiveAttachment ?? activeAttachment;
+      const pinnedVertexIndices = outlineAttachment.meshPinnedVertices
+        ?.map((p, i) => (p ? i : -1))
+        .filter((i) => i >= 0);
       drawAttachmentOutline(
         ctx,
-        resolvedActiveAttachment ?? activeAttachment,
+        outlineAttachment,
         activeBone,
         previewWorldToScreen,
         effectiveZoom,
+        tool === 'mesh'
+          ? {
+              showInternalEdges: true,
+              selectedVertexIndices: selectedMeshVertexIndices,
+              pinnedVertexIndices,
+            }
+          : undefined,
       );
+    }
+
+    // Marquee selection rectangle.
+    if (tool === 'mesh' && meshMarquee) {
+      const mx = Math.min(meshMarquee.sx, meshMarquee.currentSx);
+      const my = Math.min(meshMarquee.sy, meshMarquee.currentSy);
+      const mw = Math.abs(meshMarquee.currentSx - meshMarquee.sx);
+      const mh = Math.abs(meshMarquee.currentSy - meshMarquee.sy);
+      ctx.save();
+      ctx.fillStyle = 'rgba(251,191,36,0.08)';
+      ctx.fillRect(mx, my, mw, mh);
+      ctx.strokeStyle = 'rgba(251,191,36,0.85)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(mx, my, mw, mh);
+      ctx.restore();
     }
 
     if (showBoneIndicators) {
@@ -512,7 +573,40 @@ export const MainCanvas = () => {
     }
     ctx.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, attachmentOpacityKeyframes, frame, duration, setupPose, slots, attachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, attachmentOpacityKeyframes, frame, duration, setupPose, slots, attachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, selectedMeshVertexIndices, meshMarquee]);
+
+  const handleDeleteKey = useEffectEvent((e: KeyboardEvent) => {
+    if (tool !== 'mesh') return;
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    if (selectedMeshVertexIndices.length === 0) return;
+    if (!activeAttachment || activeAttachment.type !== 'mesh' || !activeSlot) return;
+
+    e.preventDefault();
+    captureSnapshot();
+    const attachmentKey = getMeshAttachmentKey({ slotId: activeSlot.id, name: activeAttachment.name });
+    const animState = useAnimationStore.getState();
+    const result = removeMeshVertices(
+      activeAttachment,
+      selectedMeshVertexIndices,
+      animState.meshDeformKeyframes,
+      attachmentKey,
+    );
+    updateAttachment(activeSlot.id, activeAttachment.name, result.attachment);
+    const nextFrames = result.meshDeformKeyframes[attachmentKey];
+    if (nextFrames && Object.keys(nextFrames).length > 0) {
+      replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+    } else {
+      clearMeshDeformKeyframesForAttachment(attachmentKey);
+    }
+    setSelectedMeshVertexIndices([]);
+  });
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleDeleteKey);
+    return () => window.removeEventListener('keydown', handleDeleteKey);
+  }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -545,14 +639,18 @@ export const MainCanvas = () => {
       return;
     }
 
+    if (meshMarquee) {
+      setMeshMarquee((prev) => prev ? { ...prev, currentSx: sx, currentSy: sy } : null);
+      return;
+    }
+
     if (meshDragStart && activeBone) {
+      const dx = (sx - meshDragStart.startScreenX) / camZoom;
+      const dy = (sy - meshDragStart.startScreenY) / camZoom;
+      const selectedSet = new Set(meshDragStart.selectedIndices);
       const nextVertices = meshDragStart.initialVertices.map((vertex, index) => {
-        if (index !== meshDragStart.vertexIndex) return vertex;
-        return {
-          ...vertex,
-          x: vertex.x + (sx - meshDragStart.startScreenX) / camZoom,
-          y: vertex.y + (sy - meshDragStart.startScreenY) / camZoom,
-        };
+        if (!selectedSet.has(index)) return vertex;
+        return { ...vertex, x: vertex.x + dx, y: vertex.y + dy };
       });
       if (mode === 'animate') {
         const attachmentKey = getMeshAttachmentKey({
@@ -714,11 +812,64 @@ export const MainCanvas = () => {
               attachmentOpacityKeyframes,
             )
           : ensuredAttachment;
-      const screenVertices = getAttachmentMeshScreenVertices(displayAttachment, activeBone, previewWorldToScreen, effectiveZoom);
-      const targetVertexIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);
+      const screenVertices = getAttachmentMeshScreenVertices(
+        displayAttachment,
+        activeBone,
+        previewWorldToScreen,
+        effectiveZoom,
+      );
+      const targetVertexIndex = screenVertices.findIndex(
+        (point) => Math.hypot(point.x - sx, point.y - sy) <= 10,
+      );
+
+      // ── Right-click on a vertex: remove it (mesh will be retriangulated) ─────────────────
+      if (e.button === 2 && targetVertexIndex >= 0) {
+        e.preventDefault();
+        const toRemove = [targetVertexIndex];
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: activeSlot.id,
+          name: ensuredAttachment.name,
+        });
+        captureSnapshot();
+        const animState = useAnimationStore.getState();
+        const result = removeMeshVertices(
+          ensuredAttachment,
+          toRemove,
+          animState.meshDeformKeyframes,
+          attachmentKey,
+        );
+        updateAttachment(activeSlot.id, ensuredAttachment.name, result.attachment);
+        const nextFrames = result.meshDeformKeyframes[attachmentKey];
+        if (nextFrames && Object.keys(nextFrames).length > 0) {
+          replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+        } else {
+          clearMeshDeformKeyframesForAttachment(attachmentKey);
+        }
+        setSelectedMeshVertexIndices([]);
+        return;
+      }
+
       if (targetVertexIndex >= 0 && displayAttachment.meshVertices) {
+        // ── Left-click on a vertex: selection + drag ──────────────────────
         if (activeBone.id !== selectedBoneId) selectBone(activeBone.id);
+
+        let nextSelected: number[];
+        if (e.shiftKey) {
+          const alreadyIn = selectedMeshVertexIndices.includes(targetVertexIndex);
+          nextSelected = alreadyIn
+            ? selectedMeshVertexIndices.filter((i) => i !== targetVertexIndex)
+            : [...selectedMeshVertexIndices, targetVertexIndex];
+        } else {
+          nextSelected = selectedMeshVertexIndices.includes(targetVertexIndex)
+            ? selectedMeshVertexIndices
+            : [targetVertexIndex];
+        }
+        setSelectedMeshVertexIndices(nextSelected);
+
+        if (nextSelected.length === 0) return;
+
         if (meshDragStart === null) captureSnapshot();
+
         if (mode === 'animate') {
           const attachmentKey = getMeshAttachmentKey({
             slotId: activeSlot.id,
@@ -755,11 +906,7 @@ export const MainCanvas = () => {
               y: vertex.y,
             })),
           );
-          updateMeshDeformKeyframeEasing(
-            attachmentKey,
-            frame,
-            currentBoneEasing,
-          );
+          updateMeshDeformKeyframeEasing(attachmentKey, frame, currentBoneEasing);
           insertKeyframe(activeBone.id, {
             x: activeBone.x,
             y: activeBone.y,
@@ -768,16 +915,48 @@ export const MainCanvas = () => {
             scaleY: activeBone.scaleY,
           });
         }
+
         setMeshDragStart({
           slotId: activeSlot.id,
           attachmentName: ensuredAttachment.name,
-          vertexIndex: targetVertexIndex,
+          selectedIndices: nextSelected,
           startScreenX: sx,
           startScreenY: sy,
           initialVertices: displayAttachment.meshVertices.map((vertex) => ({ ...vertex })),
         });
         return;
       }
+
+      // ── Alt+click: insert vertex by splitting the containing triangle ──
+      if (e.altKey && displayAttachment.meshVertices) {
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: activeSlot.id,
+          name: ensuredAttachment.name,
+        });
+        captureSnapshot();
+        const animState = useAnimationStore.getState();
+        const result = insertMeshVertex(
+          ensuredAttachment,
+          sx,
+          sy,
+          screenVertices,
+          animState.meshDeformKeyframes,
+          attachmentKey,
+        );
+        if (result) {
+          updateAttachment(activeSlot.id, ensuredAttachment.name, result.attachment);
+          const nextFrames = result.meshDeformKeyframes[attachmentKey];
+          if (nextFrames && Object.keys(nextFrames).length > 0) {
+            replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+          }
+          setSelectedMeshVertexIndices([result.attachment.meshVertices!.length - 1]);
+        }
+        return;
+      }
+
+      // ── Empty click: start marquee selection ──────────────────────────
+      setMeshMarquee({ sx, sy, currentSx: sx, currentSy: sy, additive: e.shiftKey });
+      return;
     }
 
     if (e.button === 2) {
@@ -968,6 +1147,35 @@ export const MainCanvas = () => {
     setIsPanning(false);
     setPanStart(null);
 
+    // Finalise marquee: collect vertices inside the drawn rectangle.
+    if (meshMarquee && meshAttachment && activeBone) {
+      const minX = Math.min(meshMarquee.sx, meshMarquee.currentSx);
+      const maxX = Math.max(meshMarquee.sx, meshMarquee.currentSx);
+      const minY = Math.min(meshMarquee.sy, meshMarquee.currentSy);
+      const maxY = Math.max(meshMarquee.sy, meshMarquee.currentSy);
+      const hasDrag = maxX - minX > 4 || maxY - minY > 4;
+      if (hasDrag) {
+        const screenVertices = getAttachmentMeshScreenVertices(
+          meshAttachment,
+          activeBone,
+          previewWorldToScreen,
+          effectiveZoom,
+        );
+        const inRect = screenVertices
+          .map((p, i) => ({ p, i }))
+          .filter(({ p }) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+          .map(({ i }) => i);
+        const nextSelected = meshMarquee.additive
+          ? Array.from(new Set([...selectedMeshVertexIndices, ...inRect]))
+          : inRect;
+        setSelectedMeshVertexIndices(nextSelected);
+      } else if (!meshMarquee.additive) {
+        // Plain click on empty space clears selection.
+        setSelectedMeshVertexIndices([]);
+      }
+      setMeshMarquee(null);
+    }
+
     if (ikDragStart && mode === 'animate') {
       const affectedBoneIds = [ikDragStart.rootId, ikDragStart.childId];
       affectedBoneIds.forEach((boneId) => {
@@ -1001,10 +1209,57 @@ export const MainCanvas = () => {
 
     setAttachmentDragStart(null);
     setMeshDragStart(null);
+    setMeshMarquee(null);
     setIkDragStart(null);
     setIsDragging(false);
     setDragStart(null);
     setHoveredMeshVertexIndex(null);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool !== 'mesh' || !activeSlot || !activeBone || !activeAttachment) return;
+    if (activeAttachment.type !== 'mesh') return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    const displayAttachment =
+      mode === 'animate'
+        ? resolveAttachmentAtFrame(activeAttachment, frame, meshDeformKeyframes, attachmentOpacityKeyframes)
+        : activeAttachment;
+
+    const screenVertices = getAttachmentMeshScreenVertices(
+      displayAttachment,
+      activeBone,
+      previewWorldToScreen,
+      effectiveZoom,
+    );
+
+    // Don't insert if double-click landed on an existing vertex.
+    const onVertex = screenVertices.some((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
+    if (onVertex) return;
+
+    const attachmentKey = getMeshAttachmentKey({ slotId: activeSlot.id, name: activeAttachment.name });
+    captureSnapshot();
+    const animState = useAnimationStore.getState();
+    const result = insertMeshVertex(
+      activeAttachment,
+      sx,
+      sy,
+      screenVertices,
+      animState.meshDeformKeyframes,
+      attachmentKey,
+    );
+    if (result) {
+      updateAttachment(activeSlot.id, activeAttachment.name, result.attachment);
+      const nextFrames = result.meshDeformKeyframes[attachmentKey];
+      if (nextFrames && Object.keys(nextFrames).length > 0) {
+        replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+      }
+      setSelectedMeshVertexIndices([result.attachment.meshVertices!.length - 1]);
+    }
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -1036,6 +1291,7 @@ export const MainCanvas = () => {
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
         onContextMenu={handleContextMenu}
         className="absolute top-0 left-0 cursor-crosshair"

@@ -43,6 +43,11 @@ interface AnimationState {
   deleteMeshDeformKeyframe: (attachmentKey: string, frame: number) => void;
   moveMeshDeformKeyframe: (attachmentKey: string, fromFrame: number, toFrame: number) => void;
   updateMeshDeformKeyframeEasing: (attachmentKey: string, frame: number, easing: KeyframeEasing) => void;
+  replaceMeshDeformKeyframesForAttachment: (
+    attachmentKey: string,
+    frames: MeshDeformKeyframes[string],
+  ) => void;
+  clearMeshDeformKeyframesForAttachment: (attachmentKey: string) => void;
   setAttachmentOpacityKeyframeAtFrame: (attachmentKey: string, frame: number, opacity: number) => void;
   setAttachmentOpacityKeyframe: (attachmentKey: string, opacity: number) => void;
   deleteAttachmentOpacityKeyframe: (attachmentKey: string, frame: number) => void;
@@ -225,6 +230,23 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       }
 
       return { meshDeformKeyframes: nextMeshDeformKeyframes };
+    });
+  },
+
+  replaceMeshDeformKeyframesForAttachment: (attachmentKey, frames) => {
+    set((state) => ({
+      meshDeformKeyframes: {
+        ...state.meshDeformKeyframes,
+        [attachmentKey]: frames,
+      },
+    }));
+  },
+
+  clearMeshDeformKeyframesForAttachment: (attachmentKey) => {
+    set((state) => {
+      const next = { ...state.meshDeformKeyframes };
+      delete next[attachmentKey];
+      return { meshDeformKeyframes: next };
     });
   },
 

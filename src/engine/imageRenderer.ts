@@ -4,6 +4,9 @@ type AttachmentOutlineOptions = {
   strokeStyle?: string;
   lineWidth?: number;
   dash?: number[];
+  showInternalEdges?: boolean;
+  selectedVertexIndices?: number[];
+  pinnedVertexIndices?: number[];
 };
 
 const imageCache = new Map<string, HTMLImageElement>();
@@ -99,6 +102,7 @@ export const getAttachmentMeshScreenVertices = (
   bone: Bone,
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
+  allBones?: Bone[],
 ) => {
   if (!attachment.meshVertices?.length) return [] as ScreenPoint[];
   const screenPos = worldToScreen(bone._wx, bone._wy);
@@ -108,7 +112,33 @@ export const getAttachmentMeshScreenVertices = (
     zoom,
   );
 
-  return attachment.meshVertices.map((vertex) => {
+  return attachment.meshVertices.map((vertex, i) => {
+    // Weighted skinning: blend screen positions across multiple bone influences.
+    const weights = attachment.meshVertexWeights?.[i];
+    if (allBones && weights && weights.length >= 2) {
+      let wx = 0;
+      let wy = 0;
+      let totalWeight = 0;
+      for (const { boneId, weight } of weights) {
+        if (weight <= 0) continue;
+        const wb = allBones.find((b) => b.id === boneId) ?? bone;
+        const wbPos = worldToScreen(wb._wx, wb._wy);
+        const { totalScaleX: tsx, totalScaleY: tsy, scale: sc, cos: wc, sin: ws } =
+          getAttachmentTransform(attachment, wb, zoom);
+        const cx = attachment.x * zoom;
+        const cy = attachment.y * zoom;
+        const vx = vertex.x * tsx * sc;
+        const vy = vertex.y * tsy * sc;
+        wx += weight * (wbPos.x + (cx + vx) * wc - (cy + vy) * ws);
+        wy += weight * (wbPos.y + (cx + vx) * ws + (cy + vy) * wc);
+        totalWeight += weight;
+      }
+      if (totalWeight > 0) {
+        return { x: wx / totalWeight, y: wy / totalWeight };
+      }
+    }
+
+    // Default single-bone path (unchanged).
     // Keep the attachment pivot/offset aligned with the regular image renderer.
     // In the non-mesh path, attachment.x/y are scaled by zoom, while the image
     // size itself uses zoom * 0.5. Mesh vertices should preserve that same center.
@@ -230,7 +260,8 @@ export const drawAttachment = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
   alpha = 1,
-  onImageLoad?: () => void
+  onImageLoad?: () => void,
+  allBones?: Bone[],
 ): void => {
   if (!attachment.imageData) return;
 
@@ -246,7 +277,7 @@ export const drawAttachment = (
   ctx.globalAlpha = alpha * (attachment.opacity ?? 1);
 
   if (attachment.type === 'mesh' && attachment.meshVertices?.length && attachment.meshTriangles?.length) {
-    const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);
+    const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom, allBones);
     attachment.meshTriangles.forEach(([i0, i1, i2]) => {
       const v0 = attachment.meshVertices?.[i0];
       const v1 = attachment.meshVertices?.[i1];
@@ -333,8 +364,30 @@ export const drawAttachmentOutline = (
     const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);
     const strokeStyle = options?.strokeStyle ?? 'rgba(124,58,237,0.95)';
     const lineWidth = options?.lineWidth ?? 1.5;
-    const boundaryEdges = getMeshBoundaryEdges(attachment.meshTriangles);
+    const selectedSet = new Set(options?.selectedVertexIndices ?? []);
+    const pinnedSet = new Set(options?.pinnedVertexIndices ?? []);
+
     ctx.save();
+
+    // Internal (non-boundary) edges — faint, for mesh-editing context.
+    if (options?.showInternalEdges && attachment.meshTriangles?.length) {
+      ctx.strokeStyle = 'rgba(124,58,237,0.28)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([]);
+      attachment.meshTriangles.forEach(([i0, i1, i2]) => {
+        const pts = [screenVertices[i0], screenVertices[i1], screenVertices[i2]];
+        if (!pts[0] || !pts[1] || !pts[2]) return;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        ctx.lineTo(pts[1].x, pts[1].y);
+        ctx.lineTo(pts[2].x, pts[2].y);
+        ctx.closePath();
+        ctx.stroke();
+      });
+    }
+
+    // Boundary edges.
+    const boundaryEdges = getMeshBoundaryEdges(attachment.meshTriangles);
     ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = lineWidth;
     ctx.setLineDash(options?.dash ?? [6, 4]);
@@ -348,14 +401,34 @@ export const drawAttachmentOutline = (
       ctx.stroke();
     });
     ctx.setLineDash([]);
-    screenVertices.forEach((point) => {
-      ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = strokeStyle;
-      ctx.beginPath();
-      ctx.rect(point.x - 4, point.y - 4, 8, 8);
-      ctx.fill();
-      ctx.stroke();
+
+    // Vertex handles — square (normal/selected) or diamond (pinned).
+    screenVertices.forEach((point, i) => {
+      const isSelected = selectedSet.has(i);
+      const isPinned = pinnedSet.has(i);
+
+      ctx.strokeStyle = isSelected ? '#fbbf24' : strokeStyle;
+      ctx.lineWidth = isSelected ? 1.5 : 1;
+
+      if (isPinned) {
+        ctx.fillStyle = isSelected ? '#fbbf24' : '#f59e0b';
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y - 6);
+        ctx.lineTo(point.x + 6, point.y);
+        ctx.lineTo(point.x, point.y + 6);
+        ctx.lineTo(point.x - 6, point.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = isSelected ? '#fbbf24' : '#ffffff';
+        ctx.beginPath();
+        ctx.rect(point.x - 4, point.y - 4, 8, 8);
+        ctx.fill();
+        ctx.stroke();
+      }
     });
+
     ctx.restore();
     return;
   }
@@ -412,11 +485,12 @@ export const drawSlots = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
   alpha = 1,
-  onImageLoad?: () => void
+  onImageLoad?: () => void,
+  allBones?: Bone[],
 ): void => {
   bones.forEach((bone) => {
     const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
-    
+
     boneSlots.forEach((slot) => {
       if (!slot.attachmentName) return;
 
@@ -425,7 +499,7 @@ export const drawSlots = (
       );
       if (!attachment) return;
 
-      drawAttachment(ctx, attachment, bone, worldToScreen, zoom, alpha, onImageLoad);
+      drawAttachment(ctx, attachment, bone, worldToScreen, zoom, alpha, onImageLoad, allBones);
     });
   });
 };

@@ -33,6 +33,8 @@ interface EditorState {
   setAttachmentDragEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
   setCurrentProjectPath: (path: string | null) => void;
+  selectedMeshVertexIndices: number[];
+  setSelectedMeshVertexIndices: (indices: number[]) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -51,6 +53,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   attachmentDragEnabled: false,
   backgroundImage: null,
   currentProjectPath: null,
+  selectedMeshVertexIndices: [],
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
   selectBone: (id) =>
@@ -94,4 +97,6 @@ export const useEditorStore = create<EditorState>((set) => ({
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),
   setCurrentProjectPath: (currentProjectPath) => set({ currentProjectPath }),
+  selectedMeshVertexIndices: [],
+  setSelectedMeshVertexIndices: (selectedMeshVertexIndices) => set({ selectedMeshVertexIndices }),
 }));
