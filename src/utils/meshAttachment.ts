@@ -432,8 +432,109 @@ export const insertMeshVertex = (
 };
 
 /**
+ * Simple Delaunay triangulation using Bowyer-Watson algorithm.
+ * Returns triangle indices for the given vertices.
+ */
+const delaunayTriangulate = (vertices: MeshVertex[]): MeshTriangle[] => {
+  if (vertices.length < 3) return [];
+  
+  // Create super-triangle that contains all points
+  const minX = Math.min(...vertices.map(v => v.x));
+  const minY = Math.min(...vertices.map(v => v.y));
+  const maxX = Math.max(...vertices.map(v => v.x));
+  const maxY = Math.max(...vertices.map(v => v.y));
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const deltaMax = Math.max(dx, dy) * 2;
+  
+  const superVertices: MeshVertex[] = [
+    { x: minX - deltaMax, y: minY - deltaMax, u: 0, v: 0 },
+    { x: minX + deltaMax * 2, y: minY - deltaMax, u: 0, v: 0 },
+    { x: minX - deltaMax, y: minY + deltaMax * 2, u: 0, v: 0 },
+  ];
+  
+  const allVertices = [...vertices, ...superVertices];
+  const triangles: MeshTriangle[] = [[vertices.length, vertices.length + 1, vertices.length + 2]];
+  
+  // Helper: check if point is inside triangle's circumcircle
+  const inCircumcircle = (px: number, py: number, tri: MeshTriangle): boolean => {
+    const [i, j, k] = tri;
+    const a = allVertices[i]!;
+    const b = allVertices[j]!;
+    const c = allVertices[k]!;
+    
+    const ax = a.x - px;
+    const ay = a.y - py;
+    const bx = b.x - px;
+    const by = b.y - py;
+    const cx = c.x - px;
+    const cy = c.y - py;
+    
+    const det = (ax * ax + ay * ay) * (bx * cy - cx * by) -
+                (bx * bx + by * by) * (ax * cy - cx * ay) +
+                (cx * cx + cy * cy) * (ax * by - bx * ay);
+    
+    return det > 0;
+  };
+  
+  // Add each vertex one at a time
+  for (let i = 0; i < vertices.length; i++) {
+    const vertex = vertices[i]!;
+    const badTriangles: MeshTriangle[] = [];
+    
+    // Find all triangles whose circumcircle contains the vertex
+    for (const tri of triangles) {
+      if (inCircumcircle(vertex.x, vertex.y, tri)) {
+        badTriangles.push(tri);
+      }
+    }
+    
+    // Find the boundary of the polygonal hole
+    const polygon: Array<[number, number]> = [];
+    for (const tri of badTriangles) {
+      const edges: Array<[number, number]> = [
+        [tri[0], tri[1]],
+        [tri[1], tri[2]],
+        [tri[2], tri[0]],
+      ];
+      
+      for (const edge of edges) {
+        const isShared = badTriangles.some(otherTri => {
+          if (otherTri === tri) return false;
+          return (
+            (otherTri.includes(edge[0]) && otherTri.includes(edge[1]))
+          );
+        });
+        
+        if (!isShared) {
+          polygon.push(edge);
+        }
+      }
+    }
+    
+    // Remove bad triangles
+    for (const tri of badTriangles) {
+      const idx = triangles.indexOf(tri);
+      if (idx >= 0) triangles.splice(idx, 1);
+    }
+    
+    // Re-triangulate the hole with the new vertex
+    for (const edge of polygon) {
+      triangles.push([edge[0], edge[1], i]);
+    }
+  }
+  
+  // Remove triangles that use super-triangle vertices
+  const finalTriangles = triangles.filter(tri => 
+    tri.every(idx => idx < vertices.length)
+  );
+  
+  return finalTriangles;
+};
+
+/**
  * Remove vertices at the given indices.
- * Triangles that reference any removed vertex are discarded.
+ * Retriangulates the mesh to preserve coverage without leaving holes.
  * Remaining triangle indices and all deform keyframe entries are remapped.
  */
 export const removeMeshVertices = (
@@ -455,11 +556,9 @@ export const removeMeshVertices = (
   }
 
   const newVertices = meshVertices.filter((_, i) => !removeSet.has(i));
-  const newTriangles: MeshTriangle[] = [];
-  for (const [a, b, c] of meshTriangles) {
-    if (removeSet.has(a) || removeSet.has(b) || removeSet.has(c)) continue;
-    newTriangles.push([indexRemap.get(a)!, indexRemap.get(b)!, indexRemap.get(c)!]);
-  }
+  
+  // Retriangulate to preserve mesh coverage
+  const newTriangles = delaunayTriangulate(newVertices);
 
   const nextKeyframes = { ...meshDeformKeyframes };
   const existing = nextKeyframes[attachmentKey];

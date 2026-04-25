@@ -822,8 +822,35 @@ export const MainCanvas = () => {
         (point) => Math.hypot(point.x - sx, point.y - sy) <= 10,
       );
 
+      // ── Right-click on a vertex: remove it (mesh will be retriangulated) ─────────────────
+      if (e.button === 2 && targetVertexIndex >= 0) {
+        e.preventDefault();
+        const toRemove = [targetVertexIndex];
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: activeSlot.id,
+          name: ensuredAttachment.name,
+        });
+        captureSnapshot();
+        const animState = useAnimationStore.getState();
+        const result = removeMeshVertices(
+          ensuredAttachment,
+          toRemove,
+          animState.meshDeformKeyframes,
+          attachmentKey,
+        );
+        updateAttachment(activeSlot.id, ensuredAttachment.name, result.attachment);
+        const nextFrames = result.meshDeformKeyframes[attachmentKey];
+        if (nextFrames && Object.keys(nextFrames).length > 0) {
+          replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+        } else {
+          clearMeshDeformKeyframesForAttachment(attachmentKey);
+        }
+        setSelectedMeshVertexIndices([]);
+        return;
+      }
+
       if (targetVertexIndex >= 0 && displayAttachment.meshVertices) {
-        // ── Vertex click: selection + drag ────────────────────────────────
+        // ── Left-click on a vertex: selection + drag ──────────────────────
         if (activeBone.id !== selectedBoneId) selectBone(activeBone.id);
 
         let nextSelected: number[];
