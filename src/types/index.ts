@@ -37,6 +37,8 @@ export interface Attachment {
   scaleY: number;
   meshVertices?: MeshVertex[];
   meshTriangles?: MeshTriangle[];
+  meshPinnedVertices?: boolean[];
+  meshVertexWeights?: MeshVertexWeight[][];
 }
 
 export interface MeshVertex {
@@ -47,6 +49,11 @@ export interface MeshVertex {
 }
 
 export type MeshTriangle = [number, number, number];
+
+export interface MeshVertexWeight {
+  boneId: number;
+  weight: number;
+}
 
 export interface Bone {
   id: number;
