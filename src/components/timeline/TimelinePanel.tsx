@@ -108,6 +108,30 @@ export const TimelinePanel = () => {
   const [selectedKeyframes, setSelectedKeyframes] = useState<
     Array<{ boneId: number; frame: number }>
   >([]);
+  const [copiedKeyframes, setCopiedKeyframes] = useState<
+    Array<{
+      boneId: number;
+      sourceFrame: number;
+      data: {
+        x: number;
+        y: number;
+        rotation: number;
+        scaleX: number;
+        scaleY: number;
+        easing?: KeyframeEasing;
+      };
+      attachmentOpacityKeys: Array<{
+        attachmentKey: string;
+        opacity: number;
+        easing?: KeyframeEasing;
+      }>;
+      meshDeformKeys: Array<{
+        attachmentKey: string;
+        vertices: Array<{ x: number; y: number }>;
+        easing?: KeyframeEasing;
+      }>;
+    }>
+  >([]);
   const [hoveredKeyframe, setHoveredKeyframe] = useState<{
     boneId: number;
     frame: number;
@@ -186,6 +210,52 @@ export const TimelinePanel = () => {
         );
       });
   };
+
+  const collectAttachmentOpacityKeysAtFrame = (
+    boneId: number,
+    targetFrame: number,
+  ) =>
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .flatMap((slot) => {
+        if (!slot.attachmentName) return [];
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const key = attachmentOpacityKeyframes[attachmentKey]?.[targetFrame];
+        if (!key) return [];
+        return [
+          {
+            attachmentKey,
+            opacity: key.opacity,
+            easing: normalizeKeyframeEasing(key.easing),
+          },
+        ];
+      });
+
+  const collectMeshDeformKeysAtFrame = (boneId: number, targetFrame: number) =>
+    slots
+      .filter((slot) => slot.boneId === boneId && slot.attachmentName)
+      .flatMap((slot) => {
+        if (!slot.attachmentName) return [];
+        const attachmentKey = getMeshAttachmentKey({
+          slotId: slot.id,
+          name: slot.attachmentName,
+        });
+        const key = meshDeformKeyframes[attachmentKey]?.[targetFrame];
+        if (!key) return [];
+        return [
+          {
+            attachmentKey,
+            vertices: key.vertices.map((vertex) => ({
+              x: vertex.x,
+              y: vertex.y,
+            })),
+            easing: normalizeKeyframeEasing(key.easing),
+          },
+        ];
+      });
 
   const clearAttachmentOpacityKeysForBone = (boneId: number) => {
     slots
@@ -860,8 +930,111 @@ export const TimelinePanel = () => {
     }
   };
 
+  const handleCopySelectedKeyframes = () => {
+    if (selectedKeyframes.length === 0) return;
+
+    const nextClipboard = selectedKeyframes
+      .map(({ boneId, frame: sourceFrame }) => {
+        const data = keyframes[boneId]?.[sourceFrame];
+        if (!data) return null;
+
+        return {
+          boneId,
+          sourceFrame,
+          data: {
+            x: data.x,
+            y: data.y,
+            rotation: data.rotation,
+            scaleX: data.scaleX,
+            scaleY: data.scaleY,
+            easing: normalizeKeyframeEasing(data.easing),
+          },
+          attachmentOpacityKeys: collectAttachmentOpacityKeysAtFrame(
+            boneId,
+            sourceFrame,
+          ),
+          meshDeformKeys: collectMeshDeformKeysAtFrame(boneId, sourceFrame),
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is NonNullable<(typeof copiedKeyframes)[number]> => item !== null,
+      );
+
+    if (nextClipboard.length === 0) return;
+    setCopiedKeyframes(nextClipboard);
+  };
+
+  const handlePasteCopiedKeyframes = () => {
+    if (copiedKeyframes.length === 0) return;
+
+    const minFrame = Math.min(...copiedKeyframes.map((item) => item.sourceFrame));
+    captureSnapshot();
+
+    const nextSelection = copiedKeyframes.map((item) => {
+      const targetFrame = Math.max(0, frame + (item.sourceFrame - minFrame));
+
+      useAnimationStore.getState().setFrame(targetFrame);
+      insertKeyframe(item.boneId, { ...item.data });
+
+      item.attachmentOpacityKeys.forEach((attachmentKey) => {
+        setAttachmentOpacityKeyframeAtFrame(
+          attachmentKey.attachmentKey,
+          targetFrame,
+          attachmentKey.opacity,
+        );
+        updateAttachmentOpacityKeyframeEasing(
+          attachmentKey.attachmentKey,
+          targetFrame,
+          normalizeKeyframeEasing(attachmentKey.easing),
+        );
+      });
+
+      item.meshDeformKeys.forEach((attachmentKey) => {
+        setMeshDeformKeyframeAtFrame(
+          attachmentKey.attachmentKey,
+          targetFrame,
+          attachmentKey.vertices,
+        );
+        updateMeshDeformKeyframeEasing(
+          attachmentKey.attachmentKey,
+          targetFrame,
+          normalizeKeyframeEasing(attachmentKey.easing),
+        );
+      });
+
+      return { boneId: item.boneId, frame: targetFrame };
+    });
+
+    setSelectedKeyframes(nextSelection);
+    useAnimationStore.getState().setFrame(frame);
+    if (mode === "animate") {
+      applyKeyframes();
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      const isModifierPressed = e.metaKey || e.ctrlKey;
+
+      if (isModifierPressed && (e.key === "c" || e.key === "C")) {
+        if (selectedKeyframes.length === 0) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        handleCopySelectedKeyframes();
+        return;
+      }
+
+      if (isModifierPressed && (e.key === "v" || e.key === "V")) {
+        if (copiedKeyframes.length === 0) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        handlePasteCopiedKeyframes();
+        return;
+      }
+
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
         selectedKeyframes.length > 0
@@ -908,15 +1081,24 @@ export const TimelinePanel = () => {
       window.removeEventListener("click", handleClickOutside);
     };
   }, [
+    copiedKeyframes,
+    frame,
+    mode,
     hoveredKeyframe,
     selectedKeyframes,
     captureSnapshot,
     deleteKeyframe,
+    insertKeyframe,
     slots,
     attachmentOpacityKeyframes,
     meshDeformKeyframes,
     deleteAttachmentOpacityKeyframe,
     deleteMeshDeformKeyframe,
+    setAttachmentOpacityKeyframeAtFrame,
+    setMeshDeformKeyframeAtFrame,
+    updateAttachmentOpacityKeyframeEasing,
+    updateMeshDeformKeyframeEasing,
+    applyKeyframes,
   ]);
 
   const handlePrevKey = () => {

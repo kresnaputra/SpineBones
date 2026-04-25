@@ -13,7 +13,7 @@ import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripEx
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
-import { exportAnimationJson } from '../../utils/animationJsonExporter';
+import { exportAnimationJson, exportAnimationRagDatasetJson } from '../../utils/animationJsonExporter';
 import { ensureMeshAttachmentAsync } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
@@ -452,6 +452,15 @@ export const Toolbar = () => {
           >
             <Save size={14} />
             Keyframes JSON
+          </button>
+
+          <button
+            onClick={() => void exportAnimationRagDatasetJson()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border transition-all text-[11px]"
+            title="Export animation as RAG-ready dataset JSON"
+          >
+            <Save size={14} />
+            RAG Dataset
           </button>
 
           <div className="w-px h-6 bg-border mx-1" />
