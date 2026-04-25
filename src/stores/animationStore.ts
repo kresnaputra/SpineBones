@@ -33,6 +33,7 @@ interface AnimationState {
   ) => void;
   setSlotAttachmentKeyframe: (slotId: number, attachmentName: string | null) => void;
   deleteSlotAttachmentKeyframe: (slotId: number, frame: number) => void;
+  moveSlotAttachmentKeyframe: (slotId: number, fromFrame: number, toFrame: number) => void;
   setMeshDeformKeyframeAtFrame: (
     attachmentKey: string,
     frame: number,
@@ -152,6 +153,27 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       }
 
       return { slotAttachmentKeyframes: nextSlotAttachmentKeyframes };
+    });
+  },
+
+  moveSlotAttachmentKeyframe: (slotId, fromFrame, toFrame) => {
+    if (fromFrame === toFrame) return;
+
+    set((state) => {
+      const slotKeyframes = state.slotAttachmentKeyframes[slotId];
+      const sourceKeyframe = slotKeyframes?.[fromFrame];
+      if (!slotKeyframes || !sourceKeyframe) return state;
+
+      const nextSlotKeyframes = { ...slotKeyframes };
+      delete nextSlotKeyframes[fromFrame];
+      nextSlotKeyframes[toFrame] = sourceKeyframe;
+
+      return {
+        slotAttachmentKeyframes: {
+          ...state.slotAttachmentKeyframes,
+          [slotId]: nextSlotKeyframes,
+        },
+      };
     });
   },
 
