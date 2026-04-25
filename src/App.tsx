@@ -33,6 +33,7 @@ import { exportSpriteSheet } from './utils/spriteSheetExporter';
 import { exportPngSequence } from './utils/pngSequenceExporter';
 import { exportVideo } from './utils/videoExporter';
 import type { Attachment, Mode, Tool } from './types';
+import { applyRagAnimation, runRagPipeline } from './thesis/ragPipeline';
 
 type McpEditorCommand = {
   commandType: string;
@@ -1866,6 +1867,19 @@ function App() {
       ) {
         const result = timelineUiCommand(payload.commandType);
         console.info('MCP timeline UI:', result);
+        return;
+      }
+
+      if (payload.commandType === 'apply_rag_animation') {
+        if (!payload.prompt) throw new Error('apply_rag_animation requires a prompt');
+        const result = runRagPipeline(payload.prompt);
+        applyRagAnimation(result);
+        console.info('MCP apply_rag_animation:', {
+          item: result.item.id,
+          score: result.score,
+          mappedBones: Object.keys(result.mappedBones).length,
+          keyframeCount: result.keyframeCount,
+        });
         return;
       }
 

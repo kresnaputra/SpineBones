@@ -1497,7 +1497,7 @@ const createServer = () => {
   server.registerTool(
     'spinebones_set_multiple_keyframes',
     {
-      description: 'Set or overwrite multiple keyframes across bones in one call.',
+      description: 'Set or overwrite multiple keyframes across bones in one call. NOTE: If you are creating a new animation (walk, run, idle, attack, etc.), call spinebones_apply_rag_animation first — it retrieves a matching animation from the dataset and applies it automatically. Use this tool only for manual edits or when spinebones_apply_rag_animation is not suitable.',
       inputSchema: {
         keyframes: z.array(
           z.object({
@@ -1688,6 +1688,26 @@ const createServer = () => {
         }),
       });
       return asTextResult('Timeline FPS updated in SpineBones', result);
+    },
+  );
+
+  server.registerTool(
+    'spinebones_apply_rag_animation',
+    {
+      description: 'PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation from the RAG dataset using a natural-language prompt and applies it to the current timeline automatically — including bone mapping, duration, fps, and all keyframes. Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.',
+      inputSchema: {
+        prompt: z.string().min(1).describe('Natural-language description of the desired animation, e.g. "walk cycle for knight" or "animasi lari".'),
+      },
+    },
+    async ({ prompt }) => {
+      const result = await requestJson('/command', {
+        method: 'POST',
+        body: JSON.stringify({
+          commandType: 'apply_rag_animation',
+          prompt,
+        }),
+      });
+      return asTextResult('RAG animation applied in SpineBones', result);
     },
   );
 

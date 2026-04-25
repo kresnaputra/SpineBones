@@ -18,6 +18,34 @@ export interface RagRigProfile {
   slotCount: number;
 }
 
+export type RagKeyframeEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+
+export interface RagAnimationFrame {
+  frame: number;
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  easing: RagKeyframeEasing;
+}
+
+export interface RagAnimationBoneTrack {
+  boneId: number;
+  boneName: string;
+  frames: RagAnimationFrame[];
+}
+
+export interface RagAnimationData {
+  format: string;
+  version: string;
+  duration: number;
+  fps: number;
+  bones: Array<{ id: number; name: string; parentId: number | null }>;
+  slots: Array<Record<string, unknown>>;
+  keyframes: RagAnimationBoneTrack[];
+}
+
 export interface RagAnimationDatasetItem {
   datasetFormat: 'spinebones-rag-animation';
   version: string;
@@ -34,7 +62,7 @@ export interface RagAnimationDatasetItem {
   source: RagSourceInfo;
   rigProfile: RagRigProfile;
   boneMapping: Record<string, string>;
-  animation: unknown;
+  animation: RagAnimationData;
 }
 
 export interface RagQueryContext {
