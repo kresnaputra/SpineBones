@@ -31,6 +31,9 @@ export interface RagPipelineResult {
   flatKeyframes: FlatKeyframeEntry[];
 }
 
+const MIN_RAG_SCORE = 5;
+const MIN_MAPPED_BONES = 3;
+
 // Build a target semantic mapping by checking which source bone names from the dataset
 // also exist in the active rig. Falls back gracefully when rigs differ.
 const buildTargetSemanticMapping = (
@@ -62,13 +65,27 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
   const query = buildRagQueryContext(prompt, activeBoneNames);
   const [top] = retrieveTopAnimations(dataset, query, 1);
   if (!top) throw new Error('No matching animation found in dataset');
+  if (top.score < MIN_RAG_SCORE) {
+    throw new Error(
+      `No confident RAG match for prompt "${prompt}" (top score ${top.score}, minimum ${MIN_RAG_SCORE})`,
+    );
+  }
 
   const { item, score, reasons } = top;
 
   const targetSemanticMapping = buildTargetSemanticMapping(item.boneMapping, activeBoneNames);
   const mappedBones = buildSemanticBoneMap(item.boneMapping, targetSemanticMapping);
+  const mappedBoneCount = Object.keys(mappedBones).length;
+  if (mappedBoneCount < MIN_MAPPED_BONES) {
+    throw new Error(
+      `RAG match "${item.id}" only mapped ${mappedBoneCount} bone(s); minimum ${MIN_MAPPED_BONES} required`,
+    );
+  }
 
   const flatKeyframes = flattenDatasetKeyframes(item.animation, mappedBones);
+  if (flatKeyframes.length === 0) {
+    throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
+  }
 
   return { item, score, reasons, mappedBones, keyframeCount: flatKeyframes.length, flatKeyframes };
 };

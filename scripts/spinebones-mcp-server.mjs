@@ -29,6 +29,23 @@ const requestJson = async (path, init) => {
   return response.json();
 };
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitForRagResult = async (requestId, timeoutMs = 4000) => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const state = await requestJson('/state');
+    const result = state?.lastRagResult ?? null;
+    if (result?.requestId === requestId && result?.status && result.status !== 'running') {
+      return result;
+    }
+    await delay(120);
+  }
+
+  throw new Error(`Timed out waiting for RAG result for request ${requestId}`);
+};
+
 const asTextResult = (label, payload) => ({
   content: [
     {
@@ -1700,13 +1717,19 @@ const createServer = () => {
       },
     },
     async ({ prompt }) => {
-      const result = await requestJson('/command', {
+      const requestId = randomUUID();
+      await requestJson('/command', {
         method: 'POST',
         body: JSON.stringify({
           commandType: 'apply_rag_animation',
           prompt,
+          requestId,
         }),
       });
+      const result = await waitForRagResult(requestId);
+      if (result.status === 'failed') {
+        throw new Error(result.error ?? 'RAG animation failed in SpineBones');
+      }
       return asTextResult('RAG animation applied in SpineBones', result);
     },
   );

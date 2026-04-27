@@ -37,6 +37,7 @@ import { applyRagAnimation, runRagPipeline } from './thesis/ragPipeline';
 
 type McpEditorCommand = {
   commandType: string;
+  requestId?: string;
   mode?: Mode;
   tool?: Tool;
   prompt?: string;
@@ -116,6 +117,23 @@ type McpEditorCommand = {
     easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
   };
 };
+
+type McpRagCommandSnapshot = {
+  requestId: string | null;
+  prompt: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  itemId?: string;
+  score?: number;
+  reasons?: string[];
+  mappedBoneCount?: number;
+  mappedBones?: Record<string, string>;
+  keyframeCount?: number;
+  error?: string;
+};
+
+let latestMcpRagResult: McpRagCommandSnapshot | null = null;
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, Math.round(value)));
@@ -1338,6 +1356,7 @@ const buildMcpSnapshot = () => {
     audioVolume: animation.audioVolume,
     audioOffsetFrames: animation.audioOffsetFrames,
     keyframes: animation.keyframes,
+    lastRagResult: latestMcpRagResult,
   };
 };
 
@@ -1872,14 +1891,44 @@ function App() {
 
       if (payload.commandType === 'apply_rag_animation') {
         if (!payload.prompt) throw new Error('apply_rag_animation requires a prompt');
-        const result = runRagPipeline(payload.prompt);
-        applyRagAnimation(result);
-        console.info('MCP apply_rag_animation:', {
-          item: result.item.id,
-          score: result.score,
-          mappedBones: Object.keys(result.mappedBones).length,
-          keyframeCount: result.keyframeCount,
-        });
+        latestMcpRagResult = {
+          requestId: payload.requestId ?? null,
+          prompt: payload.prompt,
+          status: 'running',
+          startedAt: new Date().toISOString(),
+        };
+        await updateMcpEditorState(buildMcpSnapshot());
+
+        try {
+          const result = runRagPipeline(payload.prompt);
+          applyRagAnimation(result);
+          latestMcpRagResult = {
+            requestId: payload.requestId ?? null,
+            prompt: payload.prompt,
+            status: 'completed',
+            startedAt: latestMcpRagResult.startedAt,
+            completedAt: new Date().toISOString(),
+            itemId: result.item.id,
+            score: result.score,
+            reasons: result.reasons,
+            mappedBoneCount: Object.keys(result.mappedBones).length,
+            mappedBones: result.mappedBones,
+            keyframeCount: result.keyframeCount,
+          };
+          console.info('MCP apply_rag_animation:', latestMcpRagResult);
+        } catch (error) {
+          latestMcpRagResult = {
+            requestId: payload.requestId ?? null,
+            prompt: payload.prompt,
+            status: 'failed',
+            startedAt: latestMcpRagResult.startedAt,
+            completedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          };
+          console.error('MCP apply_rag_animation failed:', latestMcpRagResult);
+        }
+
+        await updateMcpEditorState(buildMcpSnapshot());
         return;
       }
 
