@@ -125,8 +125,10 @@ export const getAttachmentMeshScreenVertices = (
         const wbPos = worldToScreen(wb._wx, wb._wy);
         const { totalScaleX: tsx, totalScaleY: tsy, scale: sc, cos: wc, sin: ws } =
           getAttachmentTransform(attachment, wb, zoom);
-        const cx = attachment.x * zoom;
-        const cy = attachment.y * zoom;
+        const flipX = tsx < 0 ? -1 : 1;
+        const flipY = tsy < 0 ? -1 : 1;
+        const cx = attachment.x * zoom * flipX;
+        const cy = attachment.y * zoom * flipY;
         const vx = vertex.x * tsx * sc;
         const vy = vertex.y * tsy * sc;
         wx += weight * (wbPos.x + (cx + vx) * wc - (cy + vy) * ws);
@@ -142,8 +144,10 @@ export const getAttachmentMeshScreenVertices = (
     // Keep the attachment pivot/offset aligned with the regular image renderer.
     // In the non-mesh path, attachment.x/y are scaled by zoom, while the image
     // size itself uses zoom * 0.5. Mesh vertices should preserve that same center.
-    const centerX = attachment.x * zoom;
-    const centerY = attachment.y * zoom;
+    const flipX = totalScaleX < 0 ? -1 : 1;
+    const flipY = totalScaleY < 0 ? -1 : 1;
+    const centerX = attachment.x * zoom * flipX;
+    const centerY = attachment.y * zoom * flipY;
     const vertexX = vertex.x * totalScaleX * scale;
     const vertexY = vertex.y * totalScaleY * scale;
     return {

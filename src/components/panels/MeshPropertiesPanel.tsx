@@ -41,7 +41,6 @@ export const MeshPropertiesPanel = () => {
     setMeshDeformKeyframeAtFrame,
     updateMeshDeformKeyframeEasing,
     insertKeyframe,
-    replaceMeshDeformKeyframesForAttachment,
     clearMeshDeformKeyframesForAttachment,
   } = useAnimationStore();
 
@@ -119,7 +118,7 @@ export const MeshPropertiesPanel = () => {
         setMeshDeformKeyframeAtFrame(
           attachmentKey,
           0,
-          attachment.meshVertices.map((v) => ({ x: v.x, y: v.y })),
+          (attachment.meshVertices ?? []).map((v) => ({ x: v.x, y: v.y })),
         );
       }
       setMeshDeformKeyframeAtFrame(
@@ -165,7 +164,7 @@ export const MeshPropertiesPanel = () => {
       setMeshDeformKeyframeAtFrame(attachmentKey, frame, currentResolved);
     } else {
       // Reset selected vertices to UV-derived base positions.
-      const resetVertices = attachment.meshVertices!.map((v, i) => {
+      const resetVertices = (attachment.meshVertices ?? []).map((v, i) => {
         if (!operationIndices.includes(i)) return v;
         const base = getVertexBasePosition(v, attachment);
         return { ...v, x: base.x, y: base.y };

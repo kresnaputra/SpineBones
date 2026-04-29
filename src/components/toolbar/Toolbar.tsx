@@ -13,7 +13,7 @@ import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripEx
 import { exportVideo } from '../../utils/videoExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
-import { ensureMeshAttachmentAsync } from '../../utils/meshAttachment';
+import { ensureMeshAttachmentAsync, getMeshAttachmentKey } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -326,6 +326,14 @@ export const Toolbar = () => {
                 if (!activeSlot || !activeAttachment) return;
                 if (activeAttachment.type !== 'mesh') {
                   captureSnapshot();
+                  useAnimationStore
+                    .getState()
+                    .clearMeshDeformKeyframesForAttachment(
+                      getMeshAttachmentKey({
+                        slotId: activeSlot.id,
+                        name: activeAttachment.name,
+                      }),
+                    );
                   updateAttachment(
                     activeSlot.id,
                     activeAttachment.name,

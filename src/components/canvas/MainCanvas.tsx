@@ -227,6 +227,9 @@ export const MainCanvas = () => {
     selectedIndices: number[];
     startScreenX: number;
     startScreenY: number;
+    totalRotation: number;
+    totalScaleX: number;
+    totalScaleY: number;
     initialVertices: NonNullable<typeof attachments[number]['meshVertices']>;
   } | null>(null);
   const [meshMarquee, setMeshMarquee] = useState<{
@@ -278,6 +281,12 @@ export const MainCanvas = () => {
       captureSnapshot();
       const nextAttachment = await ensureMeshAttachmentAsync(activeAttachment);
       if (cancelled) return;
+      clearMeshDeformKeyframesForAttachment(
+        getMeshAttachmentKey({
+          slotId: activeSlot.id,
+          name: activeAttachment.name,
+        }),
+      );
       updateAttachment(activeSlot.id, activeAttachment.name, nextAttachment);
     };
 
@@ -286,7 +295,7 @@ export const MainCanvas = () => {
     return () => {
       cancelled = true;
     };
-  }, [tool, activeSlot, activeAttachment, updateAttachment, captureSnapshot]);
+  }, [tool, activeSlot, activeAttachment, updateAttachment, captureSnapshot, clearMeshDeformKeyframesForAttachment]);
 
   // Clear vertex selection when the mesh tool is exited or the active attachment changes.
   useEffect(() => {
@@ -645,12 +654,19 @@ export const MainCanvas = () => {
     }
 
     if (meshDragStart && activeBone) {
-      const dx = (sx - meshDragStart.startScreenX) / camZoom;
-      const dy = (sy - meshDragStart.startScreenY) / camZoom;
+      const dx = sx - meshDragStart.startScreenX;
+      const dy = sy - meshDragStart.startScreenY;
+      const cos = Math.cos(-meshDragStart.totalRotation);
+      const sin = Math.sin(-meshDragStart.totalRotation);
+      const meshScale = effectiveZoom * 0.5;
+      const localDx =
+        (dx * cos - dy * sin) / (meshScale * meshDragStart.totalScaleX || 1);
+      const localDy =
+        (dx * sin + dy * cos) / (meshScale * meshDragStart.totalScaleY || 1);
       const selectedSet = new Set(meshDragStart.selectedIndices);
       const nextVertices = meshDragStart.initialVertices.map((vertex, index) => {
         if (!selectedSet.has(index)) return vertex;
-        return { ...vertex, x: vertex.x + dx, y: vertex.y + dy };
+        return { ...vertex, x: vertex.x + localDx, y: vertex.y + localDy };
       });
       if (mode === 'animate') {
         const attachmentKey = getMeshAttachmentKey({
@@ -922,6 +938,9 @@ export const MainCanvas = () => {
           selectedIndices: nextSelected,
           startScreenX: sx,
           startScreenY: sy,
+          totalRotation: ((activeBone._wrot + displayAttachment.rotation) * Math.PI) / 180,
+          totalScaleX: displayAttachment.scaleX * activeBone.scaleX,
+          totalScaleY: displayAttachment.scaleY * activeBone.scaleY,
           initialVertices: displayAttachment.meshVertices.map((vertex) => ({ ...vertex })),
         });
         return;

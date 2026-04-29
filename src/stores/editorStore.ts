@@ -97,6 +97,5 @@ export const useEditorStore = create<EditorState>((set) => ({
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),
   setCurrentProjectPath: (currentProjectPath) => set({ currentProjectPath }),
-  selectedMeshVertexIndices: [],
   setSelectedMeshVertexIndices: (selectedMeshVertexIndices) => set({ selectedMeshVertexIndices }),
 }));
