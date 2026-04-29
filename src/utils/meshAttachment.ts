@@ -115,6 +115,7 @@ export const ensureMeshAttachment = (attachment: Attachment): Attachment => ({
     attachment.meshTriangles && attachment.meshTriangles.length > 0
       ? attachment.meshTriangles
       : createGridMeshTriangles(),
+  meshGrid: attachment.meshGrid ?? { columns: 3, rows: 3 },
 });
 
 export const ensureMeshAttachmentAsync = async (
@@ -267,6 +268,220 @@ export const resolveMeshVerticesAtFrame = (
 
 type ScreenPoint = { x: number; y: number };
 
+type Barycentric = { t0: number; t1: number; t2: number };
+
+const EPSILON = 1e-6;
+const HIT_TOLERANCE = 0.001;
+
+const getGridVertexIndex = (columns: number, row: number, col: number) =>
+  row * columns + col;
+
+const getBarycentric = (
+  point: ScreenPoint,
+  p0: ScreenPoint,
+  p1: ScreenPoint,
+  p2: ScreenPoint,
+): Barycentric | null => {
+  const denom =
+    (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+  if (Math.abs(denom) < EPSILON) return null;
+
+  const t0 =
+    ((p1.y - p2.y) * (point.x - p2.x) + (p2.x - p1.x) * (point.y - p2.y)) / denom;
+  const t1 =
+    ((p2.y - p0.y) * (point.x - p2.x) + (p0.x - p2.x) * (point.y - p2.y)) / denom;
+  const t2 = 1 - t0 - t1;
+
+  return { t0, t1, t2 };
+};
+
+const isInsideBarycentric = ({ t0, t1, t2 }: Barycentric) =>
+  t0 >= -HIT_TOLERANCE && t1 >= -HIT_TOLERANCE && t2 >= -HIT_TOLERANCE;
+
+const interpolateMeshVertex = (
+  bary: Barycentric,
+  v0: MeshVertex,
+  v1: MeshVertex,
+  v2: MeshVertex,
+): MeshVertex => ({
+  x: bary.t0 * v0.x + bary.t1 * v1.x + bary.t2 * v2.x,
+  y: bary.t0 * v0.y + bary.t1 * v1.y + bary.t2 * v2.y,
+  u: bary.t0 * v0.u + bary.t1 * v1.u + bary.t2 * v2.u,
+  v: bary.t0 * v0.v + bary.t1 * v1.v + bary.t2 * v2.v,
+});
+
+const insertSortedUnique = (values: number[], value: number) => {
+  const clamped = Math.max(0, Math.min(1, value));
+  if (values.some(existing => Math.abs(existing - clamped) < 0.0001)) return values;
+  return [...values, clamped].sort((a, b) => a - b);
+};
+
+const findAxisSegment = (values: number[], value: number) => {
+  if (values.length < 2) return 0;
+  for (let i = 0; i < values.length - 1; i += 1) {
+    const a = values[i]!;
+    const b = values[i + 1]!;
+    if (value >= a - EPSILON && value <= b + EPSILON) return i;
+  }
+  return Math.max(0, values.length - 2);
+};
+
+const sampleGridPosition = (
+  vertices: MeshVertex[],
+  columns: number,
+  rows: number,
+  uValues: number[],
+  vValues: number[],
+  u: number,
+  v: number,
+) => {
+  const col = findAxisSegment(uValues, u);
+  const row = findAxisSegment(vValues, v);
+  const u0 = uValues[col] ?? 0;
+  const u1 = uValues[col + 1] ?? u0;
+  const v0 = vValues[row] ?? 0;
+  const v1 = vValues[row + 1] ?? v0;
+  const tx = Math.abs(u1 - u0) < EPSILON ? 0 : (u - u0) / (u1 - u0);
+  const ty = Math.abs(v1 - v0) < EPSILON ? 0 : (v - v0) / (v1 - v0);
+
+  const topLeft = vertices[getGridVertexIndex(columns, row, col)]!;
+  const topRight = vertices[getGridVertexIndex(columns, row, Math.min(col + 1, columns - 1))]!;
+  const bottomLeft = vertices[getGridVertexIndex(columns, Math.min(row + 1, rows - 1), col)]!;
+  const bottomRight = vertices[
+    getGridVertexIndex(columns, Math.min(row + 1, rows - 1), Math.min(col + 1, columns - 1))
+  ]!;
+
+  const topX = lerp(topLeft.x, topRight.x, tx);
+  const topY = lerp(topLeft.y, topRight.y, tx);
+  const bottomX = lerp(bottomLeft.x, bottomRight.x, tx);
+  const bottomY = lerp(bottomLeft.y, bottomRight.y, tx);
+
+  return {
+    x: lerp(topX, bottomX, ty),
+    y: lerp(topY, bottomY, ty),
+  };
+};
+
+const rebuildGridFromAxes = (
+  vertices: MeshVertex[],
+  columns: number,
+  rows: number,
+  nextUValues: number[],
+  nextVValues: number[],
+): MeshVertex[] => {
+  const uValues = Array.from({ length: columns }, (_, col) =>
+    vertices[getGridVertexIndex(columns, 0, col)]?.u ?? (columns === 1 ? 0 : col / (columns - 1)),
+  );
+  const vValues = Array.from({ length: rows }, (_, row) =>
+    vertices[getGridVertexIndex(columns, row, 0)]?.v ?? (rows === 1 ? 0 : row / (rows - 1)),
+  );
+
+  const nextVertices: MeshVertex[] = [];
+  for (const v of nextVValues) {
+    for (const u of nextUValues) {
+      const pos = sampleGridPosition(vertices, columns, rows, uValues, vValues, u, v);
+      nextVertices.push({ ...pos, u, v });
+    }
+  }
+  return nextVertices;
+};
+
+const tryInsertGridLinesAtPoint = (
+  attachment: Attachment,
+  screenX: number,
+  screenY: number,
+  screenVertices: ScreenPoint[],
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
+  const { meshGrid, meshVertices } = attachment;
+  if (!meshGrid || !meshVertices?.length) return null;
+
+  const { columns, rows } = meshGrid;
+  if (columns < 2 || rows < 2 || meshVertices.length !== columns * rows) return null;
+
+  const point = { x: screenX, y: screenY };
+  let inserted: Pick<MeshVertex, 'u' | 'v'> | null = null;
+
+  for (let row = 0; row < rows - 1 && !inserted; row += 1) {
+    for (let col = 0; col < columns - 1; col += 1) {
+      const i0 = getGridVertexIndex(columns, row, col);
+      const i1 = getGridVertexIndex(columns, row, col + 1);
+      const i2 = getGridVertexIndex(columns, row + 1, col + 1);
+      const i3 = getGridVertexIndex(columns, row + 1, col);
+      const p0 = screenVertices[i0];
+      const p1 = screenVertices[i1];
+      const p2 = screenVertices[i2];
+      const p3 = screenVertices[i3];
+      const v0 = meshVertices[i0];
+      const v1 = meshVertices[i1];
+      const v2 = meshVertices[i2];
+      const v3 = meshVertices[i3];
+      if (!p0 || !p1 || !p2 || !p3 || !v0 || !v1 || !v2 || !v3) continue;
+
+      const first = getBarycentric(point, p0, p1, p2);
+      if (first && isInsideBarycentric(first)) {
+        inserted = interpolateMeshVertex(first, v0, v1, v2);
+        break;
+      }
+
+      const second = getBarycentric(point, p0, p2, p3);
+      if (second && isInsideBarycentric(second)) {
+        inserted = interpolateMeshVertex(second, v0, v2, v3);
+        break;
+      }
+    }
+  }
+
+  if (!inserted) return null;
+
+  const uValues = Array.from({ length: columns }, (_, col) => meshVertices[getGridVertexIndex(columns, 0, col)]?.u ?? 0);
+  const vValues = Array.from({ length: rows }, (_, row) => meshVertices[getGridVertexIndex(columns, row, 0)]?.v ?? 0);
+  const nextUValues = insertSortedUnique(uValues, inserted.u);
+  const nextVValues = insertSortedUnique(vValues, inserted.v);
+  if (nextUValues.length === uValues.length && nextVValues.length === vValues.length) return null;
+
+  const nextColumns = nextUValues.length;
+  const nextRows = nextVValues.length;
+  const nextVertices = rebuildGridFromAxes(meshVertices, columns, rows, nextUValues, nextVValues);
+
+  const nextKeyframes = { ...meshDeformKeyframes };
+  const existing = nextKeyframes[attachmentKey];
+  if (existing) {
+    const updated: typeof existing = {};
+    for (const [frameStr, kf] of Object.entries(existing)) {
+      const frameVertices = meshVertices.map((vertex, index) => ({
+        ...vertex,
+        x: kf.vertices[index]?.x ?? vertex.x,
+        y: kf.vertices[index]?.y ?? vertex.y,
+      }));
+      updated[Number(frameStr)] = {
+        ...kf,
+        vertices: rebuildGridFromAxes(
+          frameVertices,
+          columns,
+          rows,
+          nextUValues,
+          nextVValues,
+        ).map(({ x, y }) => ({ x, y })),
+      };
+    }
+    nextKeyframes[attachmentKey] = updated;
+  }
+
+  return {
+    attachment: {
+      ...attachment,
+      meshVertices: nextVertices,
+      meshTriangles: createGridMeshTriangles(nextColumns, nextRows),
+      meshGrid: { columns: nextColumns, rows: nextRows },
+      meshPinnedVertices: undefined,
+      meshVertexWeights: undefined,
+    },
+    meshDeformKeyframes: nextKeyframes,
+  };
+};
+
 /** Reverse-project a vertex's UV back to the attachment-local base position. */
 export const getVertexBasePosition = (
   vertex: MeshVertex,
@@ -329,6 +544,7 @@ export const rebuildMeshGrid = (
   ...attachment,
   meshVertices: createGridMeshVertices(attachment, cols, rows),
   meshTriangles: createGridMeshTriangles(cols, rows),
+  meshGrid: { columns: cols, rows },
   meshPinnedVertices: undefined,
   meshVertexWeights: undefined,
 });
@@ -350,6 +566,16 @@ export const insertMeshVertex = (
   const { meshVertices, meshTriangles } = attachment;
   if (!meshVertices?.length || !meshTriangles?.length) return null;
 
+  const gridInsert = tryInsertGridLinesAtPoint(
+    attachment,
+    screenX,
+    screenY,
+    screenVertices,
+    meshDeformKeyframes,
+    attachmentKey,
+  );
+  if (gridInsert) return gridInsert;
+
   // Find the triangle that contains the click position in screen space.
   let triIndex = -1;
   let bary = { t0: 0, t1: 0, t2: 0 };
@@ -361,19 +587,10 @@ export const insertMeshVertex = (
     const p2 = screenVertices[i2];
     if (!p0 || !p1 || !p2) continue;
 
-    const denom =
-      (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
-    if (Math.abs(denom) < 1e-6) continue;
-
-    const t0 =
-      ((p1.y - p2.y) * (screenX - p2.x) + (p2.x - p1.x) * (screenY - p2.y)) / denom;
-    const t1 =
-      ((p2.y - p0.y) * (screenX - p2.x) + (p0.x - p2.x) * (screenY - p2.y)) / denom;
-    const t2 = 1 - t0 - t1;
-
-    if (t0 >= -0.001 && t1 >= -0.001 && t2 >= -0.001) {
+    const hit = getBarycentric({ x: screenX, y: screenY }, p0, p1, p2);
+    if (hit && isInsideBarycentric(hit)) {
       triIndex = ti;
-      bary = { t0, t1, t2 };
+      bary = hit;
       break;
     }
   }
@@ -385,12 +602,7 @@ export const insertMeshVertex = (
   const v1 = meshVertices[i1]!;
   const v2 = meshVertices[i2]!;
 
-  const newVertex: MeshVertex = {
-    x: bary.t0 * v0.x + bary.t1 * v1.x + bary.t2 * v2.x,
-    y: bary.t0 * v0.y + bary.t1 * v1.y + bary.t2 * v2.y,
-    u: bary.t0 * v0.u + bary.t1 * v1.u + bary.t2 * v2.u,
-    v: bary.t0 * v0.v + bary.t1 * v1.v + bary.t2 * v2.v,
-  };
+  const newVertex = interpolateMeshVertex(bary, v0, v1, v2);
 
   const newIdx = meshVertices.length;
   const newVertices = [...meshVertices, newVertex];
@@ -420,6 +632,7 @@ export const insertMeshVertex = (
       ...attachment,
       meshVertices: newVertices,
       meshTriangles: newTriangles,
+      meshGrid: undefined,
       meshPinnedVertices: attachment.meshPinnedVertices
         ? [...attachment.meshPinnedVertices, false]
         : undefined,

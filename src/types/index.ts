@@ -37,6 +37,7 @@ export interface Attachment {
   scaleY: number;
   meshVertices?: MeshVertex[];
   meshTriangles?: MeshTriangle[];
+  meshGrid?: { columns: number; rows: number };
   meshPinnedVertices?: boolean[];
   meshVertexWeights?: MeshVertexWeight[][];
 }

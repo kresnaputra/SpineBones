@@ -214,6 +214,165 @@ const drawTexturedTriangle = (
   ctx.restore();
 };
 
+const getGridVertexIndex = (columns: number, row: number, col: number) =>
+  row * columns + col;
+
+const getMidVertex = (
+  a: MeshVertex,
+  b: MeshVertex,
+  c: MeshVertex,
+  d: MeshVertex,
+): MeshVertex => ({
+  x: (a.x + b.x + c.x + d.x) / 4,
+  y: (a.y + b.y + c.y + d.y) / 4,
+  u: (a.u + b.u + c.u + d.u) / 4,
+  v: (a.v + b.v + c.v + d.v) / 4,
+});
+
+const getMidPoint = (
+  a: ScreenPoint,
+  b: ScreenPoint,
+  c: ScreenPoint,
+  d: ScreenPoint,
+): ScreenPoint => ({
+  x: (a.x + b.x + c.x + d.x) / 4,
+  y: (a.y + b.y + c.y + d.y) / 4,
+});
+
+const drawTexturedGridMesh = (
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  attachment: Attachment,
+  screenVertices: ScreenPoint[],
+) => {
+  const columns = attachment.meshGrid?.columns ?? 0;
+  const rows = attachment.meshGrid?.rows ?? 0;
+  const vertices = attachment.meshVertices;
+  if (
+    !vertices?.length ||
+    columns < 2 ||
+    rows < 2 ||
+    vertices.length !== columns * rows
+  ) {
+    return false;
+  }
+
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let col = 0; col < columns - 1; col += 1) {
+      const i0 = getGridVertexIndex(columns, row, col);
+      const i1 = getGridVertexIndex(columns, row, col + 1);
+      const i2 = getGridVertexIndex(columns, row + 1, col + 1);
+      const i3 = getGridVertexIndex(columns, row + 1, col);
+      const v0 = vertices[i0];
+      const v1 = vertices[i1];
+      const v2 = vertices[i2];
+      const v3 = vertices[i3];
+      const p0 = screenVertices[i0];
+      const p1 = screenVertices[i1];
+      const p2 = screenVertices[i2];
+      const p3 = screenVertices[i3];
+      if (!v0 || !v1 || !v2 || !v3 || !p0 || !p1 || !p2 || !p3) continue;
+
+      const centerVertex = getMidVertex(v0, v1, v2, v3);
+      const centerPoint = getMidPoint(p0, p1, p2, p3);
+      drawTexturedTriangle(ctx, image, [v0, v1, centerVertex], [p0, p1, centerPoint]);
+      drawTexturedTriangle(ctx, image, [v1, v2, centerVertex], [p1, p2, centerPoint]);
+      drawTexturedTriangle(ctx, image, [v2, v3, centerVertex], [p2, p3, centerPoint]);
+      drawTexturedTriangle(ctx, image, [v3, v0, centerVertex], [p3, p0, centerPoint]);
+    }
+  }
+
+  return true;
+};
+
+const drawGridLines = (
+  ctx: CanvasRenderingContext2D,
+  attachment: Attachment,
+  screenVertices: ScreenPoint[],
+) => {
+  const columns = attachment.meshGrid?.columns ?? 0;
+  const rows = attachment.meshGrid?.rows ?? 0;
+  if (
+    columns < 2 ||
+    rows < 2 ||
+    !attachment.meshVertices?.length ||
+    attachment.meshVertices.length !== columns * rows
+  ) {
+    return false;
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    ctx.beginPath();
+    for (let col = 0; col < columns; col += 1) {
+      const point = screenVertices[getGridVertexIndex(columns, row, col)];
+      if (!point) continue;
+      if (col === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+  }
+
+  for (let col = 0; col < columns; col += 1) {
+    ctx.beginPath();
+    for (let row = 0; row < rows; row += 1) {
+      const point = screenVertices[getGridVertexIndex(columns, row, col)];
+      if (!point) continue;
+      if (row === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+  }
+
+  return true;
+};
+
+const getConvexHull = (points: ScreenPoint[]) => {
+  const sorted = [...points]
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .sort((a, b) => a.x - b.x || a.y - b.y);
+  if (sorted.length <= 2) return sorted;
+
+  const cross = (origin: ScreenPoint, a: ScreenPoint, b: ScreenPoint) =>
+    (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+
+  const lower: ScreenPoint[] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  const upper: ScreenPoint[] = [];
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    const point = sorted[i]!;
+    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+};
+
+const drawHullOutline = (
+  ctx: CanvasRenderingContext2D,
+  screenVertices: ScreenPoint[],
+) => {
+  const hull = getConvexHull(screenVertices);
+  if (hull.length < 2) return;
+
+  ctx.beginPath();
+  hull.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+};
+
 const getOutlineCanvas = (
   imageData: string,
   color: string,
@@ -282,16 +441,19 @@ export const drawAttachment = (
 
   if (attachment.type === 'mesh' && attachment.meshVertices?.length && attachment.meshTriangles?.length) {
     const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom, allBones);
-    attachment.meshTriangles.forEach(([i0, i1, i2]) => {
-      const v0 = attachment.meshVertices?.[i0];
-      const v1 = attachment.meshVertices?.[i1];
-      const v2 = attachment.meshVertices?.[i2];
-      const p0 = screenVertices[i0];
-      const p1 = screenVertices[i1];
-      const p2 = screenVertices[i2];
-      if (!v0 || !v1 || !v2 || !p0 || !p1 || !p2) return;
-      drawTexturedTriangle(ctx, img, [v0, v1, v2], [p0, p1, p2]);
-    });
+    const wasGridRendered = drawTexturedGridMesh(ctx, img, attachment, screenVertices);
+    if (!wasGridRendered) {
+      attachment.meshTriangles.forEach(([i0, i1, i2]) => {
+        const v0 = attachment.meshVertices?.[i0];
+        const v1 = attachment.meshVertices?.[i1];
+        const v2 = attachment.meshVertices?.[i2];
+        const p0 = screenVertices[i0];
+        const p1 = screenVertices[i1];
+        const p2 = screenVertices[i2];
+        if (!v0 || !v1 || !v2 || !p0 || !p1 || !p2) return;
+        drawTexturedTriangle(ctx, img, [v0, v1, v2], [p0, p1, p2]);
+      });
+    }
     ctx.restore();
     return;
   }
@@ -373,38 +535,33 @@ export const drawAttachmentOutline = (
 
     ctx.save();
 
-    // Internal (non-boundary) edges — faint, for mesh-editing context.
-    if (options?.showInternalEdges && attachment.meshTriangles?.length) {
-      ctx.strokeStyle = 'rgba(124,58,237,0.28)';
-      ctx.lineWidth = 0.8;
+    const shouldUseEditorGrid = Boolean(options?.showInternalEdges);
+
+    if (shouldUseEditorGrid) {
+      ctx.strokeStyle = 'rgba(168,85,247,0.72)';
+      ctx.lineWidth = 1.25;
       ctx.setLineDash([]);
-      attachment.meshTriangles.forEach(([i0, i1, i2]) => {
-        const pts = [screenVertices[i0], screenVertices[i1], screenVertices[i2]];
-        if (!pts[0] || !pts[1] || !pts[2]) return;
+      const didDrawGrid = drawGridLines(ctx, attachment, screenVertices);
+      if (!didDrawGrid) {
+        drawHullOutline(ctx, screenVertices);
+      }
+    } else {
+      // Boundary edges for non-grid selection outlines.
+      const boundaryEdges = getMeshBoundaryEdges(attachment.meshTriangles);
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash(options?.dash ?? [6, 4]);
+      boundaryEdges.forEach(([startIndex, endIndex]) => {
+        const p0 = screenVertices[startIndex];
+        const p1 = screenVertices[endIndex];
+        if (!p0 || !p1) return;
         ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        ctx.lineTo(pts[1].x, pts[1].y);
-        ctx.lineTo(pts[2].x, pts[2].y);
-        ctx.closePath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
         ctx.stroke();
       });
+      ctx.setLineDash([]);
     }
-
-    // Boundary edges.
-    const boundaryEdges = getMeshBoundaryEdges(attachment.meshTriangles);
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = lineWidth;
-    ctx.setLineDash(options?.dash ?? [6, 4]);
-    boundaryEdges.forEach(([startIndex, endIndex]) => {
-      const p0 = screenVertices[startIndex];
-      const p1 = screenVertices[endIndex];
-      if (!p0 || !p1) return;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
 
     // Vertex handles — square (normal/selected) or diamond (pinned).
     screenVertices.forEach((point, i) => {

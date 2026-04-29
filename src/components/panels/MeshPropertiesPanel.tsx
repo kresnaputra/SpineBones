@@ -12,7 +12,6 @@ import {
   getVertexBasePosition,
 } from '../../utils/meshAttachment';
 import { normalizeKeyframeEasing } from '../../utils/easing';
-import type { MeshVertexWeight } from '../../types';
 
 const GRID_PRESETS = [
   { label: '2×2', cols: 2, rows: 2 },
@@ -85,6 +84,7 @@ export const MeshPropertiesPanel = () => {
   const pinnedIndices = attachment.meshPinnedVertices
     ?.map((p, i) => (p ? i : -1))
     .filter((i) => i >= 0) ?? [];
+  const activeGrid = attachment.meshGrid ?? null;
 
   // ─── Grid rebuild ──────────────────────────────────────────────────────────
 
@@ -190,38 +190,6 @@ export const MeshPropertiesPanel = () => {
     operationIndices.length > 0 &&
     operationIndices.every((i) => attachment.meshPinnedVertices?.[i]);
 
-  // ─── Bone weights for selected vertex ─────────────────────────────────────
-
-  // Show weight UI only when exactly one vertex is selected (keeps MVP tractable).
-  const singleSelected =
-    selectedMeshVertexIndices.length === 1 ? selectedMeshVertexIndices[0] : null;
-
-  const currentWeights: MeshVertexWeight[] =
-    singleSelected !== null
-      ? (attachment.meshVertexWeights?.[singleSelected] ?? [])
-      : [];
-
-  const handleSetWeight = (boneId: number, rawWeight: number) => {
-    if (singleSelected === null) return;
-    captureSnapshot();
-    const weight = Math.max(0, Math.min(1, rawWeight));
-    const existing = attachment.meshVertexWeights?.map((w) => [...w]) ??
-      new Array(vertexCount).fill(null).map(() => [] as MeshVertexWeight[]);
-    const row = existing[singleSelected] ?? [];
-    const idx = row.findIndex((w) => w.boneId === boneId);
-    if (idx >= 0) {
-      if (weight === 0) {
-        row.splice(idx, 1);
-      } else {
-        row[idx]!.weight = weight;
-      }
-    } else if (weight > 0) {
-      row.push({ boneId, weight });
-    }
-    existing[singleSelected] = row;
-    updateAttachment(activeSlot.id, attachment.name, { meshVertexWeights: existing });
-  };
-
   // ─── UI ────────────────────────────────────────────────────────────────────
 
   return (
@@ -257,14 +225,23 @@ export const MeshPropertiesPanel = () => {
         <div className="text-[9px] text-text-dim mb-1.5 uppercase tracking-wide">Rebuild Grid</div>
         <div className="flex gap-1 flex-wrap">
           {GRID_PRESETS.map(({ label, cols, rows }) => (
-            <button
-              key={label}
-              onClick={() => handleRebuildGrid(cols, rows)}
-              className="px-2 py-0.5 text-[10px] rounded border border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text transition-all"
-              title={`Rebuild as ${cols}×${rows} grid (clears deform keyframes)`}
-            >
-              {label}
-            </button>
+            (() => {
+              const isActive = activeGrid?.columns === cols && activeGrid.rows === rows;
+              return (
+                <button
+                  key={label}
+                  onClick={() => handleRebuildGrid(cols, rows)}
+                  className={`px-2 py-0.5 text-[10px] rounded border transition-all ${
+                    isActive
+                      ? 'border-accent bg-accent text-white shadow-[0_0_0_1px_rgba(124,58,237,0.35)]'
+                      : 'border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text'
+                  }`}
+                  title={`Rebuild as ${cols}×${rows} grid (clears deform keyframes)`}
+                >
+                  {label}
+                </button>
+              );
+            })()
           ))}
         </div>
         <div className="text-[9px] text-text-dim mt-1">Clears deform keyframes for this mesh.</div>
@@ -326,37 +303,6 @@ export const MeshPropertiesPanel = () => {
           {selectedArePinned ? 'Unpin' : 'Pin'}
         </button>
       </div>
-
-      {/* Bone weights (single vertex) */}
-      {singleSelected !== null && (
-        <div className="px-3 py-2">
-          <div className="text-[9px] text-text-dim mb-1.5 uppercase tracking-wide">
-            Bone Weights — Vertex {singleSelected}
-          </div>
-          <div className="space-y-1">
-            {bones.map((bone) => {
-              const w = currentWeights.find((ww) => ww.boneId === bone.id)?.weight ?? 0;
-              return (
-                <div key={bone.id} className="flex items-center gap-2">
-                  <span className="text-[10px] text-text-dim truncate flex-1">{bone.name}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={w.toFixed(2)}
-                    onChange={(e) => handleSetWeight(bone.id, Number(e.target.value))}
-                    className="w-14 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[10px] focus:outline-none focus:border-accent"
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <div className="text-[9px] text-text-dim mt-1">
-            Weights ≥ 2 bones activate multi-bone blending during render.
-          </div>
-        </div>
-      )}
     </div>
   );
 };
