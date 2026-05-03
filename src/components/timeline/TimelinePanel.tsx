@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useEffectEvent } from "react";
+import { useRef, useEffect, useMemo, useState, useEffectEvent } from "react";
 import type { KeyframeEasing } from "../../types";
 import {
   Play,
@@ -658,40 +658,40 @@ export const TimelinePanel = () => {
     );
   }, [keyframes, slotAttachmentKeyframes]);
 
+  const maxPlaybackFrame = useMemo(() => {
+    let maxKeyframe = 0;
+
+    Object.values(keyframes).forEach((boneKeyframes) => {
+      Object.keys(boneKeyframes).forEach((frameKey) => {
+        maxKeyframe = Math.max(maxKeyframe, Number(frameKey));
+      });
+    });
+
+    Object.values(slotAttachmentKeyframes).forEach((spriteKeyframes) => {
+      Object.keys(spriteKeyframes).forEach((frameKey) => {
+        maxKeyframe = Math.max(maxKeyframe, Number(frameKey));
+      });
+    });
+
+    return maxKeyframe > 0 ? maxKeyframe : duration;
+  }, [duration, keyframes, slotAttachmentKeyframes]);
+
   useEffect(() => {
     if (!playing) return;
 
-    const interval = 1000 / fps;
+    const interval = 1000 / Math.max(1, fps);
     const timer = setInterval(() => {
-      // Find the highest keyframe across all bones
-      let maxKeyframe = 0;
-      Object.values(keyframes).forEach((boneKeyframes) => {
-        const frames = Object.keys(boneKeyframes).map(Number);
-        const maxFrame = Math.max(...frames);
-        if (maxFrame > maxKeyframe) maxKeyframe = maxFrame;
-      });
-      Object.values(slotAttachmentKeyframes).forEach((spriteKeyframes) => {
-        const frames = Object.keys(spriteKeyframes).map(Number);
-        const maxFrame = Math.max(...frames);
-        if (maxFrame > maxKeyframe) maxKeyframe = maxFrame;
-      });
-
-      // If we've reached or passed the last keyframe, loop back to 0
-      if (frame >= maxKeyframe && maxKeyframe > 0) {
-        setFrame(0);
-      } else {
-        setFrame(frame + 1);
+      const store = useAnimationStore.getState();
+      const currentFrame = store.frame;
+      const nextFrame = currentFrame >= maxPlaybackFrame && maxPlaybackFrame > 0 ? 0 : currentFrame + 1;
+      store.setFrame(nextFrame);
+      if (mode === "animate") {
+        store.applyKeyframes();
       }
     }, interval);
 
     return () => clearInterval(timer);
-  }, [playing, frame, duration, fps, setFrame, keyframes, slotAttachmentKeyframes]);
-
-  useEffect(() => {
-    if (playing && mode === "animate") {
-      applyKeyframes();
-    }
-  }, [frame, playing, mode, applyKeyframes]);
+  }, [playing, fps, maxPlaybackFrame, mode]);
 
   const getFrameW = (canvasWidth: number) =>
     Math.max(8, (canvasWidth - HEADER_W - TIMELINE_PADDING_RIGHT) / duration) *

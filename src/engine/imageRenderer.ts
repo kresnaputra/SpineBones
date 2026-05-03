@@ -217,28 +217,6 @@ const drawTexturedTriangle = (
 const getGridVertexIndex = (columns: number, row: number, col: number) =>
   row * columns + col;
 
-const getMidVertex = (
-  a: MeshVertex,
-  b: MeshVertex,
-  c: MeshVertex,
-  d: MeshVertex,
-): MeshVertex => ({
-  x: (a.x + b.x + c.x + d.x) / 4,
-  y: (a.y + b.y + c.y + d.y) / 4,
-  u: (a.u + b.u + c.u + d.u) / 4,
-  v: (a.v + b.v + c.v + d.v) / 4,
-});
-
-const getMidPoint = (
-  a: ScreenPoint,
-  b: ScreenPoint,
-  c: ScreenPoint,
-  d: ScreenPoint,
-): ScreenPoint => ({
-  x: (a.x + b.x + c.x + d.x) / 4,
-  y: (a.y + b.y + c.y + d.y) / 4,
-});
-
 const drawTexturedGridMesh = (
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -273,12 +251,8 @@ const drawTexturedGridMesh = (
       const p3 = screenVertices[i3];
       if (!v0 || !v1 || !v2 || !v3 || !p0 || !p1 || !p2 || !p3) continue;
 
-      const centerVertex = getMidVertex(v0, v1, v2, v3);
-      const centerPoint = getMidPoint(p0, p1, p2, p3);
-      drawTexturedTriangle(ctx, image, [v0, v1, centerVertex], [p0, p1, centerPoint]);
-      drawTexturedTriangle(ctx, image, [v1, v2, centerVertex], [p1, p2, centerPoint]);
-      drawTexturedTriangle(ctx, image, [v2, v3, centerVertex], [p2, p3, centerPoint]);
-      drawTexturedTriangle(ctx, image, [v3, v0, centerVertex], [p3, p0, centerPoint]);
+      drawTexturedTriangle(ctx, image, [v0, v1, v2], [p0, p1, p2]);
+      drawTexturedTriangle(ctx, image, [v0, v2, v3], [p0, p2, p3]);
     }
   }
 

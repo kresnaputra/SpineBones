@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useEffectEvent } from 'react';
+import { useRef, useEffect, useMemo, useState, useEffectEvent } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -33,6 +33,8 @@ export const MainCanvas = () => {
   const GHOST_MOVEMENT_EPSILON = 0.01;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const dragRafRef = useRef<number | null>(null);
+  const pendingDragPos = useRef<{ sx: number; sy: number } | null>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const [backgroundLoaded, setBackgroundLoaded] = useState(0);
@@ -239,6 +241,13 @@ export const MainCanvas = () => {
     currentSy: number;
     additive: boolean;
   } | null>(null);
+
+  const resolvedAttachments = useMemo(
+    () => attachments.map((attachment) =>
+      resolveAttachmentAtFrame(attachment, frame, meshDeformKeyframes, attachmentOpacityKeyframes)
+    ),
+    [attachments, frame, meshDeformKeyframes, attachmentOpacityKeyframes],
+  );
 
   const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
   const activeSlot = selectedBoneId === null
@@ -460,14 +469,6 @@ export const MainCanvas = () => {
       ctx.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
       ctx.clip();
     }
-    const resolvedAttachments = attachments.map((attachment) =>
-      resolveAttachmentAtFrame(
-        attachment,
-        frame,
-        meshDeformKeyframes,
-        attachmentOpacityKeyframes,
-      ),
-    );
     drawSlots(ctx, resolvedSlots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad, bones);
 
     if (activeSlot && activeBone && activeAttachment && (attachmentDragEnabled || tool === 'mesh')) {
@@ -582,7 +583,7 @@ export const MainCanvas = () => {
     }
     ctx.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, attachmentOpacityKeyframes, frame, duration, setupPose, slots, attachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, selectedMeshVertexIndices, meshMarquee]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, selectedMeshVertexIndices, meshMarquee]);
 
   const handleDeleteKey = useEffectEvent((e: KeyboardEvent) => {
     if (tool !== 'mesh') return;
@@ -617,12 +618,9 @@ export const MainCanvas = () => {
     return () => window.removeEventListener('keydown', handleDeleteKey);
   }, []);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-
+  // useEffectEvent ensures this always captures the latest state/props,
+  // even when called from a requestAnimationFrame callback.
+  const processDragAt = useEffectEvent((sx: number, sy: number) => {
     if (isPanning && panStart) {
       // Divide by vpScale so that the camera store's zoom-division gives
       // world-unit delta = screenDelta / effectiveZoom (= camZoom * vpScale).
@@ -804,6 +802,35 @@ export const MainCanvas = () => {
 
     const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
     setHoveredBoneId(hit?.id || null);
+  });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    const isActiveDrag =
+      isDragging || isPanning || attachmentDragStart !== null ||
+      meshDragStart !== null || ikDragStart !== null || meshMarquee !== null;
+
+    if (!isActiveDrag) {
+      // Hover is cheap — process every event for responsive cursor feedback.
+      processDragAt(sx, sy);
+      return;
+    }
+
+    // Active drag: store latest position and process at most once per frame.
+    // This prevents a high-polling mouse from queuing more renders than the
+    // display can consume, which causes lag that grows the longer you drag.
+    pendingDragPos.current = { sx, sy };
+    if (dragRafRef.current === null) {
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        const pos = pendingDragPos.current;
+        if (pos) processDragAt(pos.sx, pos.sy);
+      });
+    }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1163,6 +1190,12 @@ export const MainCanvas = () => {
   };
 
   const handleMouseUp = () => {
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    pendingDragPos.current = null;
+
     setIsPanning(false);
     setPanStart(null);
 

@@ -466,60 +466,65 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
 
   applyKeyframes: () => {
     const { keyframes, frame } = get();
-    const { bones, updateBone, setupPose } = useSkeletonStore.getState();
+    const { setupPose } = useSkeletonStore.getState();
 
-    bones.forEach((bone) => {
-      const boneKeyframes = keyframes[bone.id];
-      
-      // If no keyframes for this bone, restore setup pose
-      if (!boneKeyframes) {
-        const pose = setupPose[bone.id];
-        if (pose) {
-          updateBone(bone.id, pose);
+    useSkeletonStore.setState((state) => ({
+      bones: state.bones.map((bone) => {
+        const boneKeyframes = keyframes[bone.id];
+
+        // If no keyframes for this bone, restore setup pose
+        if (!boneKeyframes) {
+          const pose = setupPose[bone.id];
+          if (pose) {
+            return { ...bone, ...pose };
+          }
+          return bone;
         }
-        return;
-      }
 
-      const frames = Object.keys(boneKeyframes)
-        .map(Number)
-        .sort((a, b) => a - b);
+        const frames = Object.keys(boneKeyframes)
+          .map(Number)
+          .sort((a, b) => a - b);
 
-      if (frames.length === 0) {
-        // No keyframes, restore setup pose
-        const pose = setupPose[bone.id];
-        if (pose) {
-          updateBone(bone.id, pose);
+        if (frames.length === 0) {
+          // No keyframes, restore setup pose
+          const pose = setupPose[bone.id];
+          if (pose) {
+            return { ...bone, ...pose };
+          }
+          return bone;
         }
-        return;
-      }
 
-      let prev: number | null = null;
-      let next: number | null = null;
+        let prev: number | null = null;
+        let next: number | null = null;
 
-      for (const f of frames) {
-        if (f <= frame) prev = f;
-        if (f >= frame && next === null) next = f;
-      }
+        for (const f of frames) {
+          if (f <= frame) prev = f;
+          if (f >= frame && next === null) next = f;
+        }
 
-      if (prev === null && next !== null) {
-        updateBone(bone.id, normalizeKeyframeData(boneKeyframes[next]));
-      } else if (prev !== null && next === null) {
-        updateBone(bone.id, normalizeKeyframeData(boneKeyframes[prev]));
-      } else if (prev !== null && next !== null) {
-        const t = prev === next ? 1 : (frame - prev) / (next - prev);
-        const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
-        const kp = normalizeKeyframeData(boneKeyframes[prev]);
-        const kn = normalizeKeyframeData(boneKeyframes[next]);
-        const lerp = (a: number, b: number, ratio: number) => a + (b - a) * ratio;
-        updateBone(bone.id, {
-          x: lerp(kp.x, kn.x, easedT),
-          y: lerp(kp.y, kn.y, easedT),
-          rotation: lerp(kp.rotation, kn.rotation, easedT),
-          scaleX: lerp(kp.scaleX, kn.scaleX, easedT),
-          scaleY: lerp(kp.scaleY, kn.scaleY, easedT),
-        });
-      }
-    });
+        if (prev === null && next !== null) {
+          return { ...bone, ...normalizeKeyframeData(boneKeyframes[next]) };
+        } else if (prev !== null && next === null) {
+          return { ...bone, ...normalizeKeyframeData(boneKeyframes[prev]) };
+        } else if (prev !== null && next !== null) {
+          const t = prev === next ? 1 : (frame - prev) / (next - prev);
+          const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
+          const kp = normalizeKeyframeData(boneKeyframes[prev]);
+          const kn = normalizeKeyframeData(boneKeyframes[next]);
+          const lerp = (a: number, b: number, ratio: number) => a + (b - a) * ratio;
+          return {
+            ...bone,
+            x: lerp(kp.x, kn.x, easedT),
+            y: lerp(kp.y, kn.y, easedT),
+            rotation: lerp(kp.rotation, kn.rotation, easedT),
+            scaleX: lerp(kp.scaleX, kn.scaleX, easedT),
+            scaleY: lerp(kp.scaleY, kn.scaleY, easedT),
+          };
+        }
+
+        return bone;
+      }),
+    }));
   },
 
   getKeyframesForBone: (boneId) => {
