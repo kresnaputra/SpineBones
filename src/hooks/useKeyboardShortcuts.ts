@@ -22,10 +22,7 @@ export const useKeyboardShortcuts = () => {
     showBoneIndicators,
     setShowBoneIndicators,
   } = useEditorStore();
-  const { bones, deleteBone, saveSetupPose, restoreSetupPose, toggleIkChain } = useSkeletonStore();
-  const { insertKeyframe, playing, play, stop, frame, setFrame, duration, applyKeyframes, shiftKeyframes } = useAnimationStore();
   const { undo, redo, captureSnapshot } = useHistoryStore();
-  const { slots } = useSlotStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -91,7 +88,7 @@ export const useKeyboardShortcuts = () => {
       if (key === 'w') {
         if (e.repeat) return;
         if (mode === 'setup') return;
-        restoreSetupPose();
+        useSkeletonStore.getState().restoreSetupPose();
         setMode('setup');
         return;
       }
@@ -122,16 +119,18 @@ export const useKeyboardShortcuts = () => {
         }
 
         if (hasDeltas) {
-          shiftKeyframes(deltas);
+          useAnimationStore.getState().shiftKeyframes(deltas);
         }
 
-        saveSetupPose();
+        useSkeletonStore.getState().saveSetupPose();
         setMode('animate');
         return;
       }
 
       if (key === 'k') {
         if (selectedBoneIds.length === 0) return;
+        const { bones } = useSkeletonStore.getState();
+        const { insertKeyframe } = useAnimationStore.getState();
         captureSnapshot();
         selectedBoneIds.forEach((boneId) => {
           const bone = bones.find((b) => b.id === boneId);
@@ -155,6 +154,7 @@ export const useKeyboardShortcuts = () => {
 
       if (key === 'd') {
         if (selectedBoneId === null) return;
+        const { slots } = useSlotStore.getState();
         const hasActiveAttachment = slots.some(
           (slot) => slot.boneId === selectedBoneId && slot.attachmentName !== null
         );
@@ -170,6 +170,7 @@ export const useKeyboardShortcuts = () => {
 
       if (!isModifierPressed && key === 'c') {
         if (selectedBoneId === null) return;
+        const { bones, toggleIkChain } = useSkeletonStore.getState();
         const ikRoot = getIkRootForBone(selectedBoneId, bones);
         if (!ikRoot) return;
         captureSnapshot();
@@ -179,6 +180,7 @@ export const useKeyboardShortcuts = () => {
 
       if (key === 'delete' || key === 'backspace') {
         if (selectedBoneIds.length > 0) {
+          const { deleteBone } = useSkeletonStore.getState();
           captureSnapshot();
           selectedBoneIds.forEach((boneId) => deleteBone(boneId));
           selectBone(null);
@@ -188,6 +190,7 @@ export const useKeyboardShortcuts = () => {
 
       if (key === ' ') {
         e.preventDefault();
+        const { playing, play, stop } = useAnimationStore.getState();
         if (playing) {
           stop();
         } else {
@@ -202,6 +205,7 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'arrowright') {
+        const { duration, frame, setFrame, applyKeyframes } = useAnimationStore.getState();
         const newFrame = Math.min(duration, frame + 1);
         setFrame(newFrame);
         if (mode === 'animate') applyKeyframes();
@@ -209,6 +213,7 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'arrowleft') {
+        const { frame, setFrame, applyKeyframes } = useAnimationStore.getState();
         const newFrame = Math.max(0, frame - 1);
         setFrame(newFrame);
         if (mode === 'animate') applyKeyframes();
@@ -229,22 +234,7 @@ export const useKeyboardShortcuts = () => {
     attachmentDragEnabled,
     setAttachmentDragEnabled,
     toggleOnionSkin,
-    bones,
-    slots,
-    deleteBone,
-    saveSetupPose,
-    restoreSetupPose,
-    toggleIkChain,
-    insertKeyframe,
-    shiftKeyframes,
     captureSnapshot,
-    playing,
-    play,
-    stop,
-    frame,
-    setFrame,
-    duration,
-    applyKeyframes,
     undo,
     redo,
     showBoneIndicators,

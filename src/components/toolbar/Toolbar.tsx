@@ -68,9 +68,10 @@ export const Toolbar = () => {
     setBackgroundImage,
     setShowProjectBrowser,
   } = useEditorStore();
-  const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
-  const { insertKeyframe } = useAnimationStore();
-  const { bones } = useSkeletonStore();
+  const saveSetupPose = useSkeletonStore((state) => state.saveSetupPose);
+  const restoreSetupPose = useSkeletonStore((state) => state.restoreSetupPose);
+  const updateBone = useSkeletonStore((state) => state.updateBone);
+  const insertKeyframe = useAnimationStore((state) => state.insertKeyframe);
   const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
@@ -101,6 +102,7 @@ export const Toolbar = () => {
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
 
+    const { bones } = useSkeletonStore.getState();
     captureSnapshot();
     selectedBoneIds.forEach((boneId) => {
       const bone = bones.find((item) => item.id === boneId);

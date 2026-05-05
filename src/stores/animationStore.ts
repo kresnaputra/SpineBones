@@ -454,7 +454,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     });
   },
 
-  setFrame: (frame) => set({ frame }),
+  setFrame: (frame) =>
+    set((state) => (state.frame === frame ? state : { frame })),
   setDuration: (duration) => set({ duration }),
   setFps: (fps) => set({ fps }),
   setAudioTrack: (audioData, audioName) => set({ audioData, audioName, audioOffsetFrames: 0 }),

@@ -1,4 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useEffectEvent } from "react";
+import { unstable_batchedUpdates } from "react-dom";
+import { useShallow } from "zustand/react/shallow";
 import type { KeyframeEasing } from "../../types";
 import {
   Play,
@@ -18,6 +20,7 @@ import { useSlotStore } from "../../stores/slotStore";
 import {
   drawTimeline,
   drawTimelineHeader,
+  type TimelineBone,
 } from "../../engine/timelineRenderer";
 import { openAudioFile } from "../../utils/nativeIO";
 import { normalizeKeyframeEasing } from "../../utils/easing";
@@ -29,6 +32,7 @@ const AUDIO_ROW_H = 36;
 const HEADER_W = 120;
 const TIMELINE_PADDING_RIGHT = 50;
 const MAX_WAVEFORM_SAMPLES = 240;
+const TIMELINE_BONE_KEY_SEPARATOR = "\x1f";
 
 const AUDIO_FILTERS = [
   {
@@ -141,7 +145,30 @@ export const TimelinePanel = () => {
 
   const { mode, selectedBoneId, selectedBoneIds, selectBone } =
     useEditorStore();
-  const { bones, skins } = useSkeletonStore();
+  const timelineBoneKeys = useSkeletonStore(
+    useShallow((state) =>
+      state.bones.map((bone) =>
+        [
+          bone.id,
+          bone.skinId,
+          bone.name.replaceAll(TIMELINE_BONE_KEY_SEPARATOR, ""),
+        ].join(TIMELINE_BONE_KEY_SEPARATOR),
+      ),
+    ),
+  );
+  const bones = useMemo<TimelineBone[]>(
+    () =>
+      timelineBoneKeys.map((key) => {
+        const [id, skinId, name = ""] = key.split(TIMELINE_BONE_KEY_SEPARATOR);
+        return {
+          id: Number(id),
+          skinId: Number(skinId),
+          name,
+        };
+      }),
+    [timelineBoneKeys],
+  );
+  const skins = useSkeletonStore((state) => state.skins);
   const { slots } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
   const {
@@ -679,18 +706,50 @@ export const TimelinePanel = () => {
   useEffect(() => {
     if (!playing) return;
 
-    const interval = 1000 / Math.max(1, fps);
-    const timer = setInterval(() => {
-      const store = useAnimationStore.getState();
-      const currentFrame = store.frame;
-      const nextFrame = currentFrame >= maxPlaybackFrame && maxPlaybackFrame > 0 ? 0 : currentFrame + 1;
-      store.setFrame(nextFrame);
-      if (mode === "animate") {
-        store.applyKeyframes();
-      }
-    }, interval);
+    const frameIntervalMs = 1000 / Math.max(1, fps);
+    let animationFrameId = 0;
+    let lastTimestamp: number | null = null;
+    let accumulatedMs = 0;
 
-    return () => clearInterval(timer);
+    const tick = (timestamp: number) => {
+      if (lastTimestamp === null) {
+        lastTimestamp = timestamp;
+      }
+
+      accumulatedMs += timestamp - lastTimestamp;
+      lastTimestamp = timestamp;
+
+      const elapsedFrames = Math.min(
+        5,
+        Math.floor(accumulatedMs / frameIntervalMs),
+      );
+
+      if (elapsedFrames > 0) {
+        accumulatedMs -= elapsedFrames * frameIntervalMs;
+        unstable_batchedUpdates(() => {
+          const store = useAnimationStore.getState();
+          let nextFrame = store.frame;
+
+          for (let i = 0; i < elapsedFrames; i += 1) {
+            nextFrame =
+              nextFrame >= maxPlaybackFrame && maxPlaybackFrame > 0
+                ? 0
+                : nextFrame + 1;
+          }
+
+          store.setFrame(nextFrame);
+          if (mode === "animate") {
+            store.applyKeyframes();
+          }
+        });
+      }
+
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    animationFrameId = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(animationFrameId);
   }, [playing, fps, maxPlaybackFrame, mode]);
 
   const getFrameW = (canvasWidth: number) =>
@@ -1117,9 +1176,10 @@ export const TimelinePanel = () => {
   const handleInsertKeyframe = () => {
     if (selectedBoneIds.length === 0) return;
 
+    const currentBones = useSkeletonStore.getState().bones;
     captureSnapshot();
     selectedBoneIds.forEach((boneId) => {
-      const bone = bones.find((item) => item.id === boneId);
+      const bone = currentBones.find((item) => item.id === boneId);
       if (!bone) return;
 
       insertKeyframe(bone.id, {

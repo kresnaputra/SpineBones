@@ -1,5 +1,11 @@
-import type { Bone, Skin, KeyframeEasing, Keyframes } from '../types';
+import type { Skin, KeyframeEasing, Keyframes } from '../types';
 import { normalizeKeyframeEasing } from '../utils/easing';
+
+export type TimelineBone = {
+  id: number;
+  name: string;
+  skinId: number;
+};
 
 type AudioTrackRenderData = {
   enabled: boolean;
@@ -94,7 +100,7 @@ export const drawTimelineHeader = (
 
 export const drawTimeline = (
   ctx: CanvasRenderingContext2D,
-  bones: Bone[],
+  bones: TimelineBone[],
   skins: Skin[],
   keyframes: Keyframes,
   spriteSwapMarkersByBone: Record<number, SpriteSwapMarker[]>,
