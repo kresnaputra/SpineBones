@@ -33,6 +33,9 @@ interface ProjectSnapshot {
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
+    audioTracks: ReturnType<typeof useAnimationStore.getState>['audioTracks'];
+    activeAudioTrackId: ReturnType<typeof useAnimationStore.getState>['activeAudioTrackId'];
+    nextAudioTrackId: ReturnType<typeof useAnimationStore.getState>['nextAudioTrackId'];
     audioData: ReturnType<typeof useAnimationStore.getState>['audioData'];
     audioName: ReturnType<typeof useAnimationStore.getState>['audioName'];
     audioVolume: ReturnType<typeof useAnimationStore.getState>['audioVolume'];
@@ -95,6 +98,9 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
+      audioTracks: animation.audioTracks,
+      activeAudioTrackId: animation.activeAudioTrackId,
+      nextAudioTrackId: animation.nextAudioTrackId,
       audioData: animation.audioData,
       audioName: animation.audioName,
       audioVolume: animation.audioVolume,
@@ -139,6 +145,9 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,
+    audioTracks: cloneSnapshot(snapshot.animation.audioTracks ?? []),
+    activeAudioTrackId: snapshot.animation.activeAudioTrackId ?? null,
+    nextAudioTrackId: snapshot.animation.nextAudioTrackId ?? 1,
     audioData: snapshot.animation.audioData,
     audioName: snapshot.animation.audioName,
     audioVolume: snapshot.animation.audioVolume,

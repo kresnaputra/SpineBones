@@ -1,6 +1,14 @@
 export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale' | 'mesh';
 export type Mode = 'setup' | 'animate';
 
+export interface AudioTrack {
+  id: number;
+  name: string;
+  dataUrl: string;
+  volume: number;
+  offsetFrames: number;
+}
+
 export type SetupPose = Record<
   number,
   { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
@@ -147,6 +155,8 @@ export interface ProjectData {
   duration: number;
   fps: number;
   backgroundImage?: string | null;
+  audioTracks?: AudioTrack[];
+  activeAudioTrackId?: number | null;
   audioData?: string | null;
   audioName?: string | null;
   audioVolume?: number;

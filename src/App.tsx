@@ -32,6 +32,7 @@ import { clearRecentProjects, getRecentProjects, removeRecentProject } from './u
 import { exportSpriteSheet } from './utils/spriteSheetExporter';
 import { exportPngSequence } from './utils/pngSequenceExporter';
 import { exportVideo } from './utils/videoExporter';
+import { exportAudioMix } from './utils/audioExporter';
 import type { Attachment, Mode, Tool } from './types';
 
 type McpEditorCommand = {
@@ -118,6 +119,9 @@ type McpEditorCommand = {
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, Math.round(value)));
+
+const replaceExtension = (path: string, suffix: string, extension: string) =>
+  path.replace(/\.[^/.\\]+$/, '') + suffix + extension;
 
 const resolveTargetBoneId = (boneId?: number, boneName?: string) => {
   const { bones } = useSkeletonStore.getState();
@@ -930,7 +934,7 @@ const reorderSlotsFromCommand = (payload: McpEditorCommand) => {
 
 const setDurationFromCommand = (payload: McpEditorCommand) => {
   if (typeof payload.duration !== 'number') throw new Error('Missing duration');
-  const duration = clampInt(payload.duration, 10, 300);
+  const duration = Math.max(10, Math.round(payload.duration));
   useAnimationStore.getState().setDuration(duration);
   return { ok: true, duration };
 };
@@ -1035,11 +1039,13 @@ const getAudioStateFromCommand = () => {
   const animation = useAnimationStore.getState();
   return {
     ok: true,
+    audioTracks: animation.audioTracks,
+    activeAudioTrackId: animation.activeAudioTrackId,
     audioData: animation.audioData,
     audioName: animation.audioName,
     audioVolume: animation.audioVolume,
     audioOffsetFrames: animation.audioOffsetFrames,
-    hasAudio: Boolean(animation.audioData),
+    hasAudio: animation.audioTracks.length > 0,
   };
 };
 
@@ -1047,8 +1053,8 @@ const setAudioFromPathCommand = async (payload: McpEditorCommand) => {
   const path = payload.path;
   if (!path) throw new Error('Missing path for set_audio_track');
   const audio = await loadAudioFileFromPath(path);
-  useAnimationStore.getState().setAudioTrack(audio.dataUrl, audio.name);
-  return { ok: true, audioName: audio.name, path };
+  const track = useAnimationStore.getState().addAudioTrack(audio.dataUrl, audio.name);
+  return { ok: true, audioTrack: track, audioName: audio.name, path };
 };
 
 const setAudioPropertiesFromCommand = (payload: McpEditorCommand) => {
@@ -1195,7 +1201,19 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       editorState.backgroundImage,
     );
     await saveBlobToPath(payload.outputPath, blob);
-    return { ok: true, outputPath: payload.outputPath };
+    const audioBlob = await exportAudioMix({
+      audioTracks: animationState.audioTracks,
+      keyframes: animationState.keyframes,
+      meshDeformKeyframes: animationState.meshDeformKeyframes,
+      attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+      slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
+      duration: animationState.duration,
+      fps: animationState.fps,
+    });
+    const audioOutputPath = audioBlob
+      ? await saveBlobToPath(replaceExtension(payload.outputPath, '-audio', '.wav'), audioBlob)
+      : null;
+    return { ok: true, outputPath: payload.outputPath, audioOutputPath };
   }
   if (payload.commandType === 'export_sprite_sheet') {
     const blob = await exportSpriteSheet({
@@ -1335,6 +1353,8 @@ const buildMcpSnapshot = () => {
     duration: animation.duration,
     fps: animation.fps,
     playing: animation.playing,
+    audioTracks: animation.audioTracks,
+    activeAudioTrackId: animation.activeAudioTrackId,
     audioData: animation.audioData,
     audioName: animation.audioName,
     audioVolume: animation.audioVolume,

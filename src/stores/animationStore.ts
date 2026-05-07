@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   AttachmentOpacityKeyframes,
+  AudioTrack,
   Bone,
   Keyframes,
   KeyframeData,
@@ -21,6 +22,9 @@ interface AnimationState {
   duration: number;
   fps: number;
   playing: boolean;
+  audioTracks: AudioTrack[];
+  activeAudioTrackId: number | null;
+  nextAudioTrackId: number;
   audioData: string | null;
   audioName: string | null;
   audioVolume: number;
@@ -61,9 +65,12 @@ interface AnimationState {
   setDuration: (duration: number) => void;
   setFps: (fps: number) => void;
   setAudioTrack: (audioData: string, audioName: string) => void;
+  addAudioTrack: (audioData: string, audioName: string) => AudioTrack;
+  removeAudioTrack: (trackId?: number) => void;
   clearAudioTrack: () => void;
-  setAudioVolume: (volume: number) => void;
-  setAudioOffsetFrames: (offsetFrames: number) => void;
+  setActiveAudioTrackId: (trackId: number | null) => void;
+  setAudioVolume: (volume: number, trackId?: number) => void;
+  setAudioOffsetFrames: (offsetFrames: number, trackId?: number) => void;
   play: () => void;
   stop: () => void;
   applyKeyframes: () => void;
@@ -104,6 +111,9 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   duration: 60,
   fps: 24,
   playing: false,
+  audioTracks: [],
+  activeAudioTrackId: null,
+  nextAudioTrackId: 1,
   audioData: null,
   audioName: null,
   audioVolume: 0.8,
@@ -458,10 +468,103 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     set((state) => (state.frame === frame ? state : { frame })),
   setDuration: (duration) => set({ duration }),
   setFps: (fps) => set({ fps }),
-  setAudioTrack: (audioData, audioName) => set({ audioData, audioName, audioOffsetFrames: 0 }),
-  clearAudioTrack: () => set({ audioData: null, audioName: null, audioOffsetFrames: 0 }),
-  setAudioVolume: (audioVolume) => set({ audioVolume }),
-  setAudioOffsetFrames: (audioOffsetFrames) => set({ audioOffsetFrames: Math.max(0, Math.round(audioOffsetFrames)) }),
+  setAudioTrack: (audioData, audioName) => {
+    const track = get().addAudioTrack(audioData, audioName);
+    set({
+      audioTracks: [track],
+      activeAudioTrackId: track.id,
+      nextAudioTrackId: track.id + 1,
+      audioData: track.dataUrl,
+      audioName: track.name,
+      audioVolume: track.volume,
+      audioOffsetFrames: track.offsetFrames,
+    });
+  },
+  addAudioTrack: (audioData, audioName) => {
+    const state = get();
+    const track: AudioTrack = {
+      id: state.nextAudioTrackId,
+      name: audioName,
+      dataUrl: audioData,
+      volume: 0.8,
+      offsetFrames: 0,
+    };
+    set({
+      audioTracks: [...state.audioTracks, track],
+      activeAudioTrackId: track.id,
+      nextAudioTrackId: track.id + 1,
+      audioData: track.dataUrl,
+      audioName: track.name,
+      audioVolume: track.volume,
+      audioOffsetFrames: track.offsetFrames,
+    });
+    return track;
+  },
+  removeAudioTrack: (trackId) =>
+    set((state) => {
+      const targetId = trackId ?? state.activeAudioTrackId ?? state.audioTracks.at(-1)?.id ?? null;
+      const audioTracks = targetId === null
+        ? state.audioTracks
+        : state.audioTracks.filter((track) => track.id !== targetId);
+      const activeTrack =
+        audioTracks.find((track) => track.id === state.activeAudioTrackId) ??
+        audioTracks.at(-1) ??
+        null;
+      return {
+        audioTracks,
+        activeAudioTrackId: activeTrack?.id ?? null,
+        audioData: activeTrack?.dataUrl ?? null,
+        audioName: activeTrack?.name ?? null,
+        audioVolume: activeTrack?.volume ?? 0.8,
+        audioOffsetFrames: activeTrack?.offsetFrames ?? 0,
+      };
+    }),
+  clearAudioTrack: () =>
+    set({
+      audioTracks: [],
+      activeAudioTrackId: null,
+      audioData: null,
+      audioName: null,
+      audioVolume: 0.8,
+      audioOffsetFrames: 0,
+    }),
+  setActiveAudioTrackId: (trackId) =>
+    set((state) => {
+      const activeTrack = state.audioTracks.find((track) => track.id === trackId) ?? null;
+      return {
+        activeAudioTrackId: activeTrack?.id ?? null,
+        audioData: activeTrack?.dataUrl ?? null,
+        audioName: activeTrack?.name ?? null,
+        audioVolume: activeTrack?.volume ?? 0.8,
+        audioOffsetFrames: activeTrack?.offsetFrames ?? 0,
+      };
+    }),
+  setAudioVolume: (audioVolume, trackId) =>
+    set((state) => {
+      const targetId = trackId ?? state.activeAudioTrackId;
+      const volume = Math.max(0, Math.min(1, audioVolume));
+      const audioTracks = state.audioTracks.map((track) =>
+        track.id === targetId ? { ...track, volume } : track,
+      );
+      const activeTrack = audioTracks.find((track) => track.id === state.activeAudioTrackId) ?? null;
+      return {
+        audioTracks,
+        audioVolume: activeTrack?.volume ?? volume,
+      };
+    }),
+  setAudioOffsetFrames: (audioOffsetFrames, trackId) =>
+    set((state) => {
+      const targetId = trackId ?? state.activeAudioTrackId;
+      const offsetFrames = Math.max(0, Math.round(audioOffsetFrames));
+      const audioTracks = state.audioTracks.map((track) =>
+        track.id === targetId ? { ...track, offsetFrames } : track,
+      );
+      const activeTrack = audioTracks.find((track) => track.id === state.activeAudioTrackId) ?? null;
+      return {
+        audioTracks,
+        audioOffsetFrames: activeTrack?.offsetFrames ?? offsetFrames,
+      };
+    }),
   play: () => set({ playing: true }),
   stop: () => set({ playing: false }),
 

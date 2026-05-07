@@ -50292,11 +50292,13 @@ var createServer = () => {
   }, async () => {
     const result = await requestJson("/state");
     return asTextResult("SpineBones audio state", {
+      audioTracks: result.audioTracks ?? [],
+      activeAudioTrackId: result.activeAudioTrackId ?? null,
       audioData: result.audioData ?? null,
       audioName: result.audioName ?? null,
       audioVolume: result.audioVolume ?? null,
       audioOffsetFrames: result.audioOffsetFrames ?? null,
-      hasAudio: Boolean(result.audioData)
+      hasAudio: Boolean(result.audioTracks?.length ?? result.audioData)
     });
   });
   server.registerTool("spinebones_get_project_info", {
@@ -51368,7 +51370,7 @@ var createServer = () => {
     return asTextResult("Loop keyframes generated in SpineBones", result);
   });
   server.registerTool("spinebones_set_audio_track", {
-    description: "Import a preview audio track from a local file path.",
+    description: "Import an additional preview audio track from a local file path.",
     inputSchema: {
       path: string2().min(1)
     }
@@ -51380,7 +51382,7 @@ var createServer = () => {
     return asTextResult("Audio track imported into SpineBones", result);
   });
   server.registerTool("spinebones_clear_audio_track", {
-    description: "Remove the preview audio track.",
+    description: "Remove all preview audio tracks.",
     inputSchema: {}
   }, async () => {
     const result = await requestJson("/command", {

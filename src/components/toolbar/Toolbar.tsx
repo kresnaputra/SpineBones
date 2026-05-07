@@ -9,8 +9,9 @@ import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
 import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
-import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
+import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, saveBlobToPath, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
+import { exportAudioMix } from '../../utils/audioExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
 import { ensureMeshAttachmentAsync, getMeshAttachmentKey } from '../../utils/meshAttachment';
@@ -49,6 +50,11 @@ const IMAGE_FILTERS = [
     extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
   },
 ];
+
+const getSiblingPath = (path: string, fileName: string) => {
+  const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return separatorIndex >= 0 ? `${path.slice(0, separatorIndex + 1)}${fileName}` : fileName;
+};
 
 export const Toolbar = () => {
   const [showSpriteSheetDialog, setShowSpriteSheetDialog] = useState(false);
@@ -170,15 +176,41 @@ export const Toolbar = () => {
         cameraState.x,
         cameraState.y,
         cameraState.zoom,
-        editorState.backgroundImage
+        editorState.backgroundImage,
       );
-      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-animation.webm`;
-      await saveBlobFile(suggestedName, blob, [
+      const exportBaseName = `${stripExtension(getSuggestedProjectFileName())}-animation`;
+      const suggestedName = `${exportBaseName}.webm`;
+      const savedPath = await saveBlobFile(suggestedName, blob, [
         {
           name: 'WebM Video',
           extensions: ['webm'],
         },
       ]);
+      if (isDesktopApp() && !savedPath) return;
+
+      const audioBlob = await exportAudioMix({
+        audioTracks: animationState.audioTracks,
+        keyframes: animationState.keyframes,
+        meshDeformKeyframes: animationState.meshDeformKeyframes,
+        attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+      });
+
+      if (audioBlob) {
+        const audioName = `${exportBaseName}-audio.wav`;
+        if (savedPath && isDesktopApp()) {
+          await saveBlobToPath(getSiblingPath(savedPath, audioName), audioBlob);
+        } else {
+          await saveBlobFile(audioName, audioBlob, [
+            {
+              name: 'WAV Audio',
+              extensions: ['wav'],
+            },
+          ]);
+        }
+      }
       console.log('Video export completed!');
     } catch (error) {
       console.error('Video export failed:', error);

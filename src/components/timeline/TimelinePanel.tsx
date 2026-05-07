@@ -114,7 +114,7 @@ export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const headerCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRefs = useRef<Map<number, HTMLAudioElement>>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
   const wasPlayingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -180,15 +180,14 @@ export const TimelinePanel = () => {
     duration,
     fps,
     playing,
-    audioData,
-    audioName,
-    audioVolume,
-    audioOffsetFrames,
+    audioTracks,
+    activeAudioTrackId,
     setFrame,
     setDuration,
     setFps,
-    setAudioTrack,
-    clearAudioTrack,
+    addAudioTrack,
+    removeAudioTrack,
+    setActiveAudioTrackId,
     setAudioVolume,
     setAudioOffsetFrames,
     play,
@@ -211,6 +210,15 @@ export const TimelinePanel = () => {
     deleteAttachmentOpacityKeyframe,
     clearKeyframes,
   } = useAnimationStore();
+  const activeAudioTrack =
+    audioTracks.find((track) => track.id === activeAudioTrackId) ??
+    audioTracks[0] ??
+    null;
+  const audioData = activeAudioTrack?.dataUrl ?? null;
+  const audioName = activeAudioTrack?.name ?? null;
+  const audioVolume = activeAudioTrack?.volume ?? 0.8;
+  const audioOffsetFrames = activeAudioTrack?.offsetFrames ?? 0;
+  const hasAudioTracks = audioTracks.length > 0;
 
   const deleteAttachmentOpacityKeysAtFrame = (
     boneId: number,
@@ -447,7 +455,7 @@ export const TimelinePanel = () => {
   const commitDuration = (raw: string) => {
     const parsed = parseInt(raw, 10);
     const clamped = Number.isFinite(parsed)
-      ? Math.max(10, Math.min(300, parsed))
+      ? Math.max(10, parsed)
       : 10;
     captureSnapshot();
     setDuration(clamped);
@@ -455,24 +463,22 @@ export const TimelinePanel = () => {
   };
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    const refs = audioRefs.current;
+    refs.forEach((audio) => audio.pause());
+    refs.clear();
 
-    if (!audioData) return;
-
-    const audio = new Audio(audioData);
-    audio.preload = "auto";
-    audio.volume = audioVolume;
-    audio.currentTime = Math.max(0, frame / fps - audioOffsetFrames / fps);
-    audioRef.current = audio;
+    audioTracks.forEach((track) => {
+      const audio = new Audio(track.dataUrl);
+      audio.preload = "auto";
+      audio.volume = track.volume;
+      refs.set(track.id, audio);
+    });
 
     return () => {
-      audio.pause();
-      audioRef.current = null;
+      refs.forEach((audio) => audio.pause());
+      refs.clear();
     };
-  }, [audioData]);
+  }, [audioTracks]);
 
   useEffect(() => {
     if (!audioData) {
@@ -520,57 +526,62 @@ export const TimelinePanel = () => {
   }, [audioData]);
 
   useEffect(() => {
-    if (!audioRef.current) return;
-    audioRef.current.volume = audioVolume;
-  }, [audioVolume]);
+    audioTracks.forEach((track) => {
+      const audio = audioRefs.current.get(track.id);
+      if (audio) audio.volume = track.volume;
+    });
+  }, [audioTracks]);
 
   useEffect(() => {
-    if (!audioRef.current) return;
     if (playing) return;
-    const timelineTime = getAudioTimelineTime(frame, fps, audioOffsetFrames);
-    const targetTime = clamp(timelineTime, 0, audioDurationSeconds || 0);
-    if (Math.abs(audioRef.current.currentTime - targetTime) > 0.05) {
-      audioRef.current.currentTime = targetTime;
-    }
-  }, [frame, fps, playing, audioOffsetFrames, audioDurationSeconds]);
+    audioTracks.forEach((track) => {
+      const audio = audioRefs.current.get(track.id);
+      if (!audio) return;
+      const timelineTime = getAudioTimelineTime(frame, fps, track.offsetFrames);
+      const targetTime = clamp(timelineTime, 0, audio.duration || 0);
+      if (Math.abs(audio.currentTime - targetTime) > 0.05) {
+        audio.currentTime = targetTime;
+      }
+    });
+  }, [frame, fps, playing, audioTracks]);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const timelineTime = getAudioTimelineTime(frame, fps, audioOffsetFrames);
-
     if (playing && mode === "animate") {
-      if (!isAudioTimelineActive(timelineTime, audioDurationSeconds)) {
-        audio.pause();
-        audio.currentTime = clamp(timelineTime, 0, audioDurationSeconds || 0);
-        wasPlayingRef.current = false;
-        return;
-      }
+      audioTracks.forEach((track) => {
+        const audio = audioRefs.current.get(track.id);
+        if (!audio) return;
+        const timelineTime = getAudioTimelineTime(frame, fps, track.offsetFrames);
 
-      const drift = Math.abs(audio.currentTime - timelineTime);
-      if (!wasPlayingRef.current || drift > 0.15) {
-        audio.currentTime = timelineTime;
-      }
+        if (!isAudioTimelineActive(timelineTime, audio.duration || 0)) {
+          audio.pause();
+          audio.currentTime = clamp(timelineTime, 0, audio.duration || 0);
+          return;
+        }
 
-      if (!wasPlayingRef.current || audio.paused) {
-        void audio.play().catch((error) => {
-          console.error("Failed to play preview audio:", error);
-        });
-      }
+        const drift = Math.abs(audio.currentTime - timelineTime);
+        if (!wasPlayingRef.current || drift > 0.15) {
+          audio.currentTime = timelineTime;
+        }
 
+        if (!wasPlayingRef.current || audio.paused) {
+          void audio.play().catch((error) => {
+            console.error("Failed to play preview audio:", error);
+          });
+        }
+      });
       wasPlayingRef.current = true;
       return;
     }
 
-    audio.pause();
+    audioRefs.current.forEach((audio) => audio.pause());
     wasPlayingRef.current = false;
-  }, [playing, mode, frame, fps, audioOffsetFrames, audioDurationSeconds]);
+  }, [playing, mode, frame, fps, audioTracks]);
 
   useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current || !wrapRef.current) return;
       const { clientWidth } = wrapRef.current;
-      const audioRowH = audioData ? AUDIO_ROW_H : 0;
+      const audioRowH = hasAudioTracks ? AUDIO_ROW_H : 0;
       const bodyHeight = audioRowH + bones.length * ROW_H;
 
       canvasRef.current.width = clientWidth;
@@ -585,7 +596,7 @@ export const TimelinePanel = () => {
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [bones.length, audioData]);
+  }, [bones.length, hasAudioTracks]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -621,7 +632,7 @@ export const TimelinePanel = () => {
       selectedBoneId,
       selectedBoneIds,
       {
-        enabled: Boolean(audioData),
+        enabled: Boolean(activeAudioTrack),
         name: audioName,
         offsetFrames: audioOffsetFrames,
         audioDurationFrames: Math.max(
@@ -646,7 +657,7 @@ export const TimelinePanel = () => {
     selectedBoneId,
     selectedBoneIds,
     resizeTick,
-    audioData,
+    activeAudioTrack,
     audioName,
     audioOffsetFrames,
     audioDurationSeconds,
@@ -771,7 +782,7 @@ export const TimelinePanel = () => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return null;
 
-    const audioRowH = audioData ? AUDIO_ROW_H : 0;
+    const audioRowH = hasAudioTracks ? AUDIO_ROW_H : 0;
     const frameW = getFrameW(rect.width);
 
     if (sx < HEADER_W) return null;
@@ -817,7 +828,7 @@ export const TimelinePanel = () => {
   };
 
   const getBoneAtPosition = (sy: number) => {
-    const audioRowH = audioData ? AUDIO_ROW_H : 0;
+    const audioRowH = hasAudioTracks ? AUDIO_ROW_H : 0;
     const boneIndex = Math.floor((sy - audioRowH) / ROW_H);
 
     if (boneIndex < 0 || boneIndex >= bones.length) return null;
@@ -825,7 +836,7 @@ export const TimelinePanel = () => {
   };
 
   const isAudioTrackHit = (sy: number) =>
-    audioData && sy >= 0 && sy <= AUDIO_ROW_H;
+    hasAudioTracks && sy >= 0 && sy <= AUDIO_ROW_H;
 
   const getFrameFromX = (sx: number, width: number) => {
     const frameW = getFrameW(width);
@@ -858,7 +869,7 @@ export const TimelinePanel = () => {
     if (boneHit) {
       selectBone(boneHit.id);
       if (sx < HEADER_W) {
-        const spriteBadgeTop = (audioData ? AUDIO_ROW_H : 0) + bones.findIndex((bone) => bone.id === boneHit.id) * ROW_H + ROW_H - 14;
+        const spriteBadgeTop = (hasAudioTracks ? AUDIO_ROW_H : 0) + bones.findIndex((bone) => bone.id === boneHit.id) * ROW_H + ROW_H - 14;
         if (sy >= spriteBadgeTop) {
           const spriteMarkers = getSpriteMarkersForBone(boneHit.id);
           if (spriteMarkers.length > 0) {
@@ -930,7 +941,7 @@ export const TimelinePanel = () => {
       setSelectedKeyframes([]);
     }
 
-    if (isAudioTrackHit(sy) && sx > HEADER_W && audioData) {
+    if (isAudioTrackHit(sy) && sx > HEADER_W && hasAudioTracks) {
       setIsDragging(true);
       setDragMode("audio-offset");
       setAudioOffsetFrames(getFrameFromX(sx, rect.width));
@@ -957,7 +968,7 @@ export const TimelinePanel = () => {
 
     if (!isDragging) return;
 
-    if (dragMode === "audio-offset" && audioData) {
+    if (dragMode === "audio-offset" && hasAudioTracks) {
       setAudioOffsetFrames(getFrameFromX(sx, rect.width));
       return;
     }
@@ -1493,7 +1504,7 @@ export const TimelinePanel = () => {
     try {
       const audioFile = await openAudioFile({ filters: AUDIO_FILTERS });
       if (!audioFile) return;
-      setAudioTrack(audioFile.dataUrl, audioFile.name);
+      addAudioTrack(audioFile.dataUrl, audioFile.name);
     } catch (error) {
       console.error("Failed to load audio file:", error);
       alert("Failed to load audio file. Check console for details.");
@@ -1722,17 +1733,32 @@ export const TimelinePanel = () => {
           <Music2 size={12} />
         </button>
         <button
-          onClick={clearAudioTrack}
-          disabled={!audioData}
+          onClick={() => removeAudioTrack()}
+          disabled={!hasAudioTracks}
           className="px-2 py-0.5 rounded border border-border bg-transparent text-text hover:bg-red-500 hover:border-red-500 transition-all text-xs disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-border"
-          title="Remove preview audio"
+          title="Remove selected audio"
         >
           <X size={12} />
         </button>
-        <span className="max-w-[160px] truncate text-[10px] text-text-dim">
-          {audioName ?? "No audio"}
-        </span>
-        {audioData && (
+        {hasAudioTracks ? (
+          <select
+            value={activeAudioTrack?.id ?? ""}
+            onChange={(e) => setActiveAudioTrackId(Number(e.target.value))}
+            className="max-w-[180px] bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[10px]"
+            title="Select audio track"
+          >
+            {audioTracks.map((track) => (
+              <option key={track.id} value={track.id}>
+                {track.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="max-w-[160px] truncate text-[10px] text-text-dim">
+            No audio
+          </span>
+        )}
+        {activeAudioTrack && (
           <>
             <span className="text-text-dim text-[10px]">Start:</span>
             <input
@@ -1759,6 +1785,7 @@ export const TimelinePanel = () => {
           step="0.05"
           value={audioVolume}
           onChange={(e) => setAudioVolume(parseFloat(e.target.value))}
+          disabled={!activeAudioTrack}
           className="w-20 accent-accent"
           title="Preview audio volume"
         />
@@ -1791,9 +1818,8 @@ export const TimelinePanel = () => {
               (e.target as HTMLInputElement).blur();
             }
           }}
-          className="w-12 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
+          className="w-16 bg-panel2 border border-border rounded px-1 py-0.5 text-text text-[11px] text-center"
           min="10"
-          max="300"
         />
       </div>
       <div

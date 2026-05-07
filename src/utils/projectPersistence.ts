@@ -7,7 +7,7 @@ import { useEditorStore } from '../stores/editorStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useSlotStore } from '../stores/slotStore';
-import type { Attachment, Bone, ProjectData, SetupPose } from '../types';
+import type { Attachment, AudioTrack, Bone, ProjectData, SetupPose } from '../types';
 import {
   getFileNameFromPath,
   openBinaryFile,
@@ -53,8 +53,14 @@ type ArchiveAttachment = Attachment & {
   assetPath?: string;
 };
 
+type ArchiveAudioTrack = Omit<AudioTrack, 'dataUrl'> & {
+  dataUrl?: string | null;
+  assetPath?: string | null;
+};
+
 type ArchiveProjectData = Omit<ProjectData, 'attachments'> & {
   attachments: ArchiveAttachment[];
+  audioTracks?: ArchiveAudioTrack[];
   backgroundAssetPath?: string | null;
   audioAssetPath?: string | null;
 };
@@ -399,6 +405,28 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
     archiveProject.audioData = null;
   }
 
+  if (projectData.audioTracks?.length) {
+    archiveProject.audioTracks = projectData.audioTracks.map((track) => {
+      const existingAssetPath = assetPathByDataUrl.get(track.dataUrl);
+      const assetPath =
+        existingAssetPath ??
+        createAssetPath(
+          `${track.id}-${track.name || 'audio-track'}`,
+          parseDataUrl(track.dataUrl).extension,
+        );
+      if (!existingAssetPath) {
+        const parsed = parseDataUrl(track.dataUrl);
+        zip.file(assetPath, parsed.bytes);
+        assetPathByDataUrl.set(track.dataUrl, assetPath);
+      }
+      return {
+        ...track,
+        dataUrl: null,
+        assetPath,
+      };
+    });
+  }
+
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
   zip.file(PROJECT_JSON_FILE_NAME, JSON.stringify(archiveProject, null, 2));
   zip.file(manifest.thumbnailFile, await renderProjectThumbnail(projectData));
@@ -478,13 +506,42 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
       })()
     : archiveProject.audioData ?? null;
 
+  const audioTracks = await Promise.all(
+    (archiveProject.audioTracks ?? []).map(async (track) => {
+      if (!track.assetPath) {
+        return {
+          id: track.id,
+          name: track.name,
+          dataUrl: track.dataUrl ?? '',
+          volume: track.volume,
+          offsetFrames: track.offsetFrames,
+        } as AudioTrack;
+      }
+
+      const assetEntry = zip.file(track.assetPath);
+      if (!assetEntry) {
+        throw new Error(`Project archive is missing audio asset: ${track.assetPath}`);
+      }
+      const data = await assetEntry.async('uint8array');
+      const { assetPath, dataUrl, ...restTrack } = track;
+      void assetPath;
+      void dataUrl;
+      return {
+        ...restTrack,
+        dataUrl: bytesToDataUrl(data, getMimeTypeFromAssetPath(track.assetPath)),
+      } as AudioTrack;
+    }),
+  );
+
   const {
     attachments: archivedAttachments,
+    audioTracks: archivedAudioTracks,
     backgroundAssetPath,
     audioAssetPath,
     ...projectRest
   } = archiveProject;
   void archivedAttachments;
+  void archivedAudioTracks;
   void backgroundAssetPath;
   void audioAssetPath;
 
@@ -493,6 +550,7 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
     attachments,
     backgroundImage,
     audioData,
+    audioTracks,
   };
 };
 
@@ -617,6 +675,8 @@ export const buildProjectData = (): ProjectData => {
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
+    audioTracks: animationState.audioTracks,
+    activeAudioTrackId: animationState.activeAudioTrackId,
     audioData: animationState.audioData,
     audioName: animationState.audioName,
     audioVolume: animationState.audioVolume,
@@ -653,6 +713,25 @@ export const applyProjectData = (
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });
 
+  const audioTracks =
+    projectData.audioTracks?.length
+      ? projectData.audioTracks
+      : projectData.audioData
+        ? [
+            {
+              id: 1,
+              name: projectData.audioName ?? 'Audio track',
+              dataUrl: projectData.audioData,
+              volume: projectData.audioVolume ?? 0.8,
+              offsetFrames: projectData.audioOffsetFrames ?? 0,
+            },
+          ]
+        : [];
+  const activeAudioTrack =
+    audioTracks.find((track) => track.id === projectData.activeAudioTrackId) ??
+    audioTracks[0] ??
+    null;
+
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
     slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
@@ -662,10 +741,18 @@ export const applyProjectData = (
     fps: projectData.fps ?? 24,
     frame: 0,
     playing: false,
-    audioData: projectData.audioData ?? null,
-    audioName: projectData.audioName ?? null,
-    audioVolume: projectData.audioVolume ?? 0.8,
-    audioOffsetFrames: projectData.audioOffsetFrames ?? 0,
+    audioTracks,
+    activeAudioTrackId: activeAudioTrack?.id ?? null,
+    nextAudioTrackId:
+      Math.max(
+        0,
+        ...audioTracks.map((track) => track.id),
+        projectData.audioData ? 1 : 0,
+      ) + 1,
+    audioData: activeAudioTrack?.dataUrl ?? null,
+    audioName: activeAudioTrack?.name ?? null,
+    audioVolume: activeAudioTrack?.volume ?? 0.8,
+    audioOffsetFrames: activeAudioTrack?.offsetFrames ?? 0,
   });
 
   useEditorStore.setState({
@@ -714,6 +801,9 @@ export const createNewProject = () => {
     duration: 60,
     fps: 24,
     playing: false,
+    audioTracks: [],
+    activeAudioTrackId: null,
+    nextAudioTrackId: 1,
     audioData: null,
     audioName: null,
     audioVolume: 0.8,

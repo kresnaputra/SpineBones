@@ -14,6 +14,29 @@ import { createExportWorldToScreen } from '../engine/viewport';
 import { resolveAttachmentAtFrame } from './meshAttachment';
 import { resolveSlotsAtFrame } from './slotAnimation';
 
+const getLastFrameFromRecord = <T,>(records: Record<string | number, Record<number, T>>) =>
+  Object.values(records).reduce((maxFrame, framesByKey) => {
+    const frames = Object.keys(framesByKey).map(Number);
+    return frames.length > 0 ? Math.max(maxFrame, Math.max(...frames)) : maxFrame;
+  }, -1);
+
+const getExportTotalFrames = (
+  duration: number,
+  keyframes: Keyframes,
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
+  slotAttachmentKeyframes: Record<number, Record<number, { attachmentName: string | null }>>,
+) => {
+  const lastKeyframe = Math.max(
+    getLastFrameFromRecord(keyframes),
+    getLastFrameFromRecord(meshDeformKeyframes),
+    getLastFrameFromRecord(attachmentOpacityKeyframes),
+    getLastFrameFromRecord(slotAttachmentKeyframes),
+  );
+
+  return Math.max(1, lastKeyframe >= 0 ? lastKeyframe + 1 : duration);
+};
+
 export const exportVideo = async (
   bones: Bone[],
   slots: Slot[],
@@ -58,9 +81,16 @@ export const exportVideo = async (
         img.src = att.imageData!;
       });
     });
-  
+
   await Promise.all(imageLoadPromises);
 
+  const totalFrames = getExportTotalFrames(
+    duration,
+    keyframes,
+    meshDeformKeyframes,
+    attachmentOpacityKeyframes,
+    slotAttachmentKeyframes,
+  );
   const stream = canvas.captureStream(fps);
   
   let mimeType = 'video/webm';
@@ -129,14 +159,13 @@ export const exportVideo = async (
 
   return new Promise((resolve) => {
     mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      const blob = new Blob(chunks, { type: mimeType });
       resolve(blob);
     };
 
     mediaRecorder.start();
 
     let currentFrame = 0;
-    const totalFrames = duration;
 
     const renderFrame = () => {
       if (currentFrame >= totalFrames) {
