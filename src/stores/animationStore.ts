@@ -543,6 +543,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     set((state) => {
       const targetId = trackId ?? state.activeAudioTrackId;
       const volume = Math.max(0, Math.min(1, audioVolume));
+      const targetTrack = state.audioTracks.find((track) => track.id === targetId);
+      if (targetTrack?.volume === volume) return state;
       const audioTracks = state.audioTracks.map((track) =>
         track.id === targetId ? { ...track, volume } : track,
       );
@@ -556,6 +558,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     set((state) => {
       const targetId = trackId ?? state.activeAudioTrackId;
       const offsetFrames = Math.max(0, Math.round(audioOffsetFrames));
+      const targetTrack = state.audioTracks.find((track) => track.id === targetId);
+      if (targetTrack?.offsetFrames === offsetFrames) return state;
       const audioTracks = state.audioTracks.map((track) =>
         track.id === targetId ? { ...track, offsetFrames } : track,
       );

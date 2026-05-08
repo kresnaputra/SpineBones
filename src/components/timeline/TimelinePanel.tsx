@@ -110,6 +110,9 @@ const isSameTimelineMarker = (a: TimelineMarker, b: TimelineMarker) =>
   a.frame === b.frame &&
   (a.slotId ?? null) === (b.slotId ?? null);
 
+const getAudioSourceKey = (dataUrl: string) =>
+  `${dataUrl.length}:${dataUrl.slice(0, 48)}:${dataUrl.slice(-48)}`;
+
 export const TimelinePanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const headerCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -219,6 +222,13 @@ export const TimelinePanel = () => {
   const audioVolume = activeAudioTrack?.volume ?? 0.8;
   const audioOffsetFrames = activeAudioTrack?.offsetFrames ?? 0;
   const hasAudioTracks = audioTracks.length > 0;
+  const audioTrackSourcesKey = useMemo(
+    () =>
+      audioTracks
+        .map((track) => `${track.id}:${getAudioSourceKey(track.dataUrl)}`)
+        .join("\n"),
+    [audioTracks],
+  );
 
   const deleteAttachmentOpacityKeysAtFrame = (
     boneId: number,
@@ -478,7 +488,7 @@ export const TimelinePanel = () => {
       refs.forEach((audio) => audio.pause());
       refs.clear();
     };
-  }, [audioTracks]);
+  }, [audioTrackSourcesKey]);
 
   useEffect(() => {
     if (!audioData) {
@@ -963,15 +973,15 @@ export const TimelinePanel = () => {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    if (isDragging && dragMode === "audio-offset" && hasAudioTracks) {
+      setAudioOffsetFrames(getFrameFromX(sx, rect.width));
+      return;
+    }
+
     const keyframeHit = getKeyframeAtPosition(sx, sy);
     setHoveredKeyframe(keyframeHit);
 
     if (!isDragging) return;
-
-    if (dragMode === "audio-offset" && hasAudioTracks) {
-      setAudioOffsetFrames(getFrameFromX(sx, rect.width));
-      return;
-    }
 
     if (dragMode === "keyframe" && draggedKeyframe) {
       const newFrame = getFrameFromX(sx, rect.width);
@@ -1179,9 +1189,9 @@ export const TimelinePanel = () => {
     stop();
     setFrame(0);
     applyKeyframes();
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-    }
+    audioRefs.current.forEach((audio) => {
+      audio.currentTime = 0;
+    });
   };
 
   const handleInsertKeyframe = () => {

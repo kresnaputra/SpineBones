@@ -58,7 +58,7 @@ type ArchiveAudioTrack = Omit<AudioTrack, 'dataUrl'> & {
   assetPath?: string | null;
 };
 
-type ArchiveProjectData = Omit<ProjectData, 'attachments'> & {
+type ArchiveProjectData = Omit<ProjectData, 'attachments' | 'audioTracks'> & {
   attachments: ArchiveAttachment[];
   audioTracks?: ArchiveAudioTrack[];
   backgroundAssetPath?: string | null;
