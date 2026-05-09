@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { EditorLayout } from './components/layout/EditorLayout';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAnimationStore } from './stores/animationStore';
@@ -1906,6 +1908,31 @@ function App() {
       ? `${getFileNameFromPath(currentProjectPath)} - SpineBones`
       : 'SpineBones';
   }, [currentProjectPath]);
+
+  useEffect(() => {
+    if (!isDesktopApp()) return;
+
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onCloseRequested(async (event) => {
+      const { isDirty } = useHistoryStore.getState();
+      if (!isDirty) return;
+
+      event.preventDefault();
+
+      const confirmed = await ask(
+        'You have unsaved changes. Are you sure you want to close without saving?',
+        { title: 'Unsaved Changes', kind: 'warning' },
+      );
+      if (confirmed) {
+        useHistoryStore.getState().markClean();
+        await appWindow.destroy();
+      }
+    });
+
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   return <EditorLayout />;
 }

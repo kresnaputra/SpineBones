@@ -57,10 +57,12 @@ interface HistoryState {
   past: ProjectSnapshot[];
   future: ProjectSnapshot[];
   isApplying: boolean;
+  isDirty: boolean;
   captureSnapshot: () => void;
   undo: () => void;
   redo: () => void;
   clearHistory: () => void;
+  markClean: () => void;
 }
 
 const cloneSnapshot = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -175,6 +177,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   past: [],
   future: [],
   isApplying: false,
+  isDirty: false,
 
   captureSnapshot: () => {
     if (get().isApplying) return;
@@ -190,6 +193,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       return {
         past: nextPast.slice(-HISTORY_LIMIT),
         future: [],
+        isDirty: true,
       };
     });
   },
@@ -226,5 +230,6 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     });
   },
 
-  clearHistory: () => set({ past: [], future: [] }),
+  clearHistory: () => set({ past: [], future: [], isDirty: false }),
+  markClean: () => set({ isDirty: false }),
 }));

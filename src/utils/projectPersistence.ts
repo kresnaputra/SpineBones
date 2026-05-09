@@ -857,6 +857,7 @@ export const saveProject = async (forceDialog = false) => {
   if (targetPath) {
     useEditorStore.getState().setCurrentProjectPath(targetPath);
     rememberRecentProject(await createCachedProjectPreview(projectData, targetPath));
+    useHistoryStore.getState().markClean();
   }
 
   return targetPath;
