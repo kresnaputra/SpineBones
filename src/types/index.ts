@@ -36,6 +36,7 @@ export interface Attachment {
     width: number;
     height: number;
   };
+  imageIsCropped?: boolean;
   width: number;
   height: number;
   x: number;

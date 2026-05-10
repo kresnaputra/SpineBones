@@ -122,6 +122,78 @@ const bytesToDataUrl = (bytes: Uint8Array, mimeType: string) => {
   return `data:${mimeType};base64,${base64}`;
 };
 
+const loadImageElement = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image for crop'));
+    img.src = src;
+  });
+
+const cropAttachmentImage = async (
+  imageData: string,
+  existingOpaqueBounds: Attachment['opaqueBounds'],
+): Promise<{ imageData: string; opaqueBounds: NonNullable<Attachment['opaqueBounds']> } | null> => {
+  const img = await loadImageElement(imageData);
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+
+  let ox: number, oy: number, cw: number, ch: number;
+
+  if (existingOpaqueBounds && existingOpaqueBounds.width > 0 && existingOpaqueBounds.height > 0) {
+    ox = existingOpaqueBounds.x;
+    oy = existingOpaqueBounds.y;
+    cw = existingOpaqueBounds.width;
+    ch = existingOpaqueBounds.height;
+  } else {
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const { data } = ctx.getImageData(0, 0, W, H);
+
+    let oxMin = W, oyMin = H, oxMax = -1, oyMax = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] > 0) {
+          if (x < oxMin) oxMin = x;
+          if (y < oyMin) oyMin = y;
+          if (x > oxMax) oxMax = x;
+          if (y > oyMax) oyMax = y;
+        }
+      }
+    }
+    if (oxMax < oxMin || oyMax < oyMin) return null;
+    ox = oxMin;
+    oy = oyMin;
+    cw = oxMax - oxMin + 1;
+    ch = oyMax - oyMin + 1;
+  }
+
+  if (cw >= W && ch >= H) return null;
+
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = cw;
+  cropCanvas.height = ch;
+  const cropCtx = cropCanvas.getContext('2d');
+  if (!cropCtx) return null;
+
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = W;
+  srcCanvas.height = H;
+  const srcCtx = srcCanvas.getContext('2d');
+  if (!srcCtx) return null;
+  srcCtx.drawImage(img, 0, 0);
+  cropCtx.drawImage(srcCanvas, ox, oy, cw, ch, 0, 0, cw, ch);
+
+  return {
+    imageData: cropCanvas.toDataURL('image/png'),
+    opaqueBounds: { x: ox, y: oy, width: cw, height: ch },
+  };
+};
+
 const blobToDataUrl = async (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -345,37 +417,62 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
     createdAt: new Date().toISOString(),
   };
 
-  const assetPathByDataUrl = new Map<string, string>();
+  const assetPathByDataUrl = new Map<string, string>(); // original imageData → assetPath
+  const cropInfoByDataUrl = new Map<string, NonNullable<Attachment['opaqueBounds']> | null>(); // original imageData → opaqueBounds if cropped
   let assetIndex = 0;
   const createAssetPath = (baseName: string, extension: string) =>
     `${manifest.assetsDir}/${String(++assetIndex).padStart(4, '0')}-${sanitizeFileSegment(baseName)}.${extension}`;
-  const archiveProject: ArchiveProjectData = {
-    ...projectData,
-    attachments: projectData.attachments.map((attachment) => {
-      const nextAttachment: ArchiveAttachment = {
-        ...attachment,
-      };
 
-      if (attachment.imageData) {
-        const existingAssetPath = assetPathByDataUrl.get(attachment.imageData);
-        if (existingAssetPath) {
-          nextAttachment.assetPath = existingAssetPath;
+  const processedAttachments: ArchiveAttachment[] = [];
+  for (const attachment of projectData.attachments) {
+    const nextAttachment: ArchiveAttachment = { ...attachment };
+
+    if (attachment.imageData) {
+      const originalImageData = attachment.imageData;
+
+      if (assetPathByDataUrl.has(originalImageData)) {
+        nextAttachment.assetPath = assetPathByDataUrl.get(originalImageData)!;
+        const cachedOpaqueBounds = cropInfoByDataUrl.get(originalImageData);
+        if (cachedOpaqueBounds) {
+          nextAttachment.opaqueBounds = cachedOpaqueBounds;
+          nextAttachment.imageIsCropped = true;
+        }
+      } else {
+        let imageDataToStore = originalImageData;
+
+        if (attachment.type !== 'mesh') {
+          const cropped = await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
+          if (cropped) {
+            imageDataToStore = cropped.imageData;
+            nextAttachment.opaqueBounds = cropped.opaqueBounds;
+            nextAttachment.imageIsCropped = true;
+            cropInfoByDataUrl.set(originalImageData, cropped.opaqueBounds);
+          } else {
+            cropInfoByDataUrl.set(originalImageData, null);
+          }
         } else {
-          const parsed = parseDataUrl(attachment.imageData);
-          const assetPath = createAssetPath(
-            `${attachment.slotId}-${attachment.name || 'attachment'}`,
-            parsed.extension,
-          );
-          assetPathByDataUrl.set(attachment.imageData, assetPath);
-          zip.file(assetPath, parsed.bytes);
-          nextAttachment.assetPath = assetPath;
+          cropInfoByDataUrl.set(originalImageData, null);
         }
 
-        delete nextAttachment.imageData;
+        const parsed = parseDataUrl(imageDataToStore);
+        const assetPath = createAssetPath(
+          `${attachment.slotId}-${attachment.name || 'attachment'}`,
+          parsed.extension,
+        );
+        assetPathByDataUrl.set(originalImageData, assetPath);
+        zip.file(assetPath, parsed.bytes);
+        nextAttachment.assetPath = assetPath;
       }
 
-      return nextAttachment;
-    }),
+      delete nextAttachment.imageData;
+    }
+
+    processedAttachments.push(nextAttachment);
+  }
+
+  const archiveProject: ArchiveProjectData = {
+    ...projectData,
+    attachments: processedAttachments,
   };
 
   if (projectData.backgroundImage) {

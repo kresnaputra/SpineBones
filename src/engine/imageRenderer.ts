@@ -446,7 +446,15 @@ export const drawAttachment = (
   const offsetY = attachment.y * zoom;
 
   ctx.scale(flipX, flipY);
-  ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
+
+  if (attachment.imageIsCropped && attachment.opaqueBounds) {
+    const { x: ox, y: oy, width: cw, height: ch } = attachment.opaqueBounds;
+    const scaleX = w / attachment.width;
+    const scaleY = h / attachment.height;
+    ctx.drawImage(img, offsetX - w / 2 + ox * scaleX, offsetY - h / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
+  } else {
+    ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
+  }
 
   ctx.restore();
 };
@@ -592,13 +600,14 @@ export const drawAttachmentOutline = (
     if (outline) {
       ctx.save();
       ctx.globalAlpha = 0.95;
-      ctx.drawImage(
-        outline,
-        offsetX - width / 2,
-        offsetY - height / 2,
-        width,
-        height,
-      );
+      if (attachment.imageIsCropped && attachment.opaqueBounds) {
+        const { x: ox, y: oy, width: cw, height: ch } = attachment.opaqueBounds;
+        const scaleX = width / attachment.width;
+        const scaleY = height / attachment.height;
+        ctx.drawImage(outline, offsetX - width / 2 + ox * scaleX, offsetY - height / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
+      } else {
+        ctx.drawImage(outline, offsetX - width / 2, offsetY - height / 2, width, height);
+      }
       ctx.restore();
       ctx.restore();
       return;
