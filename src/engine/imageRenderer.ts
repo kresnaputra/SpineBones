@@ -13,24 +13,65 @@ const imageCache = new Map<string, HTMLImageElement>();
 const outlineCache = new Map<string, HTMLCanvasElement>();
 type ScreenPoint = { x: number; y: number };
 
+// Dilate a triangle so adjacent triangles overlap by a fraction of a pixel,
+// hiding the anti-aliased clip seams that otherwise show up as thin lines
+// across the rendered mesh. Each EDGE is pushed outward by `padding`
+// perpendicular distance (a proper polygon offset). A naive radial push from
+// the centroid under-expands thin "sliver" triangles — which is exactly what
+// deforming the mesh produces — leaving the seams visible after a deform.
 const inflateTrianglePoints = (
   points: [ScreenPoint, ScreenPoint, ScreenPoint],
   padding: number,
 ): [ScreenPoint, ScreenPoint, ScreenPoint] => {
+  const [a, b, c] = points;
   const centroid = {
-    x: (points[0].x + points[1].x + points[2].x) / 3,
-    y: (points[0].y + points[1].y + points[2].y) / 3,
+    x: (a.x + b.x + c.x) / 3,
+    y: (a.y + b.y + c.y) / 3,
   };
 
-  return points.map((point) => {
-    const dx = point.x - centroid.x;
-    const dy = point.y - centroid.y;
-    const length = Math.hypot(dx, dy) || 1;
-    return {
-      x: point.x + (dx / length) * padding,
-      y: point.y + (dy / length) * padding,
-    };
-  }) as [ScreenPoint, ScreenPoint, ScreenPoint];
+  // Unit normal of edge p0->p1, flipped to point away from the centroid.
+  const outwardNormal = (p0: ScreenPoint, p1: ScreenPoint): ScreenPoint => {
+    let nx = p1.y - p0.y;
+    let ny = -(p1.x - p0.x);
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len;
+    ny /= len;
+    const midX = (p0.x + p1.x) / 2;
+    const midY = (p0.y + p1.y) / 2;
+    if ((midX - centroid.x) * nx + (midY - centroid.y) * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    return { x: nx, y: ny };
+  };
+
+  // Move a vertex along the bisector of its two incident edges so that both
+  // edges shift outward by `padding` perpendicular distance.
+  const offsetVertex = (
+    prev: ScreenPoint,
+    curr: ScreenPoint,
+    next: ScreenPoint,
+  ): ScreenPoint => {
+    const n1 = outwardNormal(prev, curr);
+    const n2 = outwardNormal(curr, next);
+    let bx = n1.x + n2.x;
+    let by = n1.y + n2.y;
+    const blen = Math.hypot(bx, by);
+    if (blen < 1e-6) {
+      return { x: curr.x + n1.x * padding, y: curr.y + n1.y * padding };
+    }
+    bx /= blen;
+    by /= blen;
+    const cosHalf = bx * n1.x + by * n1.y; // half-angle cosine of the corner
+    const scale = padding / Math.max(cosHalf, 0.1); // clamp avoids spikes on sharp corners
+    return { x: curr.x + bx * scale, y: curr.y + by * scale };
+  };
+
+  return [
+    offsetVertex(c, a, b),
+    offsetVertex(a, b, c),
+    offsetVertex(b, c, a),
+  ];
 };
 
 const getMeshBoundaryEdges = (triangles: Attachment['meshTriangles']) => {
