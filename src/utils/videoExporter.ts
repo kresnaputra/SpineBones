@@ -3,7 +3,6 @@ import type {
   AttachmentOpacityKeyframes,
   Bone,
   Keyframes,
-  MeshDeformKeyframes,
   Slot,
 } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
@@ -11,7 +10,7 @@ import { drawSlots } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
 import { createExportWorldToScreen } from '../engine/viewport';
-import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveAttachmentAtFrame } from './attachmentUtils';
 import { resolveSlotsAtFrame } from './slotAnimation';
 
 const getLastFrameFromRecord = <T,>(records: Record<string | number, Record<number, T>>) =>
@@ -23,13 +22,11 @@ const getLastFrameFromRecord = <T,>(records: Record<string | number, Record<numb
 const getExportTotalFrames = (
   duration: number,
   keyframes: Keyframes,
-  meshDeformKeyframes: MeshDeformKeyframes,
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
   slotAttachmentKeyframes: Record<number, Record<number, { attachmentName: string | null }>>,
 ) => {
   const lastKeyframe = Math.max(
     getLastFrameFromRecord(keyframes),
-    getLastFrameFromRecord(meshDeformKeyframes),
     getLastFrameFromRecord(attachmentOpacityKeyframes),
     getLastFrameFromRecord(slotAttachmentKeyframes),
   );
@@ -42,7 +39,6 @@ export const exportVideo = async (
   slots: Slot[],
   attachments: Attachment[],
   keyframes: Keyframes,
-  meshDeformKeyframes: MeshDeformKeyframes,
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
   slotAttachmentKeyframes: Record<number, Record<number, { attachmentName: string | null }>> = {},
   duration: number,
@@ -87,7 +83,6 @@ export const exportVideo = async (
   const totalFrames = getExportTotalFrames(
     duration,
     keyframes,
-    meshDeformKeyframes,
     attachmentOpacityKeyframes,
     slotAttachmentKeyframes,
   );
@@ -194,7 +189,6 @@ export const exportVideo = async (
         resolveAttachmentAtFrame(
           attachment,
           currentFrame,
-          meshDeformKeyframes,
           attachmentOpacityKeyframes,
         ),
       );

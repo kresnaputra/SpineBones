@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Scan, Monitor } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine, Paintbrush } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -14,7 +14,6 @@ import { exportVideo } from '../../utils/videoExporter';
 import { exportAudioMix } from '../../utils/audioExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
-import { ensureMeshAttachmentAsync, getMeshAttachmentKey } from '../../utils/meshAttachment';
 import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
@@ -23,7 +22,9 @@ const TOOL_ICONS = {
   move: Move,
   rotate: RotateCw,
   scale: Maximize2,
-  mesh: Scan,
+  mesh: ScanLine,
+  warp: Grid2x2,
+  weights: Paintbrush,
 };
 
 const TOOL_LABELS = {
@@ -33,6 +34,8 @@ const TOOL_LABELS = {
   rotate: 'Rotate',
   scale: 'Scale',
   mesh: 'Mesh',
+  warp: 'Warp',
+  weights: 'Weights',
 };
 
 const TOOL_SHORTCUTS = {
@@ -41,7 +44,9 @@ const TOOL_SHORTCUTS = {
   move: 'G',
   rotate: 'R',
   scale: 'S',
-  mesh: 'M',
+  mesh: 'H',
+  warp: 'D',
+  weights: 'P',
 };
 
 const IMAGE_FILTERS = [
@@ -64,9 +69,7 @@ export const Toolbar = () => {
     mode,
     setTool,
     setMode,
-    selectedBoneId,
     selectedBoneIds,
-    selectedSlotId,
     onionSkinEnabled,
     toggleOnionSkin,
     showViewport,
@@ -78,32 +81,9 @@ export const Toolbar = () => {
   const restoreSetupPose = useSkeletonStore((state) => state.restoreSetupPose);
   const updateBone = useSkeletonStore((state) => state.updateBone);
   const insertKeyframe = useAnimationStore((state) => state.insertKeyframe);
-  const { slots, attachments, updateAttachment } = useSlotStore();
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
   const showProjectBrowserButton = isDesktopApp();
-
-  const activeSlot =
-    selectedBoneId === null
-      ? null
-      : ((selectedSlotId !== null
-          ? slots.find(
-              (slot) =>
-                slot.id === selectedSlotId &&
-                slot.boneId === selectedBoneId &&
-                slot.attachmentName,
-            ) ?? null
-          : null) ??
-        slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
-        null);
-  const activeAttachment =
-    activeSlot && activeSlot.attachmentName
-      ? attachments.find(
-          (attachment) =>
-            attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName,
-        ) ?? null
-      : null;
-
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -168,7 +148,6 @@ export const Toolbar = () => {
         slotState.slots,
         slotState.attachments,
         animationState.keyframes,
-        animationState.meshDeformKeyframes,
         animationState.attachmentOpacityKeyframes,
         animationState.slotAttachmentKeyframes,
         animationState.duration,
@@ -191,7 +170,6 @@ export const Toolbar = () => {
       const audioBlob = await exportAudioMix({
         audioTracks: animationState.audioTracks,
         keyframes: animationState.keyframes,
-        meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
         slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
@@ -233,7 +211,6 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
-        meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
         slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
@@ -278,7 +255,6 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
-        meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
         slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
@@ -355,26 +331,7 @@ export const Toolbar = () => {
         return (
           <button
             key={t}
-            onClick={async () => {
-              if (t === 'mesh') {
-                if (!activeSlot || !activeAttachment) return;
-                if (activeAttachment.type !== 'mesh') {
-                  captureSnapshot();
-                  useAnimationStore
-                    .getState()
-                    .clearMeshDeformKeyframesForAttachment(
-                      getMeshAttachmentKey({
-                        slotId: activeSlot.id,
-                        name: activeAttachment.name,
-                      }),
-                    );
-                  updateAttachment(
-                    activeSlot.id,
-                    activeAttachment.name,
-                    await ensureMeshAttachmentAsync(activeAttachment),
-                  );
-                }
-              }
+            onClick={() => {
               setTool(t);
             }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
@@ -383,7 +340,6 @@ export const Toolbar = () => {
                 : 'bg-transparent text-text-dim border-transparent hover:bg-panel2 hover:text-text hover:border-border'
             }`}
             title={`${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})`}
-            disabled={t === 'mesh' && !activeAttachment}
           >
             <Icon size={14} />
             {TOOL_LABELS[t]}

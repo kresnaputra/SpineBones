@@ -10,6 +10,7 @@ import { useSkeletonStore } from './stores/skeletonStore';
 import { useSlotStore } from './stores/slotStore';
 import { useCameraStore } from './stores/cameraStore';
 import { useHistoryStore } from './stores/historyStore';
+import { useDeformerStore } from './stores/deformerStore';
 import { ensureDesktopMenu } from './utils/desktopMenu';
 import { computeAllWorldTransforms } from './engine/transforms';
 import { getIkChain, solveTwoBoneIk } from './utils/ik';
@@ -35,6 +36,8 @@ import { exportSpriteSheet } from './utils/spriteSheetExporter';
 import { exportPngSequence } from './utils/pngSequenceExporter';
 import { exportVideo } from './utils/videoExporter';
 import { exportAudioMix } from './utils/audioExporter';
+import { getAttachmentKey } from './utils/attachmentUtils';
+import { normalizeKeyframeEasing } from './utils/easing';
 import type { Attachment, Mode, Tool } from './types';
 
 type McpEditorCommand = {
@@ -1010,31 +1013,150 @@ const copyFirstKeyframeFromCommand = (payload: McpEditorCommand) => {
 };
 
 const loopKeyframesFromCommand = () => {
+  if (useEditorStore.getState().mode !== 'animate') {
+    return { ok: false, skipped: true, reason: 'loop_keyframes requires animate mode' };
+  }
+
   const animation = useAnimationStore.getState();
-  const allKeyframes = animation.keyframes;
-  const boneIds = Object.keys(allKeyframes).map(Number);
-  let globalMax = 0;
+  const slotState = useSlotStore.getState();
+  const deformerState = useDeformerStore.getState();
+  const boneIds = Array.from(
+    new Set([
+      ...Object.keys(animation.keyframes).map(Number),
+      ...slotState.slots.map((slot) => slot.boneId),
+    ]),
+  );
+  const attachmentKeys = slotState.slots
+    .filter((slot) => slot.attachmentName)
+    .map((slot) =>
+      getAttachmentKey({
+        slotId: slot.id,
+        name: slot.attachmentName!,
+      }),
+    );
+
+  const allFrames: number[] = [];
   boneIds.forEach((boneId) => {
-    const frames = Object.keys(allKeyframes[boneId] ?? {}).map(Number);
-    const max = Math.max(...frames, 0);
-    if (max > globalMax) globalMax = max;
+    allFrames.push(...Object.keys(animation.keyframes[boneId] ?? {}).map(Number));
   });
+  slotState.slots.forEach((slot) => {
+    allFrames.push(...Object.keys(animation.slotAttachmentKeyframes[slot.id] ?? {}).map(Number));
+  });
+  attachmentKeys.forEach((attachmentKey) => {
+    allFrames.push(
+      ...Object.keys(animation.attachmentOpacityKeyframes[attachmentKey] ?? {}).map(Number),
+      ...Object.keys(animation.meshDeformKeyframes[attachmentKey] ?? {}).map(Number),
+    );
+  });
+  Object.values(deformerState.deformerKeyframes).forEach((deformerFrames) => {
+    allFrames.push(...Object.keys(deformerFrames).map(Number));
+  });
+
+  if (allFrames.length < 2) return { ok: true };
+
+  const loopStart = Math.min(...allFrames);
+  const loopEnd = Math.max(...allFrames);
+
   boneIds.forEach((boneId) => {
-    const boneKfs = allKeyframes[boneId];
+    const boneKfs = animation.keyframes[boneId];
     const frames = Object.keys(boneKfs ?? {}).map(Number).sort((a, b) => a - b);
     if (frames.length < 2) return;
-    const lastFrame = frames[frames.length - 1];
-    const reversed = frames.slice(0, -1).reverse();
+    const reversed = frames
+      .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+      .reverse();
     reversed.forEach((srcFrame) => {
-      const gap = lastFrame - srcFrame;
-      const destFrame = globalMax + gap;
+      const destFrame = loopEnd + (loopEnd - srcFrame);
       animation.setFrame(destFrame);
       animation.insertKeyframe(boneId, { ...boneKfs[srcFrame] });
     });
   });
+  slotState.slots.forEach((slot) => {
+    const slotKfs = animation.slotAttachmentKeyframes[slot.id];
+    const frames = Object.keys(slotKfs ?? {}).map(Number).sort((a, b) => a - b);
+    if (frames.length < 2) return;
+    const reversed = frames
+      .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+      .reverse();
+    reversed.forEach((srcFrame) => {
+      const source = slotKfs?.[srcFrame];
+      if (!source) return;
+      const destFrame = loopEnd + (loopEnd - srcFrame);
+      animation.deleteSlotAttachmentKeyframe(slot.id, destFrame);
+      animation.setSlotAttachmentKeyframeAtFrame(
+        slot.id,
+        destFrame,
+        source.attachmentName,
+      );
+    });
+  });
+  attachmentKeys.forEach((attachmentKey) => {
+    const opacityKfs = animation.attachmentOpacityKeyframes[attachmentKey];
+    const opacityFrames = Object.keys(opacityKfs ?? {}).map(Number).sort((a, b) => a - b);
+    if (opacityFrames.length >= 2) {
+      const reversed = opacityFrames
+        .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+        .reverse();
+      reversed.forEach((srcFrame) => {
+        const source = opacityKfs?.[srcFrame];
+        if (!source) return;
+        const destFrame = loopEnd + (loopEnd - srcFrame);
+        animation.setAttachmentOpacityKeyframeAtFrame(
+          attachmentKey,
+          destFrame,
+          source.opacity,
+        );
+        animation.updateAttachmentOpacityKeyframeEasing(
+          attachmentKey,
+          destFrame,
+          normalizeKeyframeEasing(source.easing),
+        );
+      });
+    }
+
+    const meshKfs = animation.meshDeformKeyframes[attachmentKey];
+    const meshFrames = Object.keys(meshKfs ?? {}).map(Number).sort((a, b) => a - b);
+    if (meshFrames.length < 2) return;
+    const reversed = meshFrames
+      .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+      .reverse();
+    reversed.forEach((srcFrame) => {
+      const source = meshKfs?.[srcFrame];
+      if (!source) return;
+      const destFrame = loopEnd + (loopEnd - srcFrame);
+      animation.setMeshDeformKeyframeAtFrame(
+        attachmentKey,
+        destFrame,
+        source.vertices,
+      );
+      animation.updateMeshDeformKeyframeEasing(
+        attachmentKey,
+        destFrame,
+        normalizeKeyframeEasing(source.easing),
+      );
+    });
+  });
+  Object.entries(deformerState.deformerKeyframes).forEach(([deformerIdString, deformerKfs]) => {
+    const deformerId = Number(deformerIdString);
+    const deformerFrames = Object.keys(deformerKfs ?? {}).map(Number).sort((a, b) => a - b);
+    if (deformerFrames.length < 2) return;
+    const reversed = deformerFrames
+      .filter((srcFrame) => srcFrame >= loopStart && srcFrame < loopEnd)
+      .reverse();
+    reversed.forEach((srcFrame) => {
+      const source = deformerKfs?.[srcFrame];
+      if (!source) return;
+      const destFrame = loopEnd + (loopEnd - srcFrame);
+      deformerState.setDeformerKeyframe(deformerId, destFrame, source.points);
+      deformerState.updateDeformerKeyframeEasing(
+        deformerId,
+        destFrame,
+        normalizeKeyframeEasing(source.easing),
+      );
+    });
+  });
   animation.setFrame(0);
   animation.applyKeyframes();
-  return { ok: true };
+  return { ok: true, loopStart, loopEnd };
 };
 
 const getAudioStateFromCommand = () => {
@@ -1192,7 +1314,6 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       slotState.slots,
       slotState.attachments,
       animationState.keyframes,
-      animationState.meshDeformKeyframes,
       animationState.attachmentOpacityKeyframes,
       animationState.slotAttachmentKeyframes,
       animationState.duration,
@@ -1206,7 +1327,6 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
     const audioBlob = await exportAudioMix({
       audioTracks: animationState.audioTracks,
       keyframes: animationState.keyframes,
-      meshDeformKeyframes: animationState.meshDeformKeyframes,
       attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
       slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
       duration: animationState.duration,
@@ -1224,7 +1344,6 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       attachments: slotState.attachments,
       keyframes: animationState.keyframes,
       slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
-      meshDeformKeyframes: animationState.meshDeformKeyframes,
       attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
       duration: animationState.duration,
       fps: animationState.fps,
@@ -1243,7 +1362,6 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
     attachments: slotState.attachments,
     keyframes: animationState.keyframes,
     slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
-    meshDeformKeyframes: animationState.meshDeformKeyframes,
     attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
     duration: animationState.duration,
     fps: animationState.fps,

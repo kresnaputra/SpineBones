@@ -1,15 +1,14 @@
 import { useEditorStore } from '../../stores/editorStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
-import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { getAttachmentKey, resolveAttachmentAtFrame } from '../../utils/attachmentUtils';
 import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, selectedSlotId, attachmentDragEnabled, setAttachmentDragEnabled, mode, tool } = useEditorStore();
+  const { selectedBoneId, selectedSlotId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
   const {
     frame,
     keyframes,
-    meshDeformKeyframes,
     attachmentOpacityKeyframes,
     setAttachmentOpacityKeyframeAtFrame,
     setAttachmentOpacityKeyframe,
@@ -55,18 +54,16 @@ export const AttachmentPropertiesPanel = () => {
 
   if (!attachment) return null;
 
-  const isMeshTool = tool === 'mesh' && attachment.type === 'mesh';
   const clampOpacity = (value: number) => Math.min(1, Math.max(0, value));
   const resolvedAttachment = resolveAttachmentAtFrame(
     attachment,
     frame,
-    meshDeformKeyframes,
     attachmentOpacityKeyframes,
   );
 
   const handleUpdate = (field: string, value: number) => {
     if (field === 'opacity' && mode === 'animate') {
-      const attachmentKey = getMeshAttachmentKey(attachment);
+      const attachmentKey = getAttachmentKey(attachment);
       const existingFrames = Object.keys(
         attachmentOpacityKeyframes[attachmentKey] ?? {},
       ).map(Number);
@@ -95,50 +92,6 @@ export const AttachmentPropertiesPanel = () => {
     });
   };
 
-  // ── Mesh-tool mode: show a compact header with only opacity ──────────────
-  if (isMeshTool) {
-    return (
-      <div className="border-b border-border">
-        <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 flex items-center justify-between gap-2">
-          <span className="truncate">{attachment.name}</span>
-          <span className="text-[9px] font-normal normal-case text-accent border border-accent/40 rounded px-1.5 py-0.5">
-            Mesh
-          </span>
-        </div>
-        <div className="px-3 py-2 space-y-2">
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] text-text-dim w-16 flex-shrink-0">Opacity</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
-              onChange={(e) =>
-                handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
-              }
-              className="flex-1 accent-accent"
-            />
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={Math.round((resolvedAttachment.opacity ?? 1) * 100)}
-              onChange={(e) =>
-                handleUpdate('opacity', clampOpacity(Number(e.target.value) / 100))
-              }
-              className="w-14 bg-panel2 border border-border rounded px-2 py-1 text-text text-[11px]"
-              step="1"
-            />
-          </div>
-          <div className="text-[9px] text-text-dim">
-            Switch to another tool to edit offset, rotation and scale.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Normal mode: full attachment properties ───────────────────────────────
   return (
     <div className="border-b border-border">
       <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2 flex items-center justify-between gap-2">

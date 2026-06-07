@@ -1,497 +1,117 @@
 import type {
   Attachment,
-  AttachmentOpacityKeyframes,
+  AttachmentMesh,
   MeshDeformKeyframes,
   MeshTriangle,
   MeshVertex,
 } from '../types';
 import { applyEasing } from './easing';
+import { getOpaqueBoundsFromImageData } from './attachmentUtils';
 
-const loadImageElement = (imageData: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Failed to load image for mesh bounds'));
-    image.src = imageData;
-  });
+// ─── Edge helpers ──────────────────────────────────────────────────────────
 
-export const getOpaqueBoundsFromImageData = async (
-  imageData: string,
-): Promise<Attachment['opaqueBounds'] | undefined> => {
-  const image = await loadImageElement(imageData);
-  const canvas = document.createElement('canvas');
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return undefined;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(image, 0, 0);
-  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-  let minX = canvas.width;
-  let minY = canvas.height;
-  let maxX = -1;
-  let maxY = -1;
-
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      const alpha = data[(y * canvas.width + x) * 4 + 3];
-      if (alpha === 0) continue;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
+/** Build unique undirected edges from a triangle list (for wireframe rendering). */
+export const buildMeshEdges = (triangles: MeshTriangle[]): [number, number][] => {
+  const seen = new Set<string>();
+  const edges: [number, number][] = [];
+  for (const [a, b, c] of triangles) {
+    for (const [u, v] of [[a, b], [b, c], [c, a]] as [number, number][]) {
+      const key = u < v ? `${u}:${v}` : `${v}:${u}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push([u < v ? u : v, u < v ? v : u]);
+      }
     }
   }
-
-  if (maxX < minX || maxY < minY) return undefined;
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
-  };
+  return edges;
 };
+
+// ─── Grid mesh creation ───────────────────────────────────────────────────
 
 export const createGridMeshVertices = (
   attachment: Attachment,
   columns = 3,
   rows = 3,
 ): MeshVertex[] => {
-  const vertices: MeshVertex[] = [];
-  const sourceBounds = attachment.opaqueBounds ?? {
+  const bounds = attachment.opaqueBounds ?? {
     x: 0,
     y: 0,
     width: attachment.width,
     height: attachment.height,
   };
-  const left = sourceBounds.x - attachment.width / 2;
-  const top = sourceBounds.y - attachment.height / 2;
-
+  const left = bounds.x - attachment.width / 2;
+  const top = bounds.y - attachment.height / 2;
+  // When the stored image is already cropped to its opaque bounds, the texture
+  // IS the opaque region, so the grid (which spans that region) maps to UV 0..1.
+  // Otherwise the texture is the full image and UVs are the opaque sub-range.
+  const cropped = attachment.imageIsCropped && attachment.opaqueBounds;
+  const vertices: MeshVertex[] = [];
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < columns; col += 1) {
       const u = columns === 1 ? 0 : col / (columns - 1);
       const v = rows === 1 ? 0 : row / (rows - 1);
       vertices.push({
-        x: left + sourceBounds.width * u,
-        y: top + sourceBounds.height * v,
-        u: (sourceBounds.x + sourceBounds.width * u) / attachment.width,
-        v: (sourceBounds.y + sourceBounds.height * v) / attachment.height,
+        x: left + bounds.width * u,
+        y: top + bounds.height * v,
+        u: cropped ? u : (bounds.x + bounds.width * u) / attachment.width,
+        v: cropped ? v : (bounds.y + bounds.height * v) / attachment.height,
       });
     }
   }
-
   return vertices;
 };
 
-export const createGridMeshTriangles = (
-  columns = 3,
-  rows = 3,
-): MeshTriangle[] => {
+export const createGridMeshTriangles = (columns = 3, rows = 3): MeshTriangle[] => {
   const triangles: MeshTriangle[] = [];
   for (let row = 0; row < rows - 1; row += 1) {
     for (let col = 0; col < columns - 1; col += 1) {
-      const topLeft = row * columns + col;
-      const topRight = topLeft + 1;
-      const bottomLeft = topLeft + columns;
-      const bottomRight = bottomLeft + 1;
-      triangles.push([topLeft, topRight, bottomRight]);
-      triangles.push([topLeft, bottomRight, bottomLeft]);
+      const tl = row * columns + col;
+      const tr = tl + 1;
+      const bl = tl + columns;
+      const br = bl + 1;
+      triangles.push([tl, tr, br]);
+      triangles.push([tl, br, bl]);
     }
   }
   return triangles;
 };
 
-export const ensureMeshAttachment = (attachment: Attachment): Attachment => ({
-  ...attachment,
-  type: 'mesh',
-  meshVertices:
-    attachment.meshVertices && attachment.meshVertices.length > 0
-      ? attachment.meshVertices
-      : createGridMeshVertices(attachment),
-  meshTriangles:
-    attachment.meshTriangles && attachment.meshTriangles.length > 0
-      ? attachment.meshTriangles
-      : createGridMeshTriangles(),
-  meshGrid: attachment.meshGrid ?? { columns: 3, rows: 3 },
-});
+const createGridMesh = (attachment: Attachment, cols: number, rows: number): AttachmentMesh => {
+  const vertices = createGridMeshVertices(attachment, cols, rows);
+  const triangles = createGridMeshTriangles(cols, rows);
+  return { vertices, triangles, edges: buildMeshEdges(triangles), grid: { columns: cols, rows } };
+};
 
-export const ensureMeshAttachmentAsync = async (
-  attachment: Attachment,
-): Promise<Attachment> => {
+// ─── Mesh attachment creation ──────────────────────────────────────────────
+
+/** Ensure an attachment has a rest mesh, returning it unchanged if already a mesh. */
+export const ensureMeshAttachment = (attachment: Attachment): Attachment => {
+  if (attachment.type === 'mesh' && attachment.mesh?.vertices.length) return attachment;
+  const mesh = createGridMesh(attachment, 3, 3);
+  return { ...attachment, type: 'mesh', mesh };
+};
+
+export const ensureMeshAttachmentAsync = async (attachment: Attachment): Promise<Attachment> => {
   const opaqueBounds =
     attachment.opaqueBounds ??
     (attachment.imageData ? await getOpaqueBoundsFromImageData(attachment.imageData) : undefined);
-
-  return ensureMeshAttachment({
-    ...attachment,
-    opaqueBounds,
-  });
+  return ensureMeshAttachment({ ...attachment, opaqueBounds });
 };
 
-export const getMeshAttachmentKey = (attachment: Pick<Attachment, 'slotId' | 'name'>) =>
-  `${attachment.slotId}:${attachment.name}`;
-
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-export const resolveAttachmentOpacityAtFrame = (
-  attachment: Attachment,
-  frame: number,
-  attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
-) => {
-  const baseOpacity = attachment.opacity ?? 1;
-  const attachmentKeyframes = attachmentOpacityKeyframes[getMeshAttachmentKey(attachment)];
-  if (!attachmentKeyframes) return baseOpacity;
-
-  const frames = Object.keys(attachmentKeyframes).map(Number).sort((a, b) => a - b);
-  if (frames.length === 0) return baseOpacity;
-
-  let prev: number | null = null;
-  let next: number | null = null;
-
-  for (const keyframe of frames) {
-    if (keyframe <= frame) prev = keyframe;
-    if (keyframe >= frame && next === null) next = keyframe;
-  }
-
-  if (prev === null && next !== null) {
-    return attachmentKeyframes[next]?.opacity ?? baseOpacity;
-  }
-
-  if (prev !== null && next === null) {
-    return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
-  }
-
-  if (prev !== null && next !== null) {
-    if (prev === next) {
-      return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
-    }
-
-    const t = applyEasing(
-      attachmentKeyframes[prev]?.easing,
-      (frame - prev) / (next - prev),
-    );
-    return lerp(
-      attachmentKeyframes[prev]?.opacity ?? baseOpacity,
-      attachmentKeyframes[next]?.opacity ?? baseOpacity,
-      t,
-    );
-  }
-
-  return baseOpacity;
-};
-
-export const resolveMeshVerticesAtFrame = (
-  attachment: Attachment,
-  frame: number,
-  meshDeformKeyframes: MeshDeformKeyframes,
-) => {
-  if (attachment.type !== 'mesh' || !attachment.meshVertices?.length) {
-    return attachment.meshVertices;
-  }
-
-  const attachmentKeyframes = meshDeformKeyframes[getMeshAttachmentKey(attachment)];
-  if (!attachmentKeyframes) return attachment.meshVertices;
-
-  const frames = Object.keys(attachmentKeyframes).map(Number).sort((a, b) => a - b);
-  if (frames.length === 0) return attachment.meshVertices;
-
-  let prev: number | null = null;
-  let next: number | null = null;
-
-  for (const keyframe of frames) {
-    if (keyframe <= frame) prev = keyframe;
-    if (keyframe >= frame && next === null) next = keyframe;
-  }
-
-  if (prev === null && next !== null) {
-    if (next === 0) {
-      return attachment.meshVertices.map((vertex, index) => ({
-        ...vertex,
-        x: attachmentKeyframes[next]?.vertices[index]?.x ?? vertex.x,
-        y: attachmentKeyframes[next]?.vertices[index]?.y ?? vertex.y,
-      }));
-    }
-
-    const t = applyEasing(
-      attachmentKeyframes[next]?.easing,
-      frame / next,
-    );
-    return attachment.meshVertices.map((vertex, index) => {
-      const to = attachmentKeyframes[next]?.vertices[index];
-      return {
-        ...vertex,
-        x: lerp(vertex.x, to?.x ?? vertex.x, t),
-        y: lerp(vertex.y, to?.y ?? vertex.y, t),
-      };
-    });
-  }
-
-  if (prev !== null && next === null) {
-    return attachment.meshVertices.map((vertex, index) => ({
-      ...vertex,
-      x: attachmentKeyframes[prev]?.vertices[index]?.x ?? vertex.x,
-      y: attachmentKeyframes[prev]?.vertices[index]?.y ?? vertex.y,
-    }));
-  }
-
-  if (prev !== null && next !== null) {
-    if (prev === next) {
-      return attachment.meshVertices.map((vertex, index) => ({
-        ...vertex,
-        x: attachmentKeyframes[prev]?.vertices[index]?.x ?? vertex.x,
-        y: attachmentKeyframes[prev]?.vertices[index]?.y ?? vertex.y,
-      }));
-    }
-
-    const t = applyEasing(
-      attachmentKeyframes[prev]?.easing,
-      (frame - prev) / (next - prev),
-    );
-    return attachment.meshVertices.map((vertex, index) => {
-      const from = attachmentKeyframes[prev]?.vertices[index];
-      const to = attachmentKeyframes[next]?.vertices[index];
-      return {
-        ...vertex,
-        x: lerp(from?.x ?? vertex.x, to?.x ?? vertex.x, t),
-        y: lerp(from?.y ?? vertex.y, to?.y ?? vertex.y, t),
-      };
-    });
-  }
-
-  return attachment.meshVertices;
-};
-
-// ─── Mesh editing helpers ────────────────────────────────────────────────────
-
-type ScreenPoint = { x: number; y: number };
-
-type Barycentric = { t0: number; t1: number; t2: number };
-
-const EPSILON = 1e-6;
-const HIT_TOLERANCE = 0.001;
-
-const getGridVertexIndex = (columns: number, row: number, col: number) =>
-  row * columns + col;
-
-const getBarycentric = (
-  point: ScreenPoint,
-  p0: ScreenPoint,
-  p1: ScreenPoint,
-  p2: ScreenPoint,
-): Barycentric | null => {
-  const denom =
-    (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
-  if (Math.abs(denom) < EPSILON) return null;
-
-  const t0 =
-    ((p1.y - p2.y) * (point.x - p2.x) + (p2.x - p1.x) * (point.y - p2.y)) / denom;
-  const t1 =
-    ((p2.y - p0.y) * (point.x - p2.x) + (p0.x - p2.x) * (point.y - p2.y)) / denom;
-  const t2 = 1 - t0 - t1;
-
-  return { t0, t1, t2 };
-};
-
-const isInsideBarycentric = ({ t0, t1, t2 }: Barycentric) =>
-  t0 >= -HIT_TOLERANCE && t1 >= -HIT_TOLERANCE && t2 >= -HIT_TOLERANCE;
-
-const interpolateMeshVertex = (
-  bary: Barycentric,
-  v0: MeshVertex,
-  v1: MeshVertex,
-  v2: MeshVertex,
-): MeshVertex => ({
-  x: bary.t0 * v0.x + bary.t1 * v1.x + bary.t2 * v2.x,
-  y: bary.t0 * v0.y + bary.t1 * v1.y + bary.t2 * v2.y,
-  u: bary.t0 * v0.u + bary.t1 * v1.u + bary.t2 * v2.u,
-  v: bary.t0 * v0.v + bary.t1 * v1.v + bary.t2 * v2.v,
+/**
+ * Rebuild the attachment's mesh as a cols×rows grid.
+ * Clears weight/pin data because vertex count changes.
+ */
+export const rebuildMeshGrid = (attachment: Attachment, cols: number, rows: number): Attachment => ({
+  ...attachment,
+  type: 'mesh',
+  mesh: createGridMesh(attachment, cols, rows),
+  vertexWeights: undefined,
+  pinned: undefined,
 });
 
-const insertSortedUnique = (values: number[], value: number) => {
-  const clamped = Math.max(0, Math.min(1, value));
-  if (values.some(existing => Math.abs(existing - clamped) < 0.0001)) return values;
-  return [...values, clamped].sort((a, b) => a - b);
-};
+// ─── Relax (Laplacian smoothing) ──────────────────────────────────────────
 
-const findAxisSegment = (values: number[], value: number) => {
-  if (values.length < 2) return 0;
-  for (let i = 0; i < values.length - 1; i += 1) {
-    const a = values[i]!;
-    const b = values[i + 1]!;
-    if (value >= a - EPSILON && value <= b + EPSILON) return i;
-  }
-  return Math.max(0, values.length - 2);
-};
-
-const sampleGridPosition = (
-  vertices: MeshVertex[],
-  columns: number,
-  rows: number,
-  uValues: number[],
-  vValues: number[],
-  u: number,
-  v: number,
-) => {
-  const col = findAxisSegment(uValues, u);
-  const row = findAxisSegment(vValues, v);
-  const u0 = uValues[col] ?? 0;
-  const u1 = uValues[col + 1] ?? u0;
-  const v0 = vValues[row] ?? 0;
-  const v1 = vValues[row + 1] ?? v0;
-  const tx = Math.abs(u1 - u0) < EPSILON ? 0 : (u - u0) / (u1 - u0);
-  const ty = Math.abs(v1 - v0) < EPSILON ? 0 : (v - v0) / (v1 - v0);
-
-  const topLeft = vertices[getGridVertexIndex(columns, row, col)]!;
-  const topRight = vertices[getGridVertexIndex(columns, row, Math.min(col + 1, columns - 1))]!;
-  const bottomLeft = vertices[getGridVertexIndex(columns, Math.min(row + 1, rows - 1), col)]!;
-  const bottomRight = vertices[
-    getGridVertexIndex(columns, Math.min(row + 1, rows - 1), Math.min(col + 1, columns - 1))
-  ]!;
-
-  const topX = lerp(topLeft.x, topRight.x, tx);
-  const topY = lerp(topLeft.y, topRight.y, tx);
-  const bottomX = lerp(bottomLeft.x, bottomRight.x, tx);
-  const bottomY = lerp(bottomLeft.y, bottomRight.y, tx);
-
-  return {
-    x: lerp(topX, bottomX, ty),
-    y: lerp(topY, bottomY, ty),
-  };
-};
-
-const rebuildGridFromAxes = (
-  vertices: MeshVertex[],
-  columns: number,
-  rows: number,
-  nextUValues: number[],
-  nextVValues: number[],
-): MeshVertex[] => {
-  const uValues = Array.from({ length: columns }, (_, col) =>
-    vertices[getGridVertexIndex(columns, 0, col)]?.u ?? (columns === 1 ? 0 : col / (columns - 1)),
-  );
-  const vValues = Array.from({ length: rows }, (_, row) =>
-    vertices[getGridVertexIndex(columns, row, 0)]?.v ?? (rows === 1 ? 0 : row / (rows - 1)),
-  );
-
-  const nextVertices: MeshVertex[] = [];
-  for (const v of nextVValues) {
-    for (const u of nextUValues) {
-      const pos = sampleGridPosition(vertices, columns, rows, uValues, vValues, u, v);
-      nextVertices.push({ ...pos, u, v });
-    }
-  }
-  return nextVertices;
-};
-
-const tryInsertGridLinesAtPoint = (
-  attachment: Attachment,
-  screenX: number,
-  screenY: number,
-  screenVertices: ScreenPoint[],
-  meshDeformKeyframes: MeshDeformKeyframes,
-  attachmentKey: string,
-): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
-  const { meshGrid, meshVertices } = attachment;
-  if (!meshGrid || !meshVertices?.length) return null;
-
-  const { columns, rows } = meshGrid;
-  if (columns < 2 || rows < 2 || meshVertices.length !== columns * rows) return null;
-
-  const point = { x: screenX, y: screenY };
-  let inserted: Pick<MeshVertex, 'u' | 'v'> | null = null;
-
-  for (let row = 0; row < rows - 1 && !inserted; row += 1) {
-    for (let col = 0; col < columns - 1; col += 1) {
-      const i0 = getGridVertexIndex(columns, row, col);
-      const i1 = getGridVertexIndex(columns, row, col + 1);
-      const i2 = getGridVertexIndex(columns, row + 1, col + 1);
-      const i3 = getGridVertexIndex(columns, row + 1, col);
-      const p0 = screenVertices[i0];
-      const p1 = screenVertices[i1];
-      const p2 = screenVertices[i2];
-      const p3 = screenVertices[i3];
-      const v0 = meshVertices[i0];
-      const v1 = meshVertices[i1];
-      const v2 = meshVertices[i2];
-      const v3 = meshVertices[i3];
-      if (!p0 || !p1 || !p2 || !p3 || !v0 || !v1 || !v2 || !v3) continue;
-
-      const first = getBarycentric(point, p0, p1, p2);
-      if (first && isInsideBarycentric(first)) {
-        inserted = interpolateMeshVertex(first, v0, v1, v2);
-        break;
-      }
-
-      const second = getBarycentric(point, p0, p2, p3);
-      if (second && isInsideBarycentric(second)) {
-        inserted = interpolateMeshVertex(second, v0, v2, v3);
-        break;
-      }
-    }
-  }
-
-  if (!inserted) return null;
-
-  const uValues = Array.from({ length: columns }, (_, col) => meshVertices[getGridVertexIndex(columns, 0, col)]?.u ?? 0);
-  const vValues = Array.from({ length: rows }, (_, row) => meshVertices[getGridVertexIndex(columns, row, 0)]?.v ?? 0);
-  const nextUValues = insertSortedUnique(uValues, inserted.u);
-  const nextVValues = insertSortedUnique(vValues, inserted.v);
-  if (nextUValues.length === uValues.length && nextVValues.length === vValues.length) return null;
-
-  const nextColumns = nextUValues.length;
-  const nextRows = nextVValues.length;
-  const nextVertices = rebuildGridFromAxes(meshVertices, columns, rows, nextUValues, nextVValues);
-
-  const nextKeyframes = { ...meshDeformKeyframes };
-  const existing = nextKeyframes[attachmentKey];
-  if (existing) {
-    const updated: typeof existing = {};
-    for (const [frameStr, kf] of Object.entries(existing)) {
-      const frameVertices = meshVertices.map((vertex, index) => ({
-        ...vertex,
-        x: kf.vertices[index]?.x ?? vertex.x,
-        y: kf.vertices[index]?.y ?? vertex.y,
-      }));
-      updated[Number(frameStr)] = {
-        ...kf,
-        vertices: rebuildGridFromAxes(
-          frameVertices,
-          columns,
-          rows,
-          nextUValues,
-          nextVValues,
-        ).map(({ x, y }) => ({ x, y })),
-      };
-    }
-    nextKeyframes[attachmentKey] = updated;
-  }
-
-  return {
-    attachment: {
-      ...attachment,
-      meshVertices: nextVertices,
-      meshTriangles: createGridMeshTriangles(nextColumns, nextRows),
-      meshGrid: { columns: nextColumns, rows: nextRows },
-      meshPinnedVertices: undefined,
-      meshVertexWeights: undefined,
-    },
-    meshDeformKeyframes: nextKeyframes,
-  };
-};
-
-/** Reverse-project a vertex's UV back to the attachment-local base position. */
-export const getVertexBasePosition = (
-  vertex: MeshVertex,
-  attachment: Attachment,
-): { x: number; y: number } => ({
-  x: vertex.u * attachment.width - attachment.width / 2,
-  y: vertex.v * attachment.height - attachment.height / 2,
-});
-
-/** Build a per-vertex neighbour set from triangle data. */
 export const buildMeshAdjacency = (
   triangles: MeshTriangle[],
   vertexCount: number,
@@ -505,10 +125,6 @@ export const buildMeshAdjacency = (
   return adj;
 };
 
-/**
- * One step of Laplacian smoothing.
- * Only moves selected non-pinned vertices toward their neighbour average.
- */
 export const relaxMeshVertices = (
   vertices: MeshVertex[],
   triangles: MeshTriangle[],
@@ -519,103 +135,346 @@ export const relaxMeshVertices = (
   const adj = buildMeshAdjacency(triangles, vertices.length);
   const selected = new Set(selectedIndices);
   const pinned = new Set(pinnedIndices);
-
   return vertices.map((v, i) => {
     if (!selected.has(i) || pinned.has(i)) return v;
-    const neighbors = Array.from(adj[i] ?? [])
-      .map(j => vertices[j])
-      .filter((n): n is MeshVertex => !!n);
-    if (neighbors.length === 0) return v;
-    const avgX = neighbors.reduce((s, n) => s + n.x, 0) / neighbors.length;
-    const avgY = neighbors.reduce((s, n) => s + n.y, 0) / neighbors.length;
+    const neighbours = Array.from(adj[i] ?? []).map((j) => vertices[j]).filter((n): n is MeshVertex => !!n);
+    if (neighbours.length === 0) return v;
+    const avgX = neighbours.reduce((s, n) => s + n.x, 0) / neighbours.length;
+    const avgY = neighbours.reduce((s, n) => s + n.y, 0) / neighbours.length;
     return { ...v, x: v.x + (avgX - v.x) * strength, y: v.y + (avgY - v.y) * strength };
   });
 };
 
-/**
- * Rebuild the mesh as a new grid (cols×rows).
- * Clears pinned/weight data since vertex count changes.
- */
-export const rebuildMeshGrid = (
+// ─── Vertex base position ─────────────────────────────────────────────────
+
+/** UV back-project to attachment-local rest position. */
+export const getVertexBasePosition = (
+  vertex: MeshVertex,
   attachment: Attachment,
-  cols: number,
-  rows: number,
-): Attachment => ({
-  ...attachment,
-  meshVertices: createGridMeshVertices(attachment, cols, rows),
-  meshTriangles: createGridMeshTriangles(cols, rows),
-  meshGrid: { columns: cols, rows },
-  meshPinnedVertices: undefined,
-  meshVertexWeights: undefined,
+): { x: number; y: number } => ({
+  x: vertex.u * attachment.width - attachment.width / 2,
+  y: vertex.v * attachment.height - attachment.height / 2,
 });
 
-/**
- * Insert a new vertex by splitting the triangle that contains the given
- * screen-space point. Interpolates UV and local position via barycentric coords.
- * All existing deform keyframes receive a new entry for the vertex at its
- * base position so the animation is unaffected.
- */
-export const insertMeshVertex = (
+// ─── Mesh deform resolution ───────────────────────────────────────────────
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+export const resolveMeshVerticesAtFrame = (
   attachment: Attachment,
-  screenX: number,
-  screenY: number,
-  screenVertices: ScreenPoint[],
+  frame: number,
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): MeshVertex[] => {
+  const restVerts = attachment.mesh?.vertices;
+  if (!restVerts?.length) return [];
+
+  const attachmentKFs = meshDeformKeyframes[attachmentKey];
+  if (!attachmentKFs) return restVerts;
+
+  const frames = Object.keys(attachmentKFs).map(Number).sort((a, b) => a - b);
+  if (frames.length === 0) return restVerts;
+
+  let prev: number | null = null;
+  let next: number | null = null;
+  for (const kf of frames) {
+    if (kf <= frame) prev = kf;
+    if (kf >= frame && next === null) next = kf;
+  }
+
+  if (prev === null && next !== null) {
+    if (next === 0) {
+      return restVerts.map((v, i) => ({
+        ...v,
+        x: attachmentKFs[next]?.vertices[i]?.x ?? v.x,
+        y: attachmentKFs[next]?.vertices[i]?.y ?? v.y,
+      }));
+    }
+    const t = applyEasing(attachmentKFs[next]?.easing, frame / next);
+    return restVerts.map((v, i) => {
+      const to = attachmentKFs[next]?.vertices[i];
+      return { ...v, x: lerp(v.x, to?.x ?? v.x, t), y: lerp(v.y, to?.y ?? v.y, t) };
+    });
+  }
+
+  if (prev !== null && next === null) {
+    return restVerts.map((v, i) => ({
+      ...v,
+      x: attachmentKFs[prev]?.vertices[i]?.x ?? v.x,
+      y: attachmentKFs[prev]?.vertices[i]?.y ?? v.y,
+    }));
+  }
+
+  if (prev !== null && next !== null) {
+    if (prev === next) {
+      return restVerts.map((v, i) => ({
+        ...v,
+        x: attachmentKFs[prev]?.vertices[i]?.x ?? v.x,
+        y: attachmentKFs[prev]?.vertices[i]?.y ?? v.y,
+      }));
+    }
+    const t = applyEasing(attachmentKFs[prev]?.easing, (frame - prev) / (next - prev));
+    return restVerts.map((v, i) => {
+      const from = attachmentKFs[prev]?.vertices[i];
+      const to = attachmentKFs[next]?.vertices[i];
+      return {
+        ...v,
+        x: lerp(from?.x ?? v.x, to?.x ?? v.x, t),
+        y: lerp(from?.y ?? v.y, to?.y ?? v.y, t),
+      };
+    });
+  }
+
+  return restVerts;
+};
+
+// ─── Delaunay triangulation (Bowyer-Watson) ───────────────────────────────
+
+const delaunayTriangulate = (vertices: MeshVertex[]): MeshTriangle[] => {
+  if (vertices.length < 3) return [];
+
+  const minX = Math.min(...vertices.map((v) => v.x));
+  const minY = Math.min(...vertices.map((v) => v.y));
+  const maxX = Math.max(...vertices.map((v) => v.x));
+  const maxY = Math.max(...vertices.map((v) => v.y));
+  const d = Math.max(maxX - minX, maxY - minY) * 2;
+
+  const superVerts: MeshVertex[] = [
+    { x: minX - d, y: minY - d, u: 0, v: 0 },
+    { x: minX + d * 2, y: minY - d, u: 0, v: 0 },
+    { x: minX - d, y: minY + d * 2, u: 0, v: 0 },
+  ];
+  const allVerts = [...vertices, ...superVerts];
+  const n = vertices.length;
+  const tris: MeshTriangle[] = [[n, n + 1, n + 2]];
+
+  const inCircumcircle = (px: number, py: number, tri: MeshTriangle): boolean => {
+    const [i, j, k] = tri;
+    const a = allVerts[i]!; const b = allVerts[j]!; const c = allVerts[k]!;
+    const ax = a.x - px; const ay = a.y - py;
+    const bx = b.x - px; const by = b.y - py;
+    const cx = c.x - px; const cy = c.y - py;
+    return (
+      (ax * ax + ay * ay) * (bx * cy - cx * by) -
+      (bx * bx + by * by) * (ax * cy - cx * ay) +
+      (cx * cx + cy * cy) * (ax * by - bx * ay)
+    ) > 0;
+  };
+
+  for (let i = 0; i < n; i += 1) {
+    const { x, y } = vertices[i]!;
+    const bad = tris.filter((t) => inCircumcircle(x, y, t));
+    const polygon: [number, number][] = [];
+    for (const tri of bad) {
+      const edges: [number, number][] = [[tri[0], tri[1]], [tri[1], tri[2]], [tri[2], tri[0]]];
+      for (const edge of edges) {
+        if (!bad.some((other) => other !== tri && other.includes(edge[0]) && other.includes(edge[1]))) {
+          polygon.push(edge);
+        }
+      }
+    }
+    for (const tri of bad) tris.splice(tris.indexOf(tri), 1);
+    for (const edge of polygon) tris.push([edge[0], edge[1], i]);
+  }
+
+  return tris.filter((t) => t.every((idx) => idx < n));
+};
+
+// ─── Vertex insertion ─────────────────────────────────────────────────────
+
+type ScreenPoint = { x: number; y: number };
+const EPSILON = 1e-6;
+const HIT_TOLERANCE = 0.001;
+
+const getBarycentric = (p: ScreenPoint, p0: ScreenPoint, p1: ScreenPoint, p2: ScreenPoint) => {
+  const denom = (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+  if (Math.abs(denom) < EPSILON) return null;
+  const t0 = ((p1.y - p2.y) * (p.x - p2.x) + (p2.x - p1.x) * (p.y - p2.y)) / denom;
+  const t1 = ((p2.y - p0.y) * (p.x - p2.x) + (p0.x - p2.x) * (p.y - p2.y)) / denom;
+  const t2 = 1 - t0 - t1;
+  return { t0, t1, t2 };
+};
+
+const isInside = (b: { t0: number; t1: number; t2: number }) =>
+  b.t0 >= -HIT_TOLERANCE && b.t1 >= -HIT_TOLERANCE && b.t2 >= -HIT_TOLERANCE;
+
+const interpVertex = (
+  b: { t0: number; t1: number; t2: number },
+  v0: MeshVertex, v1: MeshVertex, v2: MeshVertex,
+): MeshVertex => ({
+  x: b.t0 * v0.x + b.t1 * v1.x + b.t2 * v2.x,
+  y: b.t0 * v0.y + b.t1 * v1.y + b.t2 * v2.y,
+  u: b.t0 * v0.u + b.t1 * v1.u + b.t2 * v2.u,
+  v: b.t0 * v0.v + b.t1 * v1.v + b.t2 * v2.v,
+});
+
+// Grid-line insertion helpers
+const insertSortedUnique = (values: number[], value: number) => {
+  const c = Math.max(0, Math.min(1, value));
+  if (values.some((e) => Math.abs(e - c) < 0.0001)) return values;
+  return [...values, c].sort((a, b) => a - b);
+};
+
+const gridIdx = (cols: number, row: number, col: number) => row * cols + col;
+
+const findSeg = (values: number[], value: number) => {
+  for (let i = 0; i < values.length - 1; i += 1) {
+    if (value >= (values[i] ?? 0) - EPSILON && value <= (values[i + 1] ?? 1) + EPSILON) return i;
+  }
+  return Math.max(0, values.length - 2);
+};
+
+const sampleGridPos = (
+  verts: MeshVertex[], cols: number, rows: number,
+  uVals: number[], vVals: number[], u: number, v: number,
+) => {
+  const col = findSeg(uVals, u);
+  const row = findSeg(vVals, v);
+  const u0 = uVals[col] ?? 0; const u1 = uVals[col + 1] ?? u0;
+  const v0 = vVals[row] ?? 0; const v1 = vVals[row + 1] ?? v0;
+  const tx = Math.abs(u1 - u0) < EPSILON ? 0 : (u - u0) / (u1 - u0);
+  const ty = Math.abs(v1 - v0) < EPSILON ? 0 : (v - v0) / (v1 - v0);
+  const tl = verts[gridIdx(cols, row, col)]!;
+  const tr = verts[gridIdx(cols, row, Math.min(col + 1, cols - 1))]!;
+  const bl = verts[gridIdx(cols, Math.min(row + 1, rows - 1), col)]!;
+  const br = verts[gridIdx(cols, Math.min(row + 1, rows - 1), Math.min(col + 1, cols - 1))]!;
+  return {
+    x: lerp(lerp(tl.x, tr.x, tx), lerp(bl.x, br.x, tx), ty),
+    y: lerp(lerp(tl.y, tr.y, tx), lerp(bl.y, br.y, tx), ty),
+  };
+};
+
+const rebuildGridFromAxes = (
+  verts: MeshVertex[], cols: number, rows: number,
+  nextU: number[], nextV: number[],
+): MeshVertex[] => {
+  const uVals = Array.from({ length: cols }, (_, c) => verts[gridIdx(cols, 0, c)]?.u ?? c / (cols - 1 || 1));
+  const vVals = Array.from({ length: rows }, (_, r) => verts[gridIdx(cols, r, 0)]?.v ?? r / (rows - 1 || 1));
+  const out: MeshVertex[] = [];
+  for (const v of nextV) {
+    for (const u of nextU) {
+      const pos = sampleGridPos(verts, cols, rows, uVals, vVals, u, v);
+      out.push({ ...pos, u, v });
+    }
+  }
+  return out;
+};
+
+const tryGridInsert = (
+  attachment: Attachment,
+  sx: number, sy: number,
+  screenVerts: ScreenPoint[],
   meshDeformKeyframes: MeshDeformKeyframes,
   attachmentKey: string,
 ): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
-  const { meshVertices, meshTriangles } = attachment;
-  if (!meshVertices?.length || !meshTriangles?.length) return null;
+  const { mesh } = attachment;
+  if (!mesh?.grid || !mesh.vertices.length) return null;
+  const { columns: cols, rows } = mesh.grid;
+  if (cols < 2 || rows < 2 || mesh.vertices.length !== cols * rows) return null;
 
-  const gridInsert = tryInsertGridLinesAtPoint(
-    attachment,
-    screenX,
-    screenY,
-    screenVertices,
-    meshDeformKeyframes,
-    attachmentKey,
-  );
-  if (gridInsert) return gridInsert;
+  const point = { x: sx, y: sy };
+  let inserted: Pick<MeshVertex, 'u' | 'v'> | null = null;
 
-  // Find the triangle that contains the click position in screen space.
-  let triIndex = -1;
-  let bary = { t0: 0, t1: 0, t2: 0 };
-
-  for (let ti = 0; ti < meshTriangles.length; ti++) {
-    const [i0, i1, i2] = meshTriangles[ti];
-    const p0 = screenVertices[i0];
-    const p1 = screenVertices[i1];
-    const p2 = screenVertices[i2];
-    if (!p0 || !p1 || !p2) continue;
-
-    const hit = getBarycentric({ x: screenX, y: screenY }, p0, p1, p2);
-    if (hit && isInsideBarycentric(hit)) {
-      triIndex = ti;
-      bary = hit;
-      break;
+  for (let row = 0; row < rows - 1 && !inserted; row += 1) {
+    for (let col = 0; col < cols - 1; col += 1) {
+      const [i0, i1, i2, i3] = [
+        gridIdx(cols, row, col), gridIdx(cols, row, col + 1),
+        gridIdx(cols, row + 1, col + 1), gridIdx(cols, row + 1, col),
+      ];
+      const [p0, p1, p2, p3] = [screenVerts[i0], screenVerts[i1], screenVerts[i2], screenVerts[i3]];
+      const [v0, v1, v2, v3] = [mesh.vertices[i0], mesh.vertices[i1], mesh.vertices[i2], mesh.vertices[i3]];
+      if (!p0 || !p1 || !p2 || !p3 || !v0 || !v1 || !v2 || !v3) continue;
+      const b1 = getBarycentric(point, p0, p1, p2);
+      if (b1 && isInside(b1)) { inserted = interpVertex(b1, v0, v1, v2); break; }
+      const b2 = getBarycentric(point, p0, p2, p3);
+      if (b2 && isInside(b2)) { inserted = interpVertex(b2, v0, v2, v3); break; }
     }
   }
+  if (!inserted) return null;
 
-  if (triIndex < 0) return null;
+  const uVals = Array.from({ length: cols }, (_, c) => mesh.vertices[gridIdx(cols, 0, c)]?.u ?? 0);
+  const vVals = Array.from({ length: rows }, (_, r) => mesh.vertices[gridIdx(cols, r, 0)]?.v ?? 0);
+  const nextU = insertSortedUnique(uVals, inserted.u);
+  const nextV = insertSortedUnique(vVals, inserted.v);
+  if (nextU.length === uVals.length && nextV.length === vVals.length) return null;
 
-  const [i0, i1, i2] = meshTriangles[triIndex];
-  const v0 = meshVertices[i0]!;
-  const v1 = meshVertices[i1]!;
-  const v2 = meshVertices[i2]!;
+  const nextCols = nextU.length; const nextRows = nextV.length;
+  const nextVerts = rebuildGridFromAxes(mesh.vertices, cols, rows, nextU, nextV);
+  const nextTris = createGridMeshTriangles(nextCols, nextRows);
+  const nextKFs = { ...meshDeformKeyframes };
+  const existing = nextKFs[attachmentKey];
+  if (existing) {
+    const updated: typeof existing = {};
+    for (const [frameStr, kf] of Object.entries(existing)) {
+      const frameVerts = mesh.vertices.map((v, i) => ({
+        ...v, x: kf.vertices[i]?.x ?? v.x, y: kf.vertices[i]?.y ?? v.y,
+      }));
+      updated[Number(frameStr)] = {
+        ...kf,
+        vertices: rebuildGridFromAxes(frameVerts, cols, rows, nextU, nextV).map(({ x, y }) => ({ x, y })),
+      };
+    }
+    nextKFs[attachmentKey] = updated;
+  }
 
-  const newVertex = interpolateMeshVertex(bary, v0, v1, v2);
+  return {
+    attachment: {
+      ...attachment,
+      mesh: { vertices: nextVerts, triangles: nextTris, edges: buildMeshEdges(nextTris), grid: { columns: nextCols, rows: nextRows } },
+      vertexWeights: undefined,
+      pinned: undefined,
+    },
+    meshDeformKeyframes: nextKFs,
+  };
+};
 
-  const newIdx = meshVertices.length;
-  const newVertices = [...meshVertices, newVertex];
-  const newTriangles: MeshTriangle[] = [
-    ...meshTriangles.filter((_, ti) => ti !== triIndex),
-    [i0, i1, newIdx],
-    [i1, i2, newIdx],
-    [i2, i0, newIdx],
+/**
+ * Insert a vertex by splitting the triangle that contains (sx, sy) in screen space.
+ * For grid meshes, inserts a new grid row/column through the point instead.
+ * Returns null if (sx, sy) is outside all triangles.
+ */
+export const insertMeshVertex = (
+  attachment: Attachment,
+  sx: number, sy: number,
+  screenVerts: ScreenPoint[],
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
+  const { mesh } = attachment;
+  if (!mesh?.vertices.length || !mesh.triangles.length) return null;
+
+  // Try grid-line insertion first
+  const gridResult = tryGridInsert(attachment, sx, sy, screenVerts, meshDeformKeyframes, attachmentKey);
+  if (gridResult) return gridResult;
+
+  // Fall back: split the triangle that contains the click
+  const point = { x: sx, y: sy };
+  let newVertex: MeshVertex | null = null;
+  let splitTri: MeshTriangle | null = null;
+
+  for (const tri of mesh.triangles) {
+    const [i0, i1, i2] = tri;
+    const p0 = screenVerts[i0]; const p1 = screenVerts[i1]; const p2 = screenVerts[i2];
+    const v0 = mesh.vertices[i0]; const v1 = mesh.vertices[i1]; const v2 = mesh.vertices[i2];
+    if (!p0 || !p1 || !p2 || !v0 || !v1 || !v2) continue;
+    const b = getBarycentric(point, p0, p1, p2);
+    if (b && isInside(b)) { newVertex = interpVertex(b, v0, v1, v2); splitTri = tri; break; }
+  }
+
+  if (!newVertex || !splitTri) return null;
+
+  const newIdx = mesh.vertices.length;
+  const newVerts = [...mesh.vertices, newVertex];
+  const [a, b, c] = splitTri;
+  const newTris = [
+    ...mesh.triangles.filter((t) => t !== splitTri),
+    [a, b, newIdx] as MeshTriangle,
+    [b, c, newIdx] as MeshTriangle,
+    [c, a, newIdx] as MeshTriangle,
   ];
 
-  // Append the base position to every existing deform keyframe.
-  const nextKeyframes = { ...meshDeformKeyframes };
-  const existing = nextKeyframes[attachmentKey];
+  const nextKFs = { ...meshDeformKeyframes };
+  const existing = nextKFs[attachmentKey];
   if (existing) {
     const updated: typeof existing = {};
     for (const [frameStr, kf] of Object.entries(existing)) {
@@ -624,131 +483,24 @@ export const insertMeshVertex = (
         vertices: [...kf.vertices, { x: newVertex.x, y: newVertex.y }],
       };
     }
-    nextKeyframes[attachmentKey] = updated;
+    nextKFs[attachmentKey] = updated;
   }
 
   return {
     attachment: {
       ...attachment,
-      meshVertices: newVertices,
-      meshTriangles: newTriangles,
-      meshGrid: undefined,
-      meshPinnedVertices: attachment.meshPinnedVertices
-        ? [...attachment.meshPinnedVertices, false]
-        : undefined,
-      meshVertexWeights: attachment.meshVertexWeights
-        ? [...attachment.meshVertexWeights, []]
-        : undefined,
+      mesh: { vertices: newVerts, triangles: newTris, edges: buildMeshEdges(newTris) },
+      pinned: attachment.pinned ? [...attachment.pinned, false] : undefined,
+      vertexWeights: attachment.vertexWeights ? [...attachment.vertexWeights, []] : undefined,
     },
-    meshDeformKeyframes: nextKeyframes,
+    meshDeformKeyframes: nextKFs,
   };
 };
 
-/**
- * Simple Delaunay triangulation using Bowyer-Watson algorithm.
- * Returns triangle indices for the given vertices.
- */
-const delaunayTriangulate = (vertices: MeshVertex[]): MeshTriangle[] => {
-  if (vertices.length < 3) return [];
-  
-  // Create super-triangle that contains all points
-  const minX = Math.min(...vertices.map(v => v.x));
-  const minY = Math.min(...vertices.map(v => v.y));
-  const maxX = Math.max(...vertices.map(v => v.x));
-  const maxY = Math.max(...vertices.map(v => v.y));
-  const dx = maxX - minX;
-  const dy = maxY - minY;
-  const deltaMax = Math.max(dx, dy) * 2;
-  
-  const superVertices: MeshVertex[] = [
-    { x: minX - deltaMax, y: minY - deltaMax, u: 0, v: 0 },
-    { x: minX + deltaMax * 2, y: minY - deltaMax, u: 0, v: 0 },
-    { x: minX - deltaMax, y: minY + deltaMax * 2, u: 0, v: 0 },
-  ];
-  
-  const allVertices = [...vertices, ...superVertices];
-  const triangles: MeshTriangle[] = [[vertices.length, vertices.length + 1, vertices.length + 2]];
-  
-  // Helper: check if point is inside triangle's circumcircle
-  const inCircumcircle = (px: number, py: number, tri: MeshTriangle): boolean => {
-    const [i, j, k] = tri;
-    const a = allVertices[i]!;
-    const b = allVertices[j]!;
-    const c = allVertices[k]!;
-    
-    const ax = a.x - px;
-    const ay = a.y - py;
-    const bx = b.x - px;
-    const by = b.y - py;
-    const cx = c.x - px;
-    const cy = c.y - py;
-    
-    const det = (ax * ax + ay * ay) * (bx * cy - cx * by) -
-                (bx * bx + by * by) * (ax * cy - cx * ay) +
-                (cx * cx + cy * cy) * (ax * by - bx * ay);
-    
-    return det > 0;
-  };
-  
-  // Add each vertex one at a time
-  for (let i = 0; i < vertices.length; i++) {
-    const vertex = vertices[i]!;
-    const badTriangles: MeshTriangle[] = [];
-    
-    // Find all triangles whose circumcircle contains the vertex
-    for (const tri of triangles) {
-      if (inCircumcircle(vertex.x, vertex.y, tri)) {
-        badTriangles.push(tri);
-      }
-    }
-    
-    // Find the boundary of the polygonal hole
-    const polygon: Array<[number, number]> = [];
-    for (const tri of badTriangles) {
-      const edges: Array<[number, number]> = [
-        [tri[0], tri[1]],
-        [tri[1], tri[2]],
-        [tri[2], tri[0]],
-      ];
-      
-      for (const edge of edges) {
-        const isShared = badTriangles.some(otherTri => {
-          if (otherTri === tri) return false;
-          return (
-            (otherTri.includes(edge[0]) && otherTri.includes(edge[1]))
-          );
-        });
-        
-        if (!isShared) {
-          polygon.push(edge);
-        }
-      }
-    }
-    
-    // Remove bad triangles
-    for (const tri of badTriangles) {
-      const idx = triangles.indexOf(tri);
-      if (idx >= 0) triangles.splice(idx, 1);
-    }
-    
-    // Re-triangulate the hole with the new vertex
-    for (const edge of polygon) {
-      triangles.push([edge[0], edge[1], i]);
-    }
-  }
-  
-  // Remove triangles that use super-triangle vertices
-  const finalTriangles = triangles.filter(tri => 
-    tri.every(idx => idx < vertices.length)
-  );
-  
-  return finalTriangles;
-};
+// ─── Vertex removal ───────────────────────────────────────────────────────
 
 /**
- * Remove vertices at the given indices.
- * Retriangulates the mesh to preserve coverage without leaving holes.
- * Remaining triangle indices and all deform keyframe entries are remapped.
+ * Remove vertices at `removeIndices`, retriangulate via Delaunay, remap keyframes.
  */
 export const removeMeshVertices = (
   attachment: Attachment,
@@ -756,25 +508,15 @@ export const removeMeshVertices = (
   meshDeformKeyframes: MeshDeformKeyframes,
   attachmentKey: string,
 ): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } => {
-  const { meshVertices, meshTriangles } = attachment;
-  if (!meshVertices?.length || !meshTriangles?.length) {
-    return { attachment, meshDeformKeyframes };
-  }
+  const { mesh } = attachment;
+  if (!mesh?.vertices.length || !mesh.triangles.length) return { attachment, meshDeformKeyframes };
 
   const removeSet = new Set(removeIndices);
-  const indexRemap = new Map<number, number>();
-  let nextIdx = 0;
-  for (let i = 0; i < meshVertices.length; i++) {
-    if (!removeSet.has(i)) indexRemap.set(i, nextIdx++);
-  }
+  const newVerts = mesh.vertices.filter((_, i) => !removeSet.has(i));
+  const newTris = delaunayTriangulate(newVerts);
 
-  const newVertices = meshVertices.filter((_, i) => !removeSet.has(i));
-  
-  // Retriangulate to preserve mesh coverage
-  const newTriangles = delaunayTriangulate(newVertices);
-
-  const nextKeyframes = { ...meshDeformKeyframes };
-  const existing = nextKeyframes[attachmentKey];
+  const nextKFs = { ...meshDeformKeyframes };
+  const existing = nextKFs[attachmentKey];
   if (existing) {
     const updated: typeof existing = {};
     for (const [frameStr, kf] of Object.entries(existing)) {
@@ -783,36 +525,16 @@ export const removeMeshVertices = (
         vertices: kf.vertices.filter((_, i) => !removeSet.has(i)),
       };
     }
-    nextKeyframes[attachmentKey] = updated;
+    nextKFs[attachmentKey] = updated;
   }
-
-  const newPinned = attachment.meshPinnedVertices?.filter((_, i) => !removeSet.has(i));
-  const newWeights = attachment.meshVertexWeights?.filter((_, i) => !removeSet.has(i));
 
   return {
     attachment: {
       ...attachment,
-      meshVertices: newVertices,
-      meshTriangles: newTriangles,
-      meshPinnedVertices: newPinned?.length ? newPinned : undefined,
-      meshVertexWeights: newWeights?.length ? newWeights : undefined,
+      mesh: { vertices: newVerts, triangles: newTris, edges: buildMeshEdges(newTris) },
+      pinned: attachment.pinned?.filter((_, i) => !removeSet.has(i)),
+      vertexWeights: attachment.vertexWeights?.filter((_, i) => !removeSet.has(i)),
     },
-    meshDeformKeyframes: nextKeyframes,
-  };
-};
-
-export const resolveAttachmentAtFrame = (
-  attachment: Attachment,
-  frame: number,
-  meshDeformKeyframes: MeshDeformKeyframes,
-  attachmentOpacityKeyframes: AttachmentOpacityKeyframes = {},
-): Attachment => {
-  return {
-    ...attachment,
-    opacity: resolveAttachmentOpacityAtFrame(attachment, frame, attachmentOpacityKeyframes),
-    meshVertices:
-      attachment.type === 'mesh'
-        ? resolveMeshVerticesAtFrame(attachment, frame, meshDeformKeyframes)
-        : attachment.meshVertices,
+    meshDeformKeyframes: nextKFs,
   };
 };

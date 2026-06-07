@@ -3,7 +3,9 @@ import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { useAnimationStore } from '../stores/animationStore';
 import { useCameraStore } from '../stores/cameraStore';
+import { useDeformerStore } from '../stores/deformerStore';
 import { useEditorStore } from '../stores/editorStore';
+import { usePhysicsStore } from '../stores/physicsStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useSlotStore } from '../stores/slotStore';
@@ -440,16 +442,12 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
       } else {
         let imageDataToStore = originalImageData;
 
-        if (attachment.type !== 'mesh') {
-          const cropped = await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
-          if (cropped) {
-            imageDataToStore = cropped.imageData;
-            nextAttachment.opaqueBounds = cropped.opaqueBounds;
-            nextAttachment.imageIsCropped = true;
-            cropInfoByDataUrl.set(originalImageData, cropped.opaqueBounds);
-          } else {
-            cropInfoByDataUrl.set(originalImageData, null);
-          }
+        const cropped = await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
+        if (cropped) {
+          imageDataToStore = cropped.imageData;
+          nextAttachment.opaqueBounds = cropped.opaqueBounds;
+          nextAttachment.imageIsCropped = true;
+          cropInfoByDataUrl.set(originalImageData, cropped.opaqueBounds);
         } else {
           cropInfoByDataUrl.set(originalImageData, null);
         }
@@ -656,6 +654,8 @@ export const buildProjectData = (): ProjectData => {
   const animationState = useAnimationStore.getState();
   const slotState = useSlotStore.getState();
   const editorState = useEditorStore.getState();
+  const deformerState = useDeformerStore.getState();
+  const physicsState = usePhysicsStore.getState();
 
   // Normalize keyframes so the earliest frame across all bones becomes frame 0
   const originalKeyframes = animationState.keyframes;
@@ -677,21 +677,6 @@ export const buildProjectData = (): ProjectData => {
     }
   } else {
     Object.assign(normalizedKeyframes, originalKeyframes);
-  }
-
-  const originalMeshDeformKeyframes = animationState.meshDeformKeyframes;
-  const normalizedMeshDeformKeyframes: typeof originalMeshDeformKeyframes = {};
-  if (minFrame !== Infinity && minFrame > 0) {
-    for (const attachmentKey of Object.keys(originalMeshDeformKeyframes)) {
-      normalizedMeshDeformKeyframes[attachmentKey] = {};
-      for (const frameStr of Object.keys(originalMeshDeformKeyframes[attachmentKey])) {
-        const normalizedFrame = Number(frameStr) - minFrame;
-        normalizedMeshDeformKeyframes[attachmentKey][normalizedFrame] =
-          originalMeshDeformKeyframes[attachmentKey][Number(frameStr)];
-      }
-    }
-  } else {
-    Object.assign(normalizedMeshDeformKeyframes, originalMeshDeformKeyframes);
   }
 
   const originalAttachmentOpacityKeyframes = animationState.attachmentOpacityKeyframes;
@@ -767,8 +752,12 @@ export const buildProjectData = (): ProjectData => {
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
     slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
-    meshDeformKeyframes: normalizedMeshDeformKeyframes,
     attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
+    meshDeformKeyframes: animationState.meshDeformKeyframes,
+    deformers: deformerState.deformers,
+    deformerKeyframes: deformerState.deformerKeyframes,
+    nextDeformerId: deformerState.nextDeformerId,
+    physicsConfigs: physicsState.configs,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
@@ -803,10 +792,24 @@ export const applyProjectData = (
 
   useSlotStore.setState({
     slots,
-    attachments: (projectData.attachments ?? []).map((attachment) => ({
-      ...attachment,
-      opacity: attachment.opacity ?? 1,
-    })),
+    attachments: (projectData.attachments ?? []).map((attachment) => {
+      // Drop old-format mesh fields from legacy projects; preserve the new `mesh` field.
+      const next = {
+        ...attachment,
+        opacity: attachment.opacity ?? 1,
+      } as Attachment & Record<string, unknown>;
+      delete next.meshVertices;
+      delete next.meshTriangles;
+      delete next.meshGrid;
+      delete next.meshPinnedVertices;
+      delete next.meshVertexWeights;
+      // Degrade pre-Phase-2 mesh attachments (with no `mesh` field) to plain images.
+      if (next.type === 'mesh' && !(next as Attachment).mesh?.vertices.length) {
+        (next as Attachment & { type: string }).type = 'image';
+        delete (next as Record<string, unknown>).mesh;
+      }
+      return next as Attachment;
+    }),
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });
 
@@ -832,8 +835,8 @@ export const applyProjectData = (
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
     slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
-    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
+    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
@@ -851,6 +854,13 @@ export const applyProjectData = (
     audioVolume: activeAudioTrack?.volume ?? 0.8,
     audioOffsetFrames: activeAudioTrack?.offsetFrames ?? 0,
   });
+
+  useDeformerStore.getState().replaceAll(
+    projectData.deformers ?? [],
+    projectData.nextDeformerId ?? 1,
+    projectData.deformerKeyframes ?? {},
+  );
+  usePhysicsStore.getState().replaceAll(projectData.physicsConfigs ?? []);
 
   useEditorStore.setState({
     backgroundImage: projectData.backgroundImage ?? null,
@@ -892,7 +902,6 @@ export const createNewProject = () => {
   useAnimationStore.setState({
     keyframes: {},
     slotAttachmentKeyframes: {},
-    meshDeformKeyframes: {},
     attachmentOpacityKeyframes: {},
     frame: 0,
     duration: 60,

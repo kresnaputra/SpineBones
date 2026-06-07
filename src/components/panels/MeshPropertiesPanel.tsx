@@ -4,13 +4,14 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { getAttachmentKey } from '../../utils/attachmentUtils';
+import { resolveAttachmentAtFrame } from '../../utils/attachmentUtils';
 import {
-  getMeshAttachmentKey,
-  resolveAttachmentAtFrame,
   rebuildMeshGrid,
   relaxMeshVertices,
   getVertexBasePosition,
 } from '../../utils/meshAttachment';
+import { generateAutoMesh } from '../../utils/meshGeneration';
 import { normalizeKeyframeEasing } from '../../utils/easing';
 
 const GRID_PRESETS = [
@@ -22,6 +23,9 @@ const GRID_PRESETS = [
 
 export const MeshPropertiesPanel = () => {
   const [relaxStrength, setRelaxStrength] = useState(0.5);
+  const [autoMeshDensity, setAutoMeshDensity] = useState(0.5);
+  const [autoMeshEdgeDetail, setAutoMeshEdgeDetail] = useState(0.4);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const {
     tool,
@@ -61,154 +65,116 @@ export const MeshPropertiesPanel = () => {
     (a) => a.slotId === activeSlot.id && a.name === activeSlot.attachmentName,
   );
 
-  if (!attachment || attachment.type !== 'mesh' || !attachment.meshVertices?.length) return null;
+  if (!attachment || attachment.type !== 'mesh' || !attachment.mesh?.vertices.length) return null;
 
   const activeBone = bones.find((b) => b.id === selectedBoneId);
   if (!activeBone) return null;
 
-  const attachmentKey = getMeshAttachmentKey(attachment);
+  const attachmentKey = getAttachmentKey(attachment);
 
-  // Resolved vertices for animate mode operations.
   const resolvedAttachment = resolveAttachmentAtFrame(
-    attachment,
-    frame,
-    meshDeformKeyframes,
-    attachmentOpacityKeyframes,
+    attachment, frame, attachmentOpacityKeyframes, meshDeformKeyframes,
   );
-  const workingVertices = resolvedAttachment.meshVertices ?? attachment.meshVertices;
+  const workingVertices = resolvedAttachment.mesh?.vertices ?? attachment.mesh.vertices;
 
-  const vertexCount = attachment.meshVertices.length;
+  const vertexCount = attachment.mesh.vertices.length;
+  const triCount = attachment.mesh.triangles.length;
   const allIndices = Array.from({ length: vertexCount }, (_, i) => i);
-  const operationIndices =
-    selectedMeshVertexIndices.length > 0 ? selectedMeshVertexIndices : allIndices;
-  const pinnedIndices = attachment.meshPinnedVertices
-    ?.map((p, i) => (p ? i : -1))
-    .filter((i) => i >= 0) ?? [];
-  const activeGrid = attachment.meshGrid ?? null;
+  const operationIndices = selectedMeshVertexIndices.length > 0 ? selectedMeshVertexIndices : allIndices;
+  const pinnedIndices = attachment.pinned?.map((p, i) => (p ? i : -1)).filter((i) => i >= 0) ?? [];
+  const activeGrid = attachment.mesh.grid ?? null;
 
-  // ─── Grid rebuild ──────────────────────────────────────────────────────────
+  const handleAutoGenerate = async () => {
+    if (!attachment.imageData || isGenerating) return;
+    setIsGenerating(true);
+    try {
+      const mesh = await generateAutoMesh(attachment, autoMeshDensity, autoMeshEdgeDetail);
+      if (mesh) {
+        captureSnapshot();
+        updateAttachment(activeSlot.id, attachment.name, { mesh, pinned: undefined });
+        clearMeshDeformKeyframesForAttachment(attachmentKey);
+        setSelectedMeshVertexIndices([]);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleRebuildGrid = (cols: number, rows: number) => {
     captureSnapshot();
-    const newAttachment = rebuildMeshGrid(attachment, cols, rows);
-    updateAttachment(activeSlot.id, attachment.name, newAttachment);
+    updateAttachment(activeSlot.id, attachment.name, rebuildMeshGrid(attachment, cols, rows));
     clearMeshDeformKeyframesForAttachment(attachmentKey);
     setSelectedMeshVertexIndices([]);
   };
 
-  // ─── Relax ─────────────────────────────────────────────────────────────────
-
   const handleRelax = () => {
-    if (!attachment.meshTriangles?.length) return;
+    if (!attachment.mesh?.triangles.length) return;
     captureSnapshot();
-
-    const relaxed = relaxMeshVertices(
-      workingVertices,
-      attachment.meshTriangles,
-      operationIndices,
-      pinnedIndices,
-      relaxStrength,
-    );
+    const relaxed = relaxMeshVertices(workingVertices, attachment.mesh.triangles, operationIndices, pinnedIndices, relaxStrength);
 
     if (mode === 'animate') {
       const existingFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {}).map(Number);
-      const currentBoneEasing = normalizeKeyframeEasing(keyframes[activeBone.id]?.[frame]?.easing);
-
+      const boneEasing = normalizeKeyframeEasing(keyframes[activeBone.id]?.[frame]?.easing);
       if (frame > 0 && !existingFrames.some((f) => f < frame)) {
-        setMeshDeformKeyframeAtFrame(
-          attachmentKey,
-          0,
-          (attachment.meshVertices ?? []).map((v) => ({ x: v.x, y: v.y })),
-        );
+        setMeshDeformKeyframeAtFrame(attachmentKey, 0, attachment.mesh.vertices.map((v) => ({ x: v.x, y: v.y })));
       }
-      setMeshDeformKeyframeAtFrame(
-        attachmentKey,
-        frame,
-        relaxed.map((v) => ({ x: v.x, y: v.y })),
-      );
-      updateMeshDeformKeyframeEasing(attachmentKey, frame, currentBoneEasing);
-      insertKeyframe(activeBone.id, {
-        x: activeBone.x,
-        y: activeBone.y,
-        rotation: activeBone.rotation,
-        scaleX: activeBone.scaleX,
-        scaleY: activeBone.scaleY,
-      });
+      setMeshDeformKeyframeAtFrame(attachmentKey, frame, relaxed.map((v) => ({ x: v.x, y: v.y })));
+      updateMeshDeformKeyframeEasing(attachmentKey, frame, boneEasing);
+      insertKeyframe(activeBone.id, { x: activeBone.x, y: activeBone.y, rotation: activeBone.rotation, scaleX: activeBone.scaleX, scaleY: activeBone.scaleY });
     } else {
       updateAttachment(activeSlot.id, attachment.name, {
-        meshVertices: relaxed,
+        mesh: { ...attachment.mesh, vertices: relaxed },
       });
     }
   };
 
-  // ─── Reset selected vertices ───────────────────────────────────────────────
-
   const handleResetSelected = () => {
-    if (operationIndices.length === 0) return;
     captureSnapshot();
-
     if (mode === 'animate') {
-      // Reset selected vertices in the current keyframe back to setup-pose positions.
-      const baseVertices = attachment.meshVertices!;
-      const currentResolved = workingVertices.map((v, i) =>
-        operationIndices.includes(i) ? { x: baseVertices[i]!.x, y: baseVertices[i]!.y } : { x: v.x, y: v.y },
+      const baseVerts = attachment.mesh!.vertices;
+      const current = workingVertices.map((v, i) =>
+        operationIndices.includes(i) ? { x: baseVerts[i]!.x, y: baseVerts[i]!.y } : { x: v.x, y: v.y },
       );
       const existingFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {}).map(Number);
       if (frame > 0 && !existingFrames.some((f) => f < frame)) {
-        setMeshDeformKeyframeAtFrame(
-          attachmentKey,
-          0,
-          baseVertices.map((v) => ({ x: v.x, y: v.y })),
-        );
+        setMeshDeformKeyframeAtFrame(attachmentKey, 0, baseVerts.map((v) => ({ x: v.x, y: v.y })));
       }
-      setMeshDeformKeyframeAtFrame(attachmentKey, frame, currentResolved);
+      setMeshDeformKeyframeAtFrame(attachmentKey, frame, current);
     } else {
-      // Reset selected vertices to UV-derived base positions.
-      const resetVertices = (attachment.meshVertices ?? []).map((v, i) => {
+      const resetVerts = attachment.mesh!.vertices.map((v, i) => {
         if (!operationIndices.includes(i)) return v;
         const base = getVertexBasePosition(v, attachment);
         return { ...v, x: base.x, y: base.y };
       });
-      updateAttachment(activeSlot.id, attachment.name, { meshVertices: resetVertices });
+      updateAttachment(activeSlot.id, attachment.name, { mesh: { ...attachment.mesh!, vertices: resetVerts } });
     }
   };
-
-  // ─── Pin / unpin ───────────────────────────────────────────────────────────
 
   const handleTogglePin = () => {
     if (operationIndices.length === 0) return;
     captureSnapshot();
-    const pinned = attachment.meshPinnedVertices?.slice() ?? new Array(vertexCount).fill(false);
+    const pinned = attachment.pinned?.slice() ?? new Array(vertexCount).fill(false);
     const anyUnpinned = operationIndices.some((i) => !pinned[i]);
-    operationIndices.forEach((i) => {
-      pinned[i] = anyUnpinned;
-    });
-    updateAttachment(activeSlot.id, attachment.name, { meshPinnedVertices: pinned });
+    operationIndices.forEach((i) => { pinned[i] = anyUnpinned; });
+    updateAttachment(activeSlot.id, attachment.name, { pinned });
   };
 
-  const selectedArePinned =
-    operationIndices.length > 0 &&
-    operationIndices.every((i) => attachment.meshPinnedVertices?.[i]);
-
-  // ─── UI ────────────────────────────────────────────────────────────────────
+  const selectedArePinned = operationIndices.length > 0 && operationIndices.every((i) => attachment.pinned?.[i]);
 
   return (
     <div className="border-b border-border">
       <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider border-b border-border bg-panel2">
         Mesh
         <span className="ml-2 font-normal normal-case text-text-dim">
-          {vertexCount}v · {attachment.meshTriangles?.length ?? 0}t
-          {selectedMeshVertexIndices.length > 0
-            ? ` · ${selectedMeshVertexIndices.length} selected`
-            : ''}
+          {vertexCount}v · {triCount}t
+          {selectedMeshVertexIndices.length > 0 ? ` · ${selectedMeshVertexIndices.length} selected` : ''}
         </span>
       </div>
 
-      {/* Vertex interaction hints */}
       <div className="px-3 py-2 border-b border-border/50 space-y-0.5">
         <div className="text-[9px] text-text-dim flex gap-1.5 items-start">
           <span className="text-text-dim/60">+</span>
-          <span><span className="text-text">Double-click</span> inside mesh to add vertex</span>
+          <span><span className="text-text">Alt+click</span> inside mesh to add vertex</span>
         </div>
         <div className="text-[9px] text-text-dim flex gap-1.5 items-start">
           <span className="text-text-dim/60">−</span>
@@ -216,38 +182,63 @@ export const MeshPropertiesPanel = () => {
         </div>
         <div className="text-[9px] text-text-dim flex gap-1.5 items-start">
           <span className="text-text-dim/60">⬚</span>
-          <span><span className="text-text">Drag</span> empty space to box-select</span>
+          <span><span className="text-text">Right-click</span> vertex to remove it</span>
         </div>
       </div>
 
-      {/* Grid presets */}
+      <div className="px-3 py-2 border-b border-border/50 space-y-1.5">
+        <div className="text-[9px] text-text-dim uppercase tracking-wide mb-1">Auto Mesh</div>
+        <div className="flex items-center gap-2">
+          <label className="text-[9px] text-text-dim w-14 flex-shrink-0">Density</label>
+          <input
+            type="range" min="0" max="1" step="0.05" value={autoMeshDensity}
+            onChange={(e) => setAutoMeshDensity(Number(e.target.value))}
+            className="flex-1 accent-accent"
+          />
+          <span className="text-[10px] text-text w-7 text-right">{Math.round(autoMeshDensity * 100)}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[9px] text-text-dim w-14 flex-shrink-0">Edge Detail</label>
+          <input
+            type="range" min="0" max="1" step="0.05" value={autoMeshEdgeDetail}
+            onChange={(e) => setAutoMeshEdgeDetail(Number(e.target.value))}
+            className="flex-1 accent-accent"
+          />
+          <span className="text-[10px] text-text w-7 text-right">{Math.round(autoMeshEdgeDetail * 100)}%</span>
+        </div>
+        <button
+          onClick={handleAutoGenerate}
+          disabled={isGenerating || !attachment.imageData}
+          className="w-full px-2 py-1 text-[10px] rounded border border-accent/50 bg-accent/10 text-accent hover:bg-accent/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {isGenerating ? 'Generating…' : 'Generate Auto Mesh'}
+        </button>
+        <div className="text-[9px] text-text-dim">Traces sprite alpha, clears deform keyframes.</div>
+      </div>
+
       <div className="px-3 py-2 border-b border-border/50">
         <div className="text-[9px] text-text-dim mb-1.5 uppercase tracking-wide">Rebuild Grid</div>
         <div className="flex gap-1 flex-wrap">
-          {GRID_PRESETS.map(({ label, cols, rows }) => (
-            (() => {
-              const isActive = activeGrid?.columns === cols && activeGrid.rows === rows;
-              return (
-                <button
-                  key={label}
-                  onClick={() => handleRebuildGrid(cols, rows)}
-                  className={`px-2 py-0.5 text-[10px] rounded border transition-all ${
-                    isActive
-                      ? 'border-accent bg-accent text-white shadow-[0_0_0_1px_rgba(124,58,237,0.35)]'
-                      : 'border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text'
-                  }`}
-                  title={`Rebuild as ${cols}×${rows} grid (clears deform keyframes)`}
-                >
-                  {label}
-                </button>
-              );
-            })()
-          ))}
+          {GRID_PRESETS.map(({ label, cols, rows }) => {
+            const isActive = activeGrid?.columns === cols && activeGrid.rows === rows;
+            return (
+              <button
+                key={label}
+                onClick={() => handleRebuildGrid(cols, rows)}
+                className={`px-2 py-0.5 text-[10px] rounded border transition-all ${
+                  isActive
+                    ? 'border-accent bg-accent text-white'
+                    : 'border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
         <div className="text-[9px] text-text-dim mt-1">Clears deform keyframes for this mesh.</div>
       </div>
 
-      {/* Relax */}
       <div className="px-3 py-2 border-b border-border/50 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] text-text-dim">
@@ -263,11 +254,7 @@ export const MeshPropertiesPanel = () => {
         <div className="flex items-center gap-2">
           <label className="text-[9px] text-text-dim w-12 flex-shrink-0">Strength</label>
           <input
-            type="range"
-            min="0.05"
-            max="1"
-            step="0.05"
-            value={relaxStrength}
+            type="range" min="0.05" max="1" step="0.05" value={relaxStrength}
             onChange={(e) => setRelaxStrength(Number(e.target.value))}
             className="flex-1 accent-accent"
           />
@@ -276,17 +263,10 @@ export const MeshPropertiesPanel = () => {
         <div className="text-[9px] text-text-dim">Pinned vertices are skipped.</div>
       </div>
 
-      {/* Reset / Pin */}
       <div className="px-3 py-2 border-b border-border/50 flex gap-2">
         <button
           onClick={handleResetSelected}
-          disabled={operationIndices.length === 0}
-          className="flex-1 px-2 py-1 text-[10px] rounded border border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text transition-all disabled:opacity-40"
-          title={
-            mode === 'animate'
-              ? 'Reset selected vertices to setup-pose positions at current frame'
-              : 'Reset selected vertices to their UV-derived base positions'
-          }
+          className="flex-1 px-2 py-1 text-[10px] rounded border border-border bg-panel2 text-text-dim hover:border-accent/60 hover:text-text transition-all"
         >
           Reset {selectedMeshVertexIndices.length > 0 ? 'Selected' : 'All'}
         </button>
@@ -298,9 +278,8 @@ export const MeshPropertiesPanel = () => {
               ? 'border-amber-500 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
               : 'border-border bg-panel2 text-text-dim hover:border-amber-500/60 hover:text-text'
           }`}
-          title={selectedArePinned ? 'Unpin selected vertices' : 'Pin selected vertices (excluded from relax)'}
         >
-          {selectedArePinned ? 'Unpin' : 'Pin'}
+          {selectedArePinned ? 'Unpin' : 'Pin'} Selected
         </button>
       </div>
     </div>

@@ -2,14 +2,12 @@ import type {
   AttachmentOpacityKeyframes,
   AudioTrack,
   Keyframes,
-  MeshDeformKeyframes,
   SlotAttachmentKeyframes,
 } from '../types';
 
 type ExportAudioMixOptions = {
   audioTracks: AudioTrack[];
   keyframes: Keyframes;
-  meshDeformKeyframes: MeshDeformKeyframes;
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes;
   slotAttachmentKeyframes: SlotAttachmentKeyframes;
   duration: number;
@@ -33,12 +31,10 @@ const getExportTotalFrames = ({
   attachmentOpacityKeyframes,
   duration,
   keyframes,
-  meshDeformKeyframes,
   slotAttachmentKeyframes,
 }: Omit<ExportAudioMixOptions, 'audioTracks' | 'fps'>) => {
   const lastKeyframe = Math.max(
     getLastFrameFromRecord(keyframes),
-    getLastFrameFromRecord(meshDeformKeyframes),
     getLastFrameFromRecord(attachmentOpacityKeyframes),
     getLastFrameFromRecord(slotAttachmentKeyframes),
   );
@@ -109,7 +105,6 @@ export const exportAudioMix = async ({
   duration,
   fps,
   keyframes,
-  meshDeformKeyframes,
   slotAttachmentKeyframes,
 }: ExportAudioMixOptions): Promise<Blob | null> => {
   const tracks = audioTracks.filter((track) => track.dataUrl);
@@ -119,7 +114,6 @@ export const exportAudioMix = async ({
     attachmentOpacityKeyframes,
     duration,
     keyframes,
-    meshDeformKeyframes,
     slotAttachmentKeyframes,
   });
   const totalSeconds = totalFrames / fps;

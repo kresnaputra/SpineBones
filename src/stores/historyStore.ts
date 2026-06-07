@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { useAnimationStore } from './animationStore';
 import { useCameraStore } from './cameraStore';
+import { useDeformerStore } from './deformerStore';
 import { useEditorStore } from './editorStore';
+import { usePhysicsStore } from './physicsStore';
 import { useSkeletonStore } from './skeletonStore';
 import { useSlotStore } from './slotStore';
 
@@ -28,8 +30,8 @@ interface ProjectSnapshot {
   animation: {
     keyframes: ReturnType<typeof useAnimationStore.getState>['keyframes'];
     slotAttachmentKeyframes: ReturnType<typeof useAnimationStore.getState>['slotAttachmentKeyframes'];
-    meshDeformKeyframes: ReturnType<typeof useAnimationStore.getState>['meshDeformKeyframes'];
     attachmentOpacityKeyframes: ReturnType<typeof useAnimationStore.getState>['attachmentOpacityKeyframes'];
+    meshDeformKeyframes: ReturnType<typeof useAnimationStore.getState>['meshDeformKeyframes'];
     frame: ReturnType<typeof useAnimationStore.getState>['frame'];
     duration: ReturnType<typeof useAnimationStore.getState>['duration'];
     fps: ReturnType<typeof useAnimationStore.getState>['fps'];
@@ -50,6 +52,14 @@ interface ProjectSnapshot {
     x: ReturnType<typeof useCameraStore.getState>['x'];
     y: ReturnType<typeof useCameraStore.getState>['y'];
     zoom: ReturnType<typeof useCameraStore.getState>['zoom'];
+  };
+  deformers: {
+    deformers: ReturnType<typeof useDeformerStore.getState>['deformers'];
+    nextDeformerId: ReturnType<typeof useDeformerStore.getState>['nextDeformerId'];
+    deformerKeyframes: ReturnType<typeof useDeformerStore.getState>['deformerKeyframes'];
+  };
+  physics: {
+    configs: ReturnType<typeof usePhysicsStore.getState>['configs'];
   };
 }
 
@@ -73,6 +83,8 @@ const createProjectSnapshot = (): ProjectSnapshot => {
   const animation = useAnimationStore.getState();
   const slot = useSlotStore.getState();
   const camera = useCameraStore.getState();
+  const deformerState = useDeformerStore.getState();
+  const physicsState = usePhysicsStore.getState();
 
   return cloneSnapshot({
     editor: {
@@ -95,8 +107,8 @@ const createProjectSnapshot = (): ProjectSnapshot => {
     animation: {
       keyframes: animation.keyframes,
       slotAttachmentKeyframes: animation.slotAttachmentKeyframes,
-      meshDeformKeyframes: animation.meshDeformKeyframes,
       attachmentOpacityKeyframes: animation.attachmentOpacityKeyframes,
+      meshDeformKeyframes: animation.meshDeformKeyframes,
       frame: animation.frame,
       duration: animation.duration,
       fps: animation.fps,
@@ -117,6 +129,14 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       x: camera.x,
       y: camera.y,
       zoom: camera.zoom,
+    },
+    deformers: {
+      deformers: deformerState.deformers,
+      nextDeformerId: deformerState.nextDeformerId,
+      deformerKeyframes: deformerState.deformerKeyframes,
+    },
+    physics: {
+      configs: physicsState.configs,
     },
   });
 };
@@ -142,8 +162,8 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
   useAnimationStore.setState({
     keyframes: cloneSnapshot(snapshot.animation.keyframes),
     slotAttachmentKeyframes: cloneSnapshot(snapshot.animation.slotAttachmentKeyframes),
-    meshDeformKeyframes: cloneSnapshot(snapshot.animation.meshDeformKeyframes),
     attachmentOpacityKeyframes: cloneSnapshot(snapshot.animation.attachmentOpacityKeyframes),
+    meshDeformKeyframes: cloneSnapshot(snapshot.animation.meshDeformKeyframes ?? {}),
     frame: snapshot.animation.frame,
     duration: snapshot.animation.duration,
     fps: snapshot.animation.fps,
@@ -166,6 +186,12 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     y: snapshot.camera.y,
     zoom: snapshot.camera.zoom,
   });
+  useDeformerStore.setState({
+    deformers: cloneSnapshot(snapshot.deformers?.deformers ?? []),
+    nextDeformerId: snapshot.deformers?.nextDeformerId ?? 1,
+    deformerKeyframes: cloneSnapshot(snapshot.deformers?.deformerKeyframes ?? {}),
+  });
+  usePhysicsStore.getState().replaceAll(cloneSnapshot(snapshot.physics?.configs ?? []));
 };
 
 const isSameSnapshot = (a: ProjectSnapshot | undefined, b: ProjectSnapshot) => {

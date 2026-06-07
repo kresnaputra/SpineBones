@@ -78,6 +78,8 @@ export const useKeyboardShortcuts = () => {
         r: 'rotate',
         s: 'scale',
         h: 'mesh',
+        d: 'warp',
+        p: 'weights',
       };
 
       if (toolMap[key]) {
@@ -179,6 +181,11 @@ export const useKeyboardShortcuts = () => {
       }
 
       if (key === 'delete' || key === 'backspace') {
+        if (tool === 'mesh') {
+          // Mesh vertex deletion is handled by MainCanvas via a custom event.
+          window.dispatchEvent(new CustomEvent('spine:mesh-delete-vertices'));
+          return;
+        }
         if (selectedBoneIds.length > 0) {
           const { deleteBone } = useSkeletonStore.getState();
           captureSnapshot();
