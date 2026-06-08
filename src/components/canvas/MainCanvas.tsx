@@ -540,12 +540,14 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
-    // Apply physics world-space offsets to _wx/_wy (transient, not persisted)
-    for (const bone of bones) {
-      const offset = physicsOffsets[bone.id];
-      if (offset) {
-        bone._wx += offset.dx;
-        bone._wy += offset.dy;
+    // Apply physics offsets only when not using a tool that needs stable bone positions
+    if (tool !== 'mesh' && tool !== 'warp' && tool !== 'weights') {
+      for (const bone of bones) {
+        const offset = physicsOffsets[bone.id];
+        if (offset) {
+          bone._wx += offset.dx;
+          bone._wy += offset.dy;
+        }
       }
     }
 
@@ -889,13 +891,15 @@ export const MainCanvas = () => {
         const attachmentKey = getAttachmentKey({ slotId: meshDragStart.slotId, name: meshDragStart.attachmentName });
         setMeshDeformKeyframe(attachmentKey, nextVerts);
       } else {
-        const { updateAttachment: ua } = useSlotStore.getState();
-        const att = useSlotStore.getState().attachments.find(
+        const { updateAttachment: ua, attachments: atts } = useSlotStore.getState();
+        const att = atts.find(
           (a) => a.slotId === meshDragStart.slotId && a.name === meshDragStart.attachmentName,
         );
         if (att?.mesh) {
+          // Use nextVerts (from initialVertices + cumulative delta), not att.mesh.vertices,
+          // to avoid double-accumulation on every mouse-move call.
           ua(meshDragStart.slotId, meshDragStart.attachmentName, {
-            mesh: { ...att.mesh, vertices: att.mesh.vertices.map((v, i) => selectedSet.has(i) ? { ...v, x: v.x + localDx, y: v.y + localDy } : v) },
+            mesh: { ...att.mesh, vertices: att.mesh.vertices.map((v, i) => ({ ...v, x: nextVerts[i]!.x, y: nextVerts[i]!.y })) },
           });
         }
       }

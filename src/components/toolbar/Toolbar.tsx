@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine, Paintbrush } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -14,7 +14,6 @@ import { exportVideo } from '../../utils/videoExporter';
 import { exportAudioMix } from '../../utils/audioExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
-import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
   pose: MousePointer,
@@ -24,7 +23,6 @@ const TOOL_ICONS = {
   scale: Maximize2,
   mesh: ScanLine,
   warp: Grid2x2,
-  weights: Paintbrush,
 };
 
 const TOOL_LABELS = {
@@ -35,7 +33,6 @@ const TOOL_LABELS = {
   scale: 'Scale',
   mesh: 'Mesh',
   warp: 'Warp',
-  weights: 'Weights',
 };
 
 const TOOL_SHORTCUTS = {
@@ -46,7 +43,6 @@ const TOOL_SHORTCUTS = {
   scale: 'S',
   mesh: 'H',
   warp: 'D',
-  weights: 'P',
 };
 
 const IMAGE_FILTERS = [
@@ -326,7 +322,7 @@ export const Toolbar = () => {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
-      {(Object.keys(TOOL_ICONS) as Tool[]).map((t) => {
+      {(Object.keys(TOOL_ICONS) as Array<keyof typeof TOOL_ICONS>).map((t) => {
         const Icon = TOOL_ICONS[t];
         return (
           <button
