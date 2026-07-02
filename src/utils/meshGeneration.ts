@@ -1,4 +1,4 @@
-import type { Attachment, AttachmentMesh, MeshVertex, MeshTriangle } from '../types';
+import type { Attachment, AttachmentMesh, MeshVertex } from '../types';
 import { buildMeshEdges } from './meshAttachment';
 
 type Pt = { x: number; y: number };
@@ -39,6 +39,79 @@ const runMS = (alpha: Uint8ClampedArray, w: number, h: number, thr: number): [Pt
     }
   }
   return segs;
+};
+
+const alphaArea = (alpha: Uint8ClampedArray, thr: number): number => {
+  let area = 0;
+  for (const a of alpha) {
+    if (a >= thr) area += 1;
+  }
+  return area;
+};
+
+const alphaCentroid = (
+  alpha: Uint8ClampedArray,
+  w: number,
+  h: number,
+  thr: number,
+): Pt => {
+  let sx = 0;
+  let sy = 0;
+  let count = 0;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (alpha[y * w + x]! < thr) continue;
+      sx += x + 0.5;
+      sy += y + 0.5;
+      count += 1;
+    }
+  }
+  return count > 0 ? { x: sx / count, y: sy / count } : { x: w / 2, y: h / 2 };
+};
+
+const traceAlphaEnvelope = (
+  alpha: Uint8ClampedArray,
+  w: number,
+  h: number,
+  thr: number,
+): Pt[] => {
+  const pts: Pt[] = [];
+  const isOn = (x: number, y: number) => alpha[y * w + x]! >= thr;
+
+  for (let x = 0; x < w; x += 1) {
+    for (let y = 0; y < h; y += 1) {
+      if (isOn(x, y)) {
+        pts.push({ x: x + 0.5, y });
+        break;
+      }
+    }
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = w - 1; x >= 0; x -= 1) {
+      if (isOn(x, y)) {
+        pts.push({ x: x + 1, y: y + 0.5 });
+        break;
+      }
+    }
+  }
+  for (let x = w - 1; x >= 0; x -= 1) {
+    for (let y = h - 1; y >= 0; y -= 1) {
+      if (isOn(x, y)) {
+        pts.push({ x: x + 0.5, y: y + 1 });
+        break;
+      }
+    }
+  }
+  for (let y = h - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (isOn(x, y)) {
+        pts.push({ x, y: y + 0.5 });
+        break;
+      }
+    }
+  }
+
+  return pts.filter((p, i) => i === 0 || pk(p) !== pk(pts[i - 1]!));
 };
 
 // ─── segment chaining ─────────────────────────────────────────────────────────
@@ -114,102 +187,63 @@ const simplifyPoly = (pts: Pt[], eps: number): Pt[] => {
   return dpRec(closed, eps).slice(0, -1);
 };
 
-// ─── point-in-polygon (ray casting) ──────────────────────────────────────────
-
-const inPoly = (px: number, py: number, poly: Pt[]): boolean => {
-  let inside = false;
-  const n = poly.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = poly[i]!.x, yi = poly[i]!.y;
-    const xj = poly[j]!.x, yj = poly[j]!.y;
-    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)
-      inside = !inside;
+const signedArea = (poly: Pt[]): number => {
+  let area = 0;
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % poly.length]!;
+    area += a.x * b.y - b.x * a.y;
   }
-  return inside;
+  return area / 2;
 };
 
-// ─── interior sampling ────────────────────────────────────────────────────────
-
-const sampleInterior = (poly: Pt[], spacing: number): Pt[] => {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of poly) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  const pts: Pt[] = [];
-  for (let y = minY + spacing / 2; y < maxY; y += spacing) {
-    for (let x = minX + spacing / 2; x < maxX; x += spacing) {
-      const jx = x + (Math.random() - 0.5) * spacing * 0.4;
-      const jy = y + (Math.random() - 0.5) * spacing * 0.4;
-      if (inPoly(jx, jy, poly)) pts.push({ x: jx, y: jy });
-    }
-  }
-  return pts;
+const contourScore = (poly: Pt[]): number => {
+  const area = Math.abs(signedArea(poly));
+  return area > 1e-3 ? area : poly.length;
 };
 
-// ─── Bowyer-Watson Delaunay ────────────────────────────────────────────────────
+// ─── radial-ring triangulation ────────────────────────────────────────────────
 
-const ccContains = (
-  aug: Pt[], ai: number, bi: number, ci: number, px: number, py: number,
-): boolean => {
-  const { x: ax, y: ay } = aug[ai]!;
-  const { x: bx, y: by } = aug[bi]!;
-  const { x: cx, y: cy } = aug[ci]!;
-  const D = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
-  if (Math.abs(D) < 1e-10) return false;
-  const ux = ((ax*ax+ay*ay)*(by-cy) + (bx*bx+by*by)*(cy-ay) + (cx*cx+cy*cy)*(ay-by)) / D;
-  const uy = ((ax*ax+ay*ay)*(cx-bx) + (bx*bx+by*by)*(ax-cx) + (cx*cx+cy*cy)*(bx-ax)) / D;
-  return (px-ux)**2 + (py-uy)**2 < (ax-ux)**2 + (ay-uy)**2;
-};
+const buildRadialMesh = (
+  outline: Pt[],
+  center: Pt,
+  density: number,
+): { points: Pt[]; triangles: Tri[] } => {
+  const innerRingCount = Math.max(1, Math.min(3, Math.round(1 + density * 2)));
+  const rings: Pt[][] = [];
 
-const triangulate = (pts: Pt[]): Tri[] => {
-  const n = pts.length;
-  if (n < 3) return [];
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const { x, y } of pts) {
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  for (let ring = 1; ring <= innerRingCount; ring += 1) {
+    const t = ring / (innerRingCount + 1);
+    rings.push(
+      outline.map((p) => ({
+        x: center.x + (p.x - center.x) * t,
+        y: center.y + (p.y - center.y) * t,
+      })),
+    );
   }
-  const d = Math.max(maxX - minX, maxY - minY) * 10 || 1;
-  const mcx = (minX + maxX) / 2, mcy = (minY + maxY) / 2;
-  const aug: Pt[] = [
-    ...pts,
-    { x: mcx - d,     y: mcy - d },
-    { x: mcx,         y: mcy + d },
-    { x: mcx + d,     y: mcy - d },
-  ];
+  rings.push(outline);
 
-  let tris: Tri[] = [[n, n + 1, n + 2]];
+  const points = [center, ...rings.flat()];
+  const triangles: Tri[] = [];
+  const count = outline.length;
+  const idx = (ring: number, point: number) => 1 + ring * count + (point % count);
 
-  for (let pi = 0; pi < n; pi++) {
-    const { x: px, y: py } = pts[pi]!;
-    const bad: Tri[] = [], good: Tri[] = [];
-    for (const t of tris) {
-      (ccContains(aug, t[0], t[1], t[2], px, py) ? bad : good).push(t);
-    }
-
-    const boundary: [number, number][] = [];
-    for (const t of bad) {
-      const te: [number,number][] = [[t[0],t[1]], [t[1],t[2]], [t[2],t[0]]];
-      for (const [ea, eb] of te) {
-        const shared = bad.some(
-          (b) => b !== t && (
-            (b[0]===ea&&b[1]===eb)||(b[0]===eb&&b[1]===ea)||
-            (b[1]===ea&&b[2]===eb)||(b[1]===eb&&b[2]===ea)||
-            (b[2]===ea&&b[0]===eb)||(b[2]===eb&&b[0]===ea)
-          ),
-        );
-        if (!shared) boundary.push([ea, eb]);
-      }
-    }
-
-    tris = [...good, ...boundary.map(([a, b]) => [a, b, pi] as Tri)];
+  for (let i = 0; i < count; i += 1) {
+    triangles.push([0, idx(0, i), idx(0, i + 1)]);
   }
 
-  return tris.filter((t) => t[0] < n && t[1] < n && t[2] < n);
+  for (let ring = 0; ring < rings.length - 1; ring += 1) {
+    for (let i = 0; i < count; i += 1) {
+      const a = idx(ring, i);
+      const b = idx(ring, i + 1);
+      const c = idx(ring + 1, i);
+      const d = idx(ring + 1, i + 1);
+      triangles.push([a, b, d]);
+      triangles.push([a, d, c]);
+    }
+  }
+
+  return { points, triangles };
 };
 
 // ─── image loading ────────────────────────────────────────────────────────────
@@ -261,46 +295,50 @@ export const generateAutoMesh = async (
   const segs = runMS(alpha, w, h, ALPHA_THRESH);
   if (segs.length === 0) return null;
 
-  // 2. Chain segments → closed polygons; keep the largest
+  // 2. Chain segments → closed polygons. Some sprites produce broken
+  // marching-squares chains; compare them against a row/column alpha envelope
+  // so auto mesh still surrounds the full visible sprite instead of a thin band.
   const chains = chainSegments(segs);
-  const outline = chains.reduce<Pt[]>((best, c) => c.length > best.length ? c : best, []);
+  const tracedOutline = chains.reduce<Pt[]>(
+    (best, c) => (contourScore(c) > contourScore(best) ? c : best),
+    [],
+  );
+  const maskArea = alphaArea(alpha, ALPHA_THRESH);
+  const envelopeOutline = traceAlphaEnvelope(alpha, w, h, ALPHA_THRESH);
+  const tracedScore = contourScore(tracedOutline);
+  const envelopeScore = contourScore(envelopeOutline);
+  const outline =
+    tracedScore >= maskArea * 0.65 && tracedScore >= envelopeScore * 0.75
+      ? tracedOutline
+      : envelopeOutline;
   if (outline.length < 3) return null;
 
   // 3. Simplify outline with Douglas-Peucker
-  const eps = 4.5 - edgeDetail * 4.0; // [4.5 → 0.5] as edgeDetail [0 → 1]
-  const simplified = simplifyPoly(outline, Math.max(0.5, eps));
+  const eps = 1.8 - edgeDetail * 1.55; // [1.8 → 0.25] as edgeDetail [0 → 1]
+  const simplified = simplifyPoly(outline, Math.max(0.25, eps));
   if (simplified.length < 3) return null;
 
-  // 4. Sample interior grid (density controls spacing)
-  const spacingMax = w * 0.22;
-  const spacingMin = w * 0.065;
-  const spacing = spacingMax - density * (spacingMax - spacingMin);
-  const interior = sampleInterior(simplified, spacing);
-
-  // 5. Triangulate boundary + interior
-  const allPts = [...simplified, ...interior];
-  const tris = triangulate(allPts);
-
-  // 6. Keep only triangles whose centroid is inside the outline
-  const finalTris = tris.filter(([a, b, c]) =>
-    inPoly(
-      (allPts[a]!.x + allPts[b]!.x + allPts[c]!.x) / 3,
-      (allPts[a]!.y + allPts[b]!.y + allPts[c]!.y) / 3,
-      simplified,
-    ),
+  // 4. Build stable rings from the alpha center out to the outline.
+  const { points: allPts, triangles } = buildRadialMesh(
+    simplified,
+    alphaCentroid(alpha, w, h, ALPHA_THRESH),
+    density,
   );
-  if (finalTris.length === 0) return null;
+  if (triangles.length === 0) return null;
 
-  // 7. Convert grid coords → attachment-local space + UVs
+  // 5. Convert grid coords → attachment-local space + UVs
   const { width = 100, height = 100 } = attachment;
+  const cropped = attachment.imageIsCropped && attachment.opaqueBounds;
+  const localBounds = cropped
+    ? attachment.opaqueBounds!
+    : { x: 0, y: 0, width, height };
   const vertices: MeshVertex[] = allPts.map((p) => ({
-    x: width  * (p.x / w - 0.5),
-    y: height * (p.y / h - 0.5),
+    x: localBounds.x + localBounds.width * (p.x / w) - width / 2,
+    y: localBounds.y + localBounds.height * (p.y / h) - height / 2,
     u: p.x / w,
     v: p.y / h,
   }));
 
-  const triangles = finalTris as MeshTriangle[];
   const edges = buildMeshEdges(triangles);
 
   return { vertices, triangles, edges };
