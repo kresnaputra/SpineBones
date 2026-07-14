@@ -1711,7 +1711,7 @@ const createServer = () => {
   server.registerTool(
     'spinebones_apply_rag_animation',
     {
-      description: 'PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation from the RAG dataset using a natural-language prompt and applies it to the current timeline automatically — including bone mapping, duration, fps, and all keyframes. Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.',
+      description: "PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation(s) from the RAG dataset using a natural-language prompt and synthesizes a new animation from the retrieved motion pattern (key poses, timing, displacement) — applying it to the current timeline automatically, including bone mapping, duration, fps, and all keyframes. Supports modifier phrases (English/Indonesian) like 'higher'/'lebih tinggi', 'faster'/'lebih cepat', 'heavier'/'lebih berat', 'smoother'/'lebih halus', 'dramatic'/'lebih dramatis'. By default the output is synthesized, not a raw copy of the dataset clip — to force an exact raw copy of the matched dataset animation instead, include a phrase like 'copy exact json' / 'apply exact dataset' / Indonesian 'salin json persis' / 'pakai dataset asli' in the prompt. Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.",
       inputSchema: {
         prompt: z.string().min(1).describe('Natural-language description of the desired animation, e.g. "walk cycle for knight" or "animasi lari".'),
       },

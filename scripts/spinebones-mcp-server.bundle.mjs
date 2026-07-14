@@ -5,43 +5,25 @@ var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-function __accessProp(key) {
-  return this[key];
-}
-var __toESMCache_node;
-var __toESMCache_esm;
 var __toESM = (mod, isNodeMode, target) => {
-  var canCache = mod != null && typeof mod === "object";
-  if (canCache) {
-    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
-    var cached = cache.get(mod);
-    if (cached)
-      return cached;
-  }
   target = mod != null ? __create(__getProtoOf(mod)) : {};
   const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
   for (let key of __getOwnPropNames(mod))
     if (!__hasOwnProp.call(to, key))
       __defProp(to, key, {
-        get: __accessProp.bind(mod, key),
+        get: () => mod[key],
         enumerable: true
       });
-  if (canCache)
-    cache.set(mod, to);
   return to;
 };
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
-var __returnValue = (v) => v;
-function __exportSetter(name, newValue) {
-  this[name] = __returnValue.bind(null, newValue);
-}
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
       get: all[name],
       enumerable: true,
       configurable: true,
-      set: __exportSetter.bind(all, name)
+      set: (newValue) => all[name] = () => newValue
     });
 };
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
@@ -50001,6 +49983,19 @@ var requestJson = async (path, init) => {
   }
   return response.json();
 };
+var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+var waitForRagResult = async (requestId, timeoutMs = 4000) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const state = await requestJson("/state");
+    const result = state?.lastRagResult ?? null;
+    if (result?.requestId === requestId && result?.status && result.status !== "running") {
+      return result;
+    }
+    await delay(120);
+  }
+  throw new Error(`Timed out waiting for RAG result for request ${requestId}`);
+};
 var asTextResult = (label, payload) => ({
   content: [
     {
@@ -51113,7 +51108,7 @@ var createServer = () => {
     return asTextResult("Keyframe written in SpineBones", result);
   });
   server.registerTool("spinebones_set_multiple_keyframes", {
-    description: "Set or overwrite multiple keyframes across bones in one call.",
+    description: "Set or overwrite multiple keyframes across bones in one call. NOTE: If you are creating a new animation (walk, run, idle, attack, etc.), call spinebones_apply_rag_animation first — it retrieves a matching animation from the dataset and applies it automatically. Use this tool only for manual edits or when spinebones_apply_rag_animation is not suitable.",
     inputSchema: {
       keyframes: array(object2({
         bone_id: number2().int().min(0).optional(),
@@ -51266,6 +51261,27 @@ var createServer = () => {
       })
     });
     return asTextResult("Timeline FPS updated in SpineBones", result);
+  });
+  server.registerTool("spinebones_apply_rag_animation", {
+    description: "PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation(s) from the RAG dataset using a natural-language prompt and synthesizes a new animation from the retrieved motion pattern (key poses, timing, displacement) — applying it to the current timeline automatically, including bone mapping, duration, fps, and all keyframes. Supports modifier phrases (English/Indonesian) like 'higher'/'lebih tinggi', 'faster'/'lebih cepat', 'heavier'/'lebih berat', 'smoother'/'lebih halus', 'dramatic'/'lebih dramatis'. By default the output is synthesized, not a raw copy of the dataset clip — to force an exact raw copy of the matched dataset animation instead, include a phrase like 'copy exact json' / 'apply exact dataset' / Indonesian 'salin json persis' / 'pakai dataset asli' in the prompt. Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.",
+    inputSchema: {
+      prompt: string2().min(1).describe('Natural-language description of the desired animation, e.g. "walk cycle for knight" or "animasi lari".')
+    }
+  }, async ({ prompt }) => {
+    const requestId = randomUUID();
+    await requestJson("/command", {
+      method: "POST",
+      body: JSON.stringify({
+        commandType: "apply_rag_animation",
+        prompt,
+        requestId
+      })
+    });
+    const result = await waitForRagResult(requestId);
+    if (result.status === "failed") {
+      throw new Error(result.error ?? "RAG animation failed in SpineBones");
+    }
+    return asTextResult("RAG animation applied in SpineBones", result);
   });
   server.registerTool("spinebones_play_animation", {
     description: "Start playback in the timeline.",

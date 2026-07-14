@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Bot, Copy, Square, Play, Settings2, X } from 'lucide-react';
+import { Activity, Bot, Copy, FileJson, Square, Play, Settings2, Trash2, X } from 'lucide-react';
+import { useEvaluationLogStore } from '../../stores/evaluationLogStore';
+import { exportEvaluationLogs } from '../../utils/evaluationLogExporter';
 import {
   getMcpBridgeInfo,
   getMcpServerStatus,
@@ -18,6 +20,9 @@ export const AiMcpPanel = () => {
   const [serverStatus, setServerStatus] = useState<McpServerStatus | null>(null);
   const [serverBusy, setServerBusy] = useState(false);
   const [showCodexConfig, setShowCodexConfig] = useState(false);
+  const evaluationLogs = useEvaluationLogStore((state) => state.entries);
+  const clearEvaluationLogs = useEvaluationLogStore((state) => state.clearEntries);
+  const latestEvaluationLog = evaluationLogs[0] ?? null;
   const codexConfigSummary = useMemo(() => {
     return [
       'Transport: Streamable HTTP',
@@ -137,6 +142,16 @@ export const AiMcpPanel = () => {
     }
   };
 
+  const handleExportEvaluationLogs = async () => {
+    try {
+      await exportEvaluationLogs();
+      setBridgeMessage(`Exported ${evaluationLogs.length} evaluation log(s).`);
+    } catch (error) {
+      console.error('Failed to export evaluation logs:', error);
+      setBridgeMessage(`Evaluation log export failed: ${error}`);
+    }
+  };
+
   return (
     <div className="relative flex flex-col border-t border-border">
       <div className="px-3 py-2 text-[10px] font-bold text-text-dim uppercase tracking-wider bg-panel2  flex items-center gap-2">
@@ -221,6 +236,51 @@ export const AiMcpPanel = () => {
 
           <div className="mt-2 text-[10px] leading-5 text-text-dim">
             {bridgeMessage}
+          </div>
+        </div>
+
+        <div className="rounded border border-border bg-panel2/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-text text-[11px] font-semibold">
+              <FileJson size={13} className="text-accent2" />
+              Evaluation Logs
+            </div>
+            <div className="rounded border border-border/70 bg-panel px-2 py-0.5 font-mono text-[10px] text-text-dim">
+              {evaluationLogs.length}
+            </div>
+          </div>
+
+          {latestEvaluationLog ? (
+            <div className="mt-2 rounded border border-border/70 bg-panel px-2 py-2 text-[10px] leading-5 text-text-dim">
+              <div className="truncate text-text">{latestEvaluationLog.prompt}</div>
+              <div>
+                {latestEvaluationLog.status.toUpperCase()} | JSON{' '}
+                {latestEvaluationLog.validation.percentage}%
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 rounded border border-border/70 bg-panel px-2 py-2 text-[10px] leading-5 text-text-dim">
+              No evaluation logs.
+            </div>
+          )}
+
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => void handleExportEvaluationLogs()}
+              disabled={evaluationLogs.length === 0}
+              className="flex flex-1 items-center justify-center gap-1 rounded border border-accent/60 bg-accent/15 px-3 py-2 text-[11px] font-semibold text-accent2 transition-all hover:bg-accent/20 disabled:opacity-40 disabled:hover:bg-accent/15"
+            >
+              <FileJson size={12} />
+              Export
+            </button>
+            <button
+              onClick={clearEvaluationLogs}
+              disabled={evaluationLogs.length === 0}
+              className="flex flex-1 items-center justify-center gap-1 rounded border border-border bg-panel px-3 py-2 text-[11px] font-semibold text-text transition-all hover:border-accent hover:text-accent2 disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text"
+            >
+              <Trash2 size={12} />
+              Clear
+            </button>
           </div>
         </div>
       </div>

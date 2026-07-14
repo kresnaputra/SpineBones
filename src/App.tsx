@@ -8,6 +8,7 @@ import { useSkeletonStore } from './stores/skeletonStore';
 import { useSlotStore } from './stores/slotStore';
 import { useCameraStore } from './stores/cameraStore';
 import { useHistoryStore } from './stores/historyStore';
+import { useEvaluationLogStore } from './stores/evaluationLogStore';
 import { ensureDesktopMenu } from './utils/desktopMenu';
 import { computeAllWorldTransforms } from './engine/transforms';
 import { getIkChain, solveTwoBoneIk } from './utils/ik';
@@ -34,6 +35,16 @@ import { exportPngSequence } from './utils/pngSequenceExporter';
 import { exportVideo } from './utils/videoExporter';
 import type { Attachment, Mode, Tool } from './types';
 import { applyRagAnimation, runRagPipeline } from './thesis/ragPipeline';
+import type {
+  MotionModifiers,
+  RagCandidateSummary,
+  RagOutputMode,
+  RagRejectedCandidate,
+} from './thesis/rag/synthesis/types';
+import {
+  buildFailedRagEvaluationLogEntry,
+  buildRagEvaluationLogEntry,
+} from './thesis/evaluation/ragEvaluation';
 
 type McpEditorCommand = {
   commandType: string;
@@ -130,7 +141,17 @@ type McpRagCommandSnapshot = {
   mappedBoneCount?: number;
   mappedBones?: Record<string, string>;
   keyframeCount?: number;
+  evaluationLogId?: string;
+  jsonAgreement?: number;
+  validationStatus?: 'valid' | 'invalid' | 'failed';
   error?: string;
+  outputMode?: RagOutputMode;
+  appliedDuration?: number;
+  appliedFps?: number;
+  modifiersApplied?: MotionModifiers;
+  retrievedCandidates?: RagCandidateSummary[];
+  rejectedCandidates?: RagRejectedCandidate[];
+  generatedKeyframeCount?: number;
 };
 
 let latestMcpRagResult: McpRagCommandSnapshot | null = null;
@@ -1286,6 +1307,7 @@ const buildMcpSnapshot = () => {
   const editor = useEditorStore.getState();
   const slotState = useSlotStore.getState();
   const camera = useCameraStore.getState();
+  const evaluationLog = useEvaluationLogStore.getState();
 
   return {
     ready: true,
@@ -1357,6 +1379,8 @@ const buildMcpSnapshot = () => {
     audioOffsetFrames: animation.audioOffsetFrames,
     keyframes: animation.keyframes,
     lastRagResult: latestMcpRagResult,
+    evaluationLogs: evaluationLog.entries,
+    lastEvaluationLog: evaluationLog.entries[0] ?? null,
   };
 };
 
@@ -1478,6 +1502,7 @@ function App() {
     const unsubscribeAnimation = useAnimationStore.subscribe(pushSnapshot);
     const unsubscribeEditor = useEditorStore.subscribe(pushSnapshot);
     const unsubscribeSlots = useSlotStore.subscribe(pushSnapshot);
+    const unsubscribeEvaluationLogs = useEvaluationLogStore.subscribe(pushSnapshot);
 
     return () => {
       if (timeoutId !== null) {
@@ -1487,6 +1512,7 @@ function App() {
       unsubscribeAnimation();
       unsubscribeEditor();
       unsubscribeSlots();
+      unsubscribeEvaluationLogs();
     };
   }, []);
 
@@ -1902,28 +1928,57 @@ function App() {
         try {
           const result = runRagPipeline(payload.prompt);
           applyRagAnimation(result);
+          const completedAt = new Date().toISOString();
+          const evaluationLog = buildRagEvaluationLogEntry(result, {
+            requestId: payload.requestId ?? null,
+            prompt: payload.prompt,
+            completedAt,
+          });
+          useEvaluationLogStore.getState().addEntry(evaluationLog);
           latestMcpRagResult = {
             requestId: payload.requestId ?? null,
             prompt: payload.prompt,
             status: 'completed',
             startedAt: latestMcpRagResult.startedAt,
-            completedAt: new Date().toISOString(),
+            completedAt,
             itemId: result.item.id,
             score: result.score,
             reasons: result.reasons,
             mappedBoneCount: Object.keys(result.mappedBones).length,
             mappedBones: result.mappedBones,
             keyframeCount: result.keyframeCount,
+            evaluationLogId: evaluationLog.id,
+            jsonAgreement: evaluationLog.validation.percentage,
+            validationStatus: evaluationLog.status,
+            outputMode: result.outputMode,
+            appliedDuration: result.appliedDuration,
+            appliedFps: result.appliedFps,
+            modifiersApplied: result.modifiers ?? undefined,
+            retrievedCandidates: result.retrievedCandidates,
+            rejectedCandidates: result.rejectedCandidates,
+            generatedKeyframeCount: result.outputMode === 'synthesized' ? result.keyframeCount : undefined,
           };
           console.info('MCP apply_rag_animation:', latestMcpRagResult);
         } catch (error) {
+          const completedAt = new Date().toISOString();
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const evaluationLog = buildFailedRagEvaluationLogEntry({
+            requestId: payload.requestId ?? null,
+            prompt: payload.prompt,
+            completedAt,
+            error: errorMessage,
+          });
+          useEvaluationLogStore.getState().addEntry(evaluationLog);
           latestMcpRagResult = {
             requestId: payload.requestId ?? null,
             prompt: payload.prompt,
             status: 'failed',
             startedAt: latestMcpRagResult.startedAt,
-            completedAt: new Date().toISOString(),
-            error: error instanceof Error ? error.message : String(error),
+            completedAt,
+            evaluationLogId: evaluationLog.id,
+            jsonAgreement: evaluationLog.validation.percentage,
+            validationStatus: evaluationLog.status,
+            error: errorMessage,
           };
           console.error('MCP apply_rag_animation failed:', latestMcpRagResult);
         }
