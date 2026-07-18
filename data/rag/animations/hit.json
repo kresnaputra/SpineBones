@@ -5,6 +5,15 @@
   "name": "Hit Reaction",
   "description": "Hit reaction animation for a humanoid character with a sharp impact, knockback, stagger, and recovery.",
   "category": "hit",
+  "family": "hit",
+  "variant": "basic",
+  "aliases": [
+    "kena pukul",
+    "terkena",
+    "hit reaction"
+  ],
+  "priority": 10,
+  "defaultForCategory": true,
   "loop": false,
   "style": [
     "combat",

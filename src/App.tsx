@@ -127,6 +127,12 @@ type McpRagCommandSnapshot = {
   itemId?: string;
   score?: number;
   reasons?: string[];
+  // Explainable selection metadata.
+  matchType?: string;
+  selectionSource?: string;
+  ambiguous?: boolean;
+  ambiguityResolution?: string | null;
+  candidates?: Array<{ id: string; name: string; score: number; matchType: string; reasons: string[] }>;
   mappedBoneCount?: number;
   mappedBones?: Record<string, string>;
   keyframeCount?: number;
@@ -1911,6 +1917,11 @@ function App() {
             itemId: result.item.id,
             score: result.score,
             reasons: result.reasons,
+            matchType: result.matchType,
+            selectionSource: result.selectionSource,
+            ambiguous: result.ambiguous,
+            ambiguityResolution: result.ambiguityResolution,
+            candidates: result.candidates,
             mappedBoneCount: Object.keys(result.mappedBones).length,
             mappedBones: result.mappedBones,
             keyframeCount: result.keyframeCount,

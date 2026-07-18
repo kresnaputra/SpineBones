@@ -5,6 +5,15 @@
   "name": "Run",
   "description": "Looping run animation for a humanoid character carrying a sword, with fast alternating legs, counter-swinging arms, body bounce, and subtle weapon follow-through.",
   "category": "run",
+  "family": "run",
+  "variant": "basic",
+  "aliases": [
+    "lari",
+    "berlari",
+    "run cycle"
+  ],
+  "priority": 10,
+  "defaultForCategory": true,
   "loop": true,
   "style": [
     "locomotion"

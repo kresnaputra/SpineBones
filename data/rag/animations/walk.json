@@ -5,6 +5,16 @@
   "name": "Walk",
   "description": "Looping walk animation for a humanoid rhino character carrying a sword, with natural alternating legs, counter-swinging arms, subtle body bob, head follow-through, and weapon follow-through.",
   "category": "walk",
+  "family": "walk",
+  "variant": "rhino",
+  "aliases": [
+    "berjalan",
+    "jalan",
+    "walk cycle",
+    "rhino walk"
+  ],
+  "priority": 10,
+  "defaultForCategory": true,
   "loop": true,
   "style": [
     "combat",

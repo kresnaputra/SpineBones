@@ -1,4 +1,5 @@
 import type { RagQueryContext } from '../types/ragTypes';
+import { detectActions, normalizeTokens, phraseTokenize } from './normalize';
 
 export const buildRagQueryContext = (
   prompt: string,
@@ -8,4 +9,7 @@ export const buildRagQueryContext = (
   category: null,
   tags: semanticBones,
   semanticBones,
+  phraseTokens: phraseTokenize(prompt),
+  actions: detectActions(prompt),
+  normalizedTokens: normalizeTokens(prompt),
 });

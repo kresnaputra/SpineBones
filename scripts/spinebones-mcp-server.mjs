@@ -1711,9 +1711,9 @@ const createServer = () => {
   server.registerTool(
     'spinebones_apply_rag_animation',
     {
-      description: 'PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation from the RAG dataset using a natural-language prompt and applies it to the current timeline automatically — including bone mapping, duration, fps, and all keyframes. Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.',
+      description: 'PREFERRED FIRST STEP for any animation task. Retrieves the best-matching animation from the RAG dataset using a natural-language prompt (English or Indonesian) and applies it to the current timeline automatically — including bone mapping, duration, fps, and all keyframes. Selection is deterministic: exact dataset id/name/alias wins over variant/family/category over generic text. The result explains why the item was chosen (selectionSource, matchType, reasons), lists the top candidates with scores, and flags ambiguous ties (ambiguous, ambiguityResolution). Always call this before manually writing keyframes with spinebones_set_multiple_keyframes.',
       inputSchema: {
-        prompt: z.string().min(1).describe('Natural-language description of the desired animation, e.g. "walk cycle for knight" or "animasi lari".'),
+        prompt: z.string().min(1).describe('Natural-language description of the desired animation, e.g. "walk cycle for knight", "buat animasi berjalan", "rhino walk", or "melompat jump-2".'),
       },
     },
     async ({ prompt }) => {

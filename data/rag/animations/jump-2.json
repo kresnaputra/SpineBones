@@ -5,6 +5,15 @@
   "name": "Jump 2",
   "description": "Jump animation exported from SpineBones for the active rhino humanoid rig, with crouch, lift, airborne pose, landing, and recovery.",
   "category": "jump",
+  "family": "jump",
+  "variant": "rhino-high",
+  "aliases": [
+    "melompat",
+    "lompat",
+    "jump cycle",
+    "rhino jump"
+  ],
+  "priority": 5,
   "loop": false,
   "style": [
     "locomotion",

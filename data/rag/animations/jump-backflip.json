@@ -5,6 +5,15 @@
   "name": "Jump Backflip",
   "description": "Backflip jump animation exported from SpineBones for the active rhino humanoid rig, with crouch anticipation, takeoff, airborne backward 360-degree rotation, tucked arms and legs, landing, and recovery.",
   "category": "jump",
+  "family": "jump",
+  "variant": "backflip",
+  "aliases": [
+    "melompat",
+    "lompat",
+    "salto",
+    "backflip"
+  ],
+  "priority": 3,
   "loop": false,
   "style": [
     "locomotion",

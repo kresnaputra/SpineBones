@@ -5,6 +5,15 @@
   "name": "Jump",
   "description": "Jump animation for a humanoid character with a crouch, takeoff, airborne arc, landing, and recovery.",
   "category": "jump",
+  "family": "jump",
+  "variant": "basic",
+  "aliases": [
+    "melompat",
+    "lompat",
+    "jump cycle"
+  ],
+  "priority": 10,
+  "defaultForCategory": true,
   "loop": false,
   "style": [
     "locomotion"

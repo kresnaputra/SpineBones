@@ -5,6 +5,15 @@
   "name": "Knight Walk",
   "description": "Walk cycle for a humanoid character carrying a weapon.",
   "category": "walk",
+  "family": "walk",
+  "variant": "knight",
+  "aliases": [
+    "berjalan",
+    "jalan",
+    "walk cycle",
+    "knight walk"
+  ],
+  "priority": 5,
   "loop": true,
   "style": [
     "combat",

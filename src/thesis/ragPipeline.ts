@@ -3,11 +3,24 @@ import { useAnimationStore } from '../stores/animationStore';
 import { useEditorStore } from '../stores/editorStore';
 import { loadRagDatasetFromItems } from './rag/retrieval/loader';
 import { buildRagQueryContext } from './rag/retrieval/queryBuilder';
-import { retrieveTopAnimations } from './rag/retrieval/retriever';
+import { retrieveAnimationDecision } from './rag/retrieval/retriever';
 import { buildSemanticBoneMap } from './rag/adaptation/boneMapper';
 import { flattenDatasetKeyframes } from './rag/adaptation/keyframeAdapter';
-import type { RagAnimationDatasetItem } from './rag/types/ragTypes';
+import type {
+  RagAmbiguityResolution,
+  RagAnimationDatasetItem,
+  RagMatchType,
+} from './rag/types/ragTypes';
 import type { FlatKeyframeEntry } from './rag/adaptation/keyframeAdapter';
+
+// Compact, serializable summary of a scored candidate for explainable results.
+export interface RagCandidateSummary {
+  id: string;
+  name: string;
+  score: number;
+  matchType: RagMatchType;
+  reasons: string[];
+}
 
 // Bundle all dataset JSONs at build time via Vite glob.
 // Path is relative to this file (src/thesis/ → ../../data/rag/animations/).
@@ -25,6 +38,14 @@ export interface RagPipelineResult {
   item: RagAnimationDatasetItem;
   score: number;
   reasons: string[];
+  // How the selected item was chosen (exact id/name/alias, variant, family, category, token).
+  matchType: RagMatchType;
+  selectionSource: RagMatchType;
+  // True when several candidates scored closely and no exact id/name/variant was given.
+  ambiguous: boolean;
+  ambiguityResolution: RagAmbiguityResolution | null;
+  // Top candidates (selected first) with scores and reasons, for transparency.
+  candidates: RagCandidateSummary[];
   // sourceBoneName → targetBoneName for bones that were successfully mapped
   mappedBones: Record<string, string>;
   keyframeCount: number;
@@ -63,15 +84,22 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
   const activeBoneNames = activeBones.map((b) => b.name);
 
   const query = buildRagQueryContext(prompt, activeBoneNames);
-  const [top] = retrieveTopAnimations(dataset, query, 1);
-  if (!top) throw new Error('No matching animation found in dataset');
+  const decision = retrieveAnimationDecision(dataset, query, 3);
+  const top = decision.selected;
   if (top.score < MIN_RAG_SCORE) {
     throw new Error(
       `No confident RAG match for prompt "${prompt}" (top score ${top.score}, minimum ${MIN_RAG_SCORE})`,
     );
   }
 
-  const { item, score, reasons } = top;
+  const { item, score, reasons, matchType } = top;
+  const candidates: RagCandidateSummary[] = decision.candidates.map((c) => ({
+    id: c.item.id,
+    name: c.item.name,
+    score: c.score,
+    matchType: c.matchType,
+    reasons: c.reasons,
+  }));
 
   const targetSemanticMapping = buildTargetSemanticMapping(item.boneMapping, activeBoneNames);
   const mappedBones = buildSemanticBoneMap(item.boneMapping, targetSemanticMapping);
@@ -87,7 +115,19 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
     throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
   }
 
-  return { item, score, reasons, mappedBones, keyframeCount: flatKeyframes.length, flatKeyframes };
+  return {
+    item,
+    score,
+    reasons,
+    matchType,
+    selectionSource: decision.selectionSource,
+    ambiguous: decision.ambiguous,
+    ambiguityResolution: decision.ambiguityResolution,
+    candidates,
+    mappedBones,
+    keyframeCount: flatKeyframes.length,
+    flatKeyframes,
+  };
 };
 
 // Apply a pipeline result to the active editor timeline.

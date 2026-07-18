@@ -5,6 +5,15 @@
   "name": "Heavy Walk",
   "description": "Heavy looping walk animation for a humanoid rhino character carrying a sword, with grounded foot plants, deeper body drops, compressed contact poses, slower alternating legs, and delayed arm and weapon follow-through.",
   "category": "walk",
+  "family": "walk",
+  "variant": "heavy",
+  "aliases": [
+    "berjalan",
+    "jalan",
+    "walk cycle",
+    "heavy walk"
+  ],
+  "priority": 5,
   "loop": true,
   "style": [
     "combat",

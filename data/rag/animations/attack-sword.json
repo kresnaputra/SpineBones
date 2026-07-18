@@ -5,6 +5,16 @@
   "name": "Attack Sword",
   "description": "Attack animation for a humanoid character that throws a sword forward and catches it as it returns.",
   "category": "attack",
+  "family": "attack",
+  "variant": "sword",
+  "aliases": [
+    "pukul",
+    "serang",
+    "menyerang",
+    "sword attack"
+  ],
+  "priority": 10,
+  "defaultForCategory": true,
   "loop": false,
   "style": [
     "combat"

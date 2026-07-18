@@ -5,6 +5,15 @@
   "name": "Hit Reaction 2",
   "description": "Hit reaction animation (alternate variant) for a humanoid character carrying a weapon, with a sharp impact, knockback, stagger, and recovery.",
   "category": "hit",
+  "family": "hit",
+  "variant": "sharp",
+  "aliases": [
+    "kena pukul",
+    "terkena",
+    "hit reaction",
+    "sharp hit"
+  ],
+  "priority": 5,
   "loop": false,
   "style": [
     "combat",

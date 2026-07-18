@@ -5,8 +5,20 @@
   "name": "Knight running",
   "description": "running cycle for a humanoid character carrying a weapon.",
   "category": "running",
+  "family": "run",
+  "variant": "knight",
+  "aliases": [
+    "lari",
+    "berlari",
+    "run cycle",
+    "knight run"
+  ],
+  "priority": 5,
   "loop": true,
-  "style": ["combat", "locomotion"],
+  "style": [
+    "combat",
+    "locomotion"
+  ],
   "motionFeatures": {
     "speed": "fast",
     "energy": "high",
