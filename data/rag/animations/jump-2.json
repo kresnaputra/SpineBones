@@ -1,0 +1,714 @@
+{
+  "datasetFormat": "spinebones-rag-animation",
+  "version": "1.0",
+  "id": "jump-2",
+  "name": "Jump 2",
+  "description": "Jump animation exported from SpineBones for the active rhino humanoid rig, with crouch, lift, airborne pose, landing, and recovery.",
+  "category": "jump",
+  "loop": false,
+  "style": [
+    "locomotion",
+    "combat"
+  ],
+  "motionFeatures": {
+    "speed": "medium",
+    "energy": "high",
+    "mood": "focused",
+    "cycle": false
+  },
+  "requiredBones": [
+    "torso",
+    "head",
+    "leftArm",
+    "rightArm",
+    "leftHand",
+    "leftUpperLeg",
+    "rightUpperLeg"
+  ],
+  "usage": "Suitable for the active rhino humanoid rig. Use as a one-shot jump animation with crouch, airborne movement, landing, and recovery. Requires matching SpineBones hierarchy and setup pose.",
+  "tags": [
+    "head",
+    "leftArm",
+    "leftHand",
+    "leftUpperLeg",
+    "rightArm",
+    "rightUpperLeg",
+    "torso",
+    "weapon",
+    "humanoid",
+    "keyframed",
+    "spinebones",
+    "jump",
+    "jumping",
+    "leap",
+    "crouch",
+    "takeoff",
+    "airborne",
+    "landing",
+    "recovery",
+    "locomotion"
+  ],
+  "source": {
+    "type": "spinebones-export",
+    "projectPath": "/Users/kresnaputra/Desktop/rhino.sbn",
+    "exportedAt": "2026-07-11T14:07:11.204Z"
+  },
+  "rigProfile": {
+    "type": "humanoid",
+    "semanticBones": [
+      "head",
+      "leftArm",
+      "leftHand",
+      "leftUpperLeg",
+      "rightArm",
+      "rightUpperLeg",
+      "torso"
+    ],
+    "boneCount": 10,
+    "slotCount": 10
+  },
+  "boneMapping": {
+    "leftUpperLeg": "left_leg",
+    "rightUpperLeg": "right_leg",
+    "leftHand": "left_hand",
+    "leftArm": "left_arm",
+    "torso": "body",
+    "head": "head",
+    "rightArm": "right_arm"
+  },
+  "animation": {
+    "format": "spinebones-animation-keyframes",
+    "version": "1.0",
+    "duration": 100,
+    "fps": 40,
+    "bones": [
+      {
+        "id": 0,
+        "name": "head",
+        "parentId": 1
+      },
+      {
+        "id": 1,
+        "name": "body",
+        "parentId": null
+      },
+      {
+        "id": 2,
+        "name": "right_arm",
+        "parentId": 1
+      },
+      {
+        "id": 3,
+        "name": "right_arm",
+        "parentId": 2
+      },
+      {
+        "id": 4,
+        "name": "left_arm",
+        "parentId": 1
+      },
+      {
+        "id": 5,
+        "name": "left_hand",
+        "parentId": 4
+      },
+      {
+        "id": 6,
+        "name": "right_leg",
+        "parentId": null
+      },
+      {
+        "id": 7,
+        "name": "left_leg",
+        "parentId": null
+      },
+      {
+        "id": 8,
+        "name": "eyes",
+        "parentId": 0
+      },
+      {
+        "id": 9,
+        "name": "sword",
+        "parentId": 3
+      }
+    ],
+    "slots": [
+      {
+        "id": 1,
+        "name": "bone_0_slot_0",
+        "boneId": 0,
+        "attachmentName": "Head"
+      },
+      {
+        "id": 2,
+        "name": "bone_1_slot_0",
+        "boneId": 1,
+        "attachmentName": "Body"
+      },
+      {
+        "id": 3,
+        "name": "bone_2_slot_0",
+        "boneId": 2,
+        "attachmentName": "Right Arm"
+      },
+      {
+        "id": 4,
+        "name": "bone_3_slot_0",
+        "boneId": 3,
+        "attachmentName": "Right Hand"
+      },
+      {
+        "id": 5,
+        "name": "bone_4_slot_0",
+        "boneId": 4,
+        "attachmentName": "Left Arm"
+      },
+      {
+        "id": 6,
+        "name": "bone_5_slot_0",
+        "boneId": 5,
+        "attachmentName": "Left Hand"
+      },
+      {
+        "id": 7,
+        "name": "bone_6_slot_0",
+        "boneId": 6,
+        "attachmentName": "Right Leg"
+      },
+      {
+        "id": 8,
+        "name": "bone_7_slot_0",
+        "boneId": 7,
+        "attachmentName": "Left Leg"
+      },
+      {
+        "id": 9,
+        "name": "bone_8_slot_0",
+        "boneId": 8,
+        "attachmentName": "Face 01"
+      },
+      {
+        "id": 10,
+        "name": "bone_9_slot_0",
+        "boneId": 9,
+        "attachmentName": "Sword"
+      }
+    ],
+    "attachmentKeys": [],
+    "keyframes": [
+      {
+        "boneId": 0,
+        "boneName": "head",
+        "frames": [
+          {
+            "frame": 0,
+            "x": -8.081655952173167,
+            "y": -49.0466597869717,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": -8.081655952173167,
+            "y": -49.0466597869717,
+            "rotation": 12.066181766462115,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": -8.081655952173167,
+            "y": -49.0466597869717,
+            "rotation": -9.703095896373377,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": -8.081655952173167,
+            "y": -49.0466597869717,
+            "rotation": 12.066181766462115,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": -8.081655952173167,
+            "y": -49.0466597869717,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 1,
+        "boneName": "body",
+        "frames": [
+          {
+            "frame": 0,
+            "x": -6.797404960333372,
+            "y": 70.34580132600263,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": -6.797404960333372,
+            "y": 74.32293281991265,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": -7.115575479846173,
+            "y": 50.619229116208956,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": -6.797404960333372,
+            "y": 74.32293281991265,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": -6.797404960333372,
+            "y": 70.34580132600263,
+            "rotation": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 2,
+        "boneName": "right_arm",
+        "frames": [
+          {
+            "frame": 0,
+            "x": -22.02286369858031,
+            "y": -35.2078759693875,
+            "rotation": 4.456261304941464,
+            "scaleX": 0.8358811074891804,
+            "scaleY": 0.8358811074891804,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": -22.02286369858031,
+            "y": -35.2078759693875,
+            "rotation": -13.98565494028766,
+            "scaleX": 0.8358811074891804,
+            "scaleY": 0.8358811074891804,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": -22.02286369858031,
+            "y": -35.2078759693875,
+            "rotation": 14.882851291911518,
+            "scaleX": 0.8358811074891804,
+            "scaleY": 0.8358811074891804,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": -22.02286369858031,
+            "y": -35.2078759693875,
+            "rotation": -13.98565494028766,
+            "scaleX": 0.8358811074891804,
+            "scaleY": 0.8358811074891804,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": -22.02286369858031,
+            "y": -35.2078759693875,
+            "rotation": 4.456261304941464,
+            "scaleX": 0.8358811074891804,
+            "scaleY": 0.8358811074891804,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 3,
+        "boneName": "right_arm",
+        "frames": [
+          {
+            "frame": 0,
+            "x": -11.733362413183151,
+            "y": 31.817037977902856,
+            "rotation": -0.6469659345284917,
+            "scaleX": 0.8184388451648379,
+            "scaleY": 0.8184388451648379,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": -11.733362413183151,
+            "y": 31.817037977902856,
+            "rotation": 1.7180257484370056,
+            "scaleX": 0.8184388451648379,
+            "scaleY": 0.8184388451648379,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": -11.733362413183151,
+            "y": 31.817037977902856,
+            "rotation": 37.93279149789963,
+            "scaleX": 0.8184388451648379,
+            "scaleY": 0.8184388451648379,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": -11.733362413183151,
+            "y": 31.817037977902856,
+            "rotation": 1.7180257484370056,
+            "scaleX": 0.8184388451648379,
+            "scaleY": 0.8184388451648379,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": -11.733362413183151,
+            "y": 31.817037977902856,
+            "rotation": -0.6469659345284917,
+            "scaleX": 0.8184388451648379,
+            "scaleY": 0.8184388451648379,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 4,
+        "boneName": "left_arm",
+        "frames": [
+          {
+            "frame": 0,
+            "x": 14.998545136080319,
+            "y": -31.752200498958167,
+            "rotation": 0,
+            "scaleX": 0.753126235443013,
+            "scaleY": 0.753126235443013,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": 14.998545136080319,
+            "y": -31.752200498958167,
+            "rotation": 12.722841584100545,
+            "scaleX": 0.753126235443013,
+            "scaleY": 0.753126235443013,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": 14.998545136080319,
+            "y": -31.752200498958167,
+            "rotation": -7.082170326834841,
+            "scaleX": 0.753126235443013,
+            "scaleY": 0.753126235443013,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": 14.998545136080319,
+            "y": -31.752200498958167,
+            "rotation": 12.722841584100545,
+            "scaleX": 0.753126235443013,
+            "scaleY": 0.753126235443013,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": 14.998545136080319,
+            "y": -31.752200498958167,
+            "rotation": 0,
+            "scaleX": 0.753126235443013,
+            "scaleY": 0.753126235443013,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 5,
+        "boneName": "left_hand",
+        "frames": [
+          {
+            "frame": 0,
+            "x": 14.09224606442529,
+            "y": 29.97805071886832,
+            "rotation": 0,
+            "scaleX": 0.680804769799287,
+            "scaleY": 0.680804769799287,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": 14.09224606442529,
+            "y": 29.97805071886832,
+            "rotation": -0.5999665929949742,
+            "scaleX": 0.680804769799287,
+            "scaleY": 0.680804769799287,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": 14.09224606442529,
+            "y": 29.97805071886832,
+            "rotation": -10.194344241371443,
+            "scaleX": 0.680804769799287,
+            "scaleY": 0.680804769799287,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": 14.09224606442529,
+            "y": 29.97805071886832,
+            "rotation": -0.5999665929949742,
+            "scaleX": 0.680804769799287,
+            "scaleY": 0.680804769799287,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": 14.09224606442529,
+            "y": 29.97805071886832,
+            "rotation": 0,
+            "scaleX": 0.680804769799287,
+            "scaleY": 0.680804769799287,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 6,
+        "boneName": "right_leg",
+        "frames": [
+          {
+            "frame": 0,
+            "x": -19.393284415589854,
+            "y": 73.90674558379017,
+            "rotation": 0.1972399951331525,
+            "scaleX": 0.833788427002771,
+            "scaleY": 0.833788427002771,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": -19.393284415589854,
+            "y": 73.90674558379017,
+            "rotation": -11.262836773521212,
+            "scaleX": 0.833788427002771,
+            "scaleY": 0.833788427002771,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": -24.802183247307475,
+            "y": 55.45285545204769,
+            "rotation": 13.576402453745395,
+            "scaleX": 0.833788427002771,
+            "scaleY": 0.833788427002771,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": -19.393284415589854,
+            "y": 73.90674558379017,
+            "rotation": -11.262836773521212,
+            "scaleX": 0.833788427002771,
+            "scaleY": 0.833788427002771,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": -19.393284415589854,
+            "y": 73.90674558379017,
+            "rotation": 0.1972399951331525,
+            "scaleX": 0.833788427002771,
+            "scaleY": 0.833788427002771,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 7,
+        "boneName": "left_leg",
+        "frames": [
+          {
+            "frame": 0,
+            "x": 4.72771610131295,
+            "y": 83.36217778641607,
+            "rotation": -2.7124664899417557,
+            "scaleX": 0.7387028946064117,
+            "scaleY": 0.7387028946064117,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": 4.72771610131295,
+            "y": 83.36217778641607,
+            "rotation": 20.0904764344466,
+            "scaleX": 0.7387028946064117,
+            "scaleY": 0.7387028946064117,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": 3.9322898025309474,
+            "y": 58.863047783930355,
+            "rotation": -14.149508603306295,
+            "scaleX": 0.7387028946064117,
+            "scaleY": 0.7387028946064117,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": 4.72771610131295,
+            "y": 83.36217778641607,
+            "rotation": 20.0904764344466,
+            "scaleX": 0.7387028946064117,
+            "scaleY": 0.7387028946064117,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": 4.72771610131295,
+            "y": 83.36217778641607,
+            "rotation": -2.7124664899417557,
+            "scaleX": 0.7387028946064117,
+            "scaleY": 0.7387028946064117,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 8,
+        "boneName": "eyes",
+        "frames": [
+          {
+            "frame": 0,
+            "x": 16.13335293938548,
+            "y": -13.966357381892482,
+            "rotation": 0,
+            "scaleX": 0.6866202081323276,
+            "scaleY": 0.6866202081323276,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": 16.13335293938548,
+            "y": -13.966357381892482,
+            "rotation": 0,
+            "scaleX": 0.6866202081323276,
+            "scaleY": 0.6866202081323276,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": 16.13335293938548,
+            "y": -13.966357381892482,
+            "rotation": 0,
+            "scaleX": 0.6866202081323276,
+            "scaleY": 0.6866202081323276,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": 16.13335293938548,
+            "y": -13.966357381892482,
+            "rotation": 0,
+            "scaleX": 0.6866202081323276,
+            "scaleY": 0.6866202081323276,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": 16.13335293938548,
+            "y": -13.966357381892482,
+            "rotation": 0,
+            "scaleX": 0.6866202081323276,
+            "scaleY": 0.6866202081323276,
+            "easing": "linear"
+          }
+        ]
+      },
+      {
+        "boneId": 9,
+        "boneName": "sword",
+        "frames": [
+          {
+            "frame": 0,
+            "x": 6.013548026086387,
+            "y": 19.143878244620232,
+            "rotation": 10.502421911416118,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          },
+          {
+            "frame": 15,
+            "x": 6.013548026086387,
+            "y": 19.143878244620232,
+            "rotation": 10.502421911416118,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeInOut"
+          },
+          {
+            "frame": 30,
+            "x": 6.013548026086387,
+            "y": 19.143878244620232,
+            "rotation": 10.502421911416118,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeIn"
+          },
+          {
+            "frame": 45,
+            "x": 6.013548026086387,
+            "y": 19.143878244620232,
+            "rotation": 10.502421911416118,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "easeOut"
+          },
+          {
+            "frame": 60,
+            "x": 6.013548026086387,
+            "y": 19.143878244620232,
+            "rotation": 10.502421911416118,
+            "scaleX": 1,
+            "scaleY": 1,
+            "easing": "linear"
+          }
+        ]
+      }
+    ],
+    "meshDeformKeyframes": [],
+    "attachmentOpacityKeyframes": []
+  }
+}
