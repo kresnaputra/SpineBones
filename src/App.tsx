@@ -1309,7 +1309,8 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
   const editorState = useEditorStore.getState();
   const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
   if (payload.commandType === 'export_video') {
-    const blob = await exportVideo(
+    const deformerState = useDeformerStore.getState();
+    const { blob, extension } = await exportVideo(
       bonesCopy,
       slotState.slots,
       slotState.attachments,
@@ -1322,8 +1323,18 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       cameraState.y,
       cameraState.zoom,
       editorState.backgroundImage,
+      undefined,
+      undefined,
+      animationState.meshDeformKeyframes,
+      deformerState.deformerKeyframes,
+      deformerState.deformers,
     );
-    await saveBlobToPath(payload.outputPath, blob);
+    // The runtime picks the container it can actually encode, so keep the written
+    // file's extension honest rather than trusting the requested one.
+    const videoOutputPath = payload.outputPath.toLowerCase().endsWith(`.${extension}`)
+      ? payload.outputPath
+      : replaceExtension(payload.outputPath, '', `.${extension}`);
+    await saveBlobToPath(videoOutputPath, blob);
     const audioBlob = await exportAudioMix({
       audioTracks: animationState.audioTracks,
       keyframes: animationState.keyframes,
@@ -1333,9 +1344,9 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       fps: animationState.fps,
     });
     const audioOutputPath = audioBlob
-      ? await saveBlobToPath(replaceExtension(payload.outputPath, '-audio', '.wav'), audioBlob)
+      ? await saveBlobToPath(replaceExtension(videoOutputPath, '-audio', '.wav'), audioBlob)
       : null;
-    return { ok: true, outputPath: payload.outputPath, audioOutputPath };
+    return { ok: true, outputPath: videoOutputPath, audioOutputPath };
   }
   if (payload.commandType === 'export_sprite_sheet') {
     const blob = await exportSpriteSheet({

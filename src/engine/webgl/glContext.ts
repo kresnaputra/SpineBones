@@ -121,6 +121,31 @@ export class TextureCache {
     return null;
   }
 
+  /**
+   * Decode and upload a texture up front, resolving once it is ready to draw.
+   * Export paths need this: `get` renders nothing while a texture loads, which
+   * on a synchronous encode loop would silently drop the opening frames.
+   * A texture that fails to load resolves too — the renderer already skips it.
+   */
+  preload(imageData: string): Promise<void> {
+    if (this.textures.has(imageData)) return Promise.resolve();
+
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        if (!this.textures.has(imageData)) this.upload(imageData, img);
+        this.loading.delete(imageData);
+        resolve();
+      };
+      img.onerror = () => {
+        this.loading.delete(imageData);
+        resolve();
+      };
+      this.loading.add(imageData);
+      img.src = imageData;
+    });
+  }
+
   private upload(imageData: string, img: HTMLImageElement) {
     const gl = this.gl;
     const tex = gl.createTexture();

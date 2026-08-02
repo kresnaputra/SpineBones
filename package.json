@@ -25,8 +25,10 @@
     "@tauri-apps/plugin-opener": "^2.5.3",
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
+    "mp4-muxer": "5.2.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "webm-muxer": "5.1.4",
     "wrangler": "^4.78.0",
     "zustand": "^5.0.12"
   },

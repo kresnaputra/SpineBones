@@ -39,6 +39,8 @@ export interface SceneInput {
 
 export interface MeshRenderer {
   render: (scene: SceneInput) => void;
+  /** Upload every texture before rendering; used by the offscreen export path. */
+  preloadTextures: (imageSources: string[]) => Promise<void>;
   /** Drop a cached texture (call when an attachment image changes). */
   invalidateTexture: (imageData: string) => void;
   dispose: () => void;
@@ -158,5 +160,9 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
     gl.deleteProgram(glProgram.program);
   };
 
-  return { render, invalidateTexture: (d) => textures.invalidate(d), dispose };
+  const preloadTextures = async (imageSources: string[]) => {
+    await Promise.all([...new Set(imageSources)].map((source) => textures.preload(source)));
+  };
+
+  return { render, preloadTextures, invalidateTexture: (d) => textures.invalidate(d), dispose };
 };

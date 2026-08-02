@@ -9,7 +9,17 @@ import { usePhysicsStore } from '../stores/physicsStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useSlotStore } from '../stores/slotStore';
-import type { Attachment, AudioTrack, Bone, ProjectData, SetupPose } from '../types';
+import type {
+  Attachment,
+  AudioTrack,
+  Bone,
+  MeshTriangle,
+  MeshVertex,
+  MeshVertexWeight,
+  ProjectData,
+  SetupPose,
+} from '../types';
+import { buildMeshEdges } from './meshAttachment';
 import {
   getFileNameFromPath,
   openBinaryFile,
@@ -793,22 +803,43 @@ export const applyProjectData = (
   useSlotStore.setState({
     slots,
     attachments: (projectData.attachments ?? []).map((attachment) => {
-      // Drop old-format mesh fields from legacy projects; preserve the new `mesh` field.
+      // Migrate old-format mesh fields into the new `mesh` field; both use the same
+      // attachment-local coordinate space (origin at the image centre) and UV range,
+      // so the geometry carries over as-is and existing deform keyframes keep working.
       const next = {
         ...attachment,
         opacity: attachment.opacity ?? 1,
       } as Attachment & Record<string, unknown>;
+      const legacyVertices = next.meshVertices as MeshVertex[] | undefined;
+      const legacyTriangles = next.meshTriangles as MeshTriangle[] | undefined;
+      const legacyGrid = next.meshGrid as { columns: number; rows: number } | undefined;
+      const legacyPinned = next.meshPinnedVertices as boolean[] | undefined;
+      const legacyWeights = next.meshVertexWeights as MeshVertexWeight[][] | undefined;
       delete next.meshVertices;
       delete next.meshTriangles;
       delete next.meshGrid;
       delete next.meshPinnedVertices;
       delete next.meshVertexWeights;
-      // Degrade pre-Phase-2 mesh attachments (with no `mesh` field) to plain images.
-      if (next.type === 'mesh' && !(next as Attachment).mesh?.vertices.length) {
-        (next as Attachment & { type: string }).type = 'image';
+
+      const migrated = next as Attachment;
+      if (!migrated.mesh?.vertices.length && legacyVertices?.length && legacyTriangles?.length) {
+        migrated.type = 'mesh';
+        migrated.mesh = {
+          vertices: legacyVertices,
+          triangles: legacyTriangles,
+          edges: buildMeshEdges(legacyTriangles),
+          ...(legacyGrid ? { grid: legacyGrid } : {}),
+        };
+        if (legacyPinned?.length) migrated.pinned = legacyPinned;
+        if (legacyWeights?.length) migrated.vertexWeights = legacyWeights;
+      }
+
+      // Degrade mesh attachments that carry no usable geometry to plain images.
+      if (migrated.type === 'mesh' && !migrated.mesh?.vertices.length) {
+        migrated.type = 'image';
         delete (next as Record<string, unknown>).mesh;
       }
-      return next as Attachment;
+      return migrated;
     }),
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });

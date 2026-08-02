@@ -8,6 +8,7 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
+import { useDeformerStore } from '../../stores/deformerStore';
 import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
 import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, saveBlobToPath, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
@@ -139,7 +140,9 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
-      const blob = await exportVideo(
+      const deformerState = useDeformerStore.getState();
+
+      const { blob, extension } = await exportVideo(
         bonesCopy,
         slotState.slots,
         slotState.attachments,
@@ -152,13 +155,18 @@ export const Toolbar = () => {
         cameraState.y,
         cameraState.zoom,
         editorState.backgroundImage,
+        undefined,
+        undefined,
+        animationState.meshDeformKeyframes,
+        deformerState.deformerKeyframes,
+        deformerState.deformers,
       );
       const exportBaseName = `${stripExtension(getSuggestedProjectFileName())}-animation`;
-      const suggestedName = `${exportBaseName}.webm`;
+      const suggestedName = `${exportBaseName}.${extension}`;
       const savedPath = await saveBlobFile(suggestedName, blob, [
         {
-          name: 'WebM Video',
-          extensions: ['webm'],
+          name: extension === 'mp4' ? 'MP4 Video' : 'WebM Video',
+          extensions: [extension],
         },
       ]);
       if (isDesktopApp() && !savedPath) return;
