@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useEffectEvent } from 'react';
+import type { AttachmentOpacityKeyframes, MeshDeformKeyframes } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -35,6 +36,10 @@ import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
 import { resolveSlotsAtFrame } from '../../utils/slotAnimation';
+
+/** Stable empty records so setup-mode resolution keeps a constant identity. */
+const EMPTY_MESH_DEFORM_KEYFRAMES: MeshDeformKeyframes = {};
+const EMPTY_ATTACHMENT_OPACITY_KEYFRAMES: AttachmentOpacityKeyframes = {};
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
@@ -277,23 +282,41 @@ export const MainCanvas = () => {
   } | null>(null);
   const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
 
+  // Setup mode shows the rest rig: the timeline only calls applyKeyframes() in
+  // animate mode, so bones stay put there and nothing else may animate either.
+  // Blanking the keyframe records makes every resolver fall back to rest values.
+  const isAnimating = mode === 'animate';
+  const activeOpacityKeyframes = isAnimating
+    ? attachmentOpacityKeyframes
+    : EMPTY_ATTACHMENT_OPACITY_KEYFRAMES;
+  const activeMeshDeformKeyframes = isAnimating
+    ? meshDeformKeyframes
+    : EMPTY_MESH_DEFORM_KEYFRAMES;
+
   const resolvedAttachments = useMemo(
     () => attachments.map((attachment) =>
-      resolveAttachmentAtFrame(attachment, frame, attachmentOpacityKeyframes, meshDeformKeyframes)
+      resolveAttachmentAtFrame(
+        attachment,
+        frame,
+        activeOpacityKeyframes,
+        activeMeshDeformKeyframes,
+      )
     ),
-    [attachments, frame, attachmentOpacityKeyframes, meshDeformKeyframes],
+    [attachments, frame, activeOpacityKeyframes, activeMeshDeformKeyframes],
   );
 
-  // Warp-deformed attachments fed to the GL renderer (mesh tool overlay uses un-warped)
+  // Warp-deformed attachments fed to the GL renderer (mesh tool overlay uses un-warped).
+  // In setup mode the cage sits at its rest points — dragging it there edits the rest
+  // shape, so the warp is still applied, just never sampled from keyframes.
   const warpedResolvedAttachments = useMemo(
     () => resolvedAttachments.map((att) => {
       if (att.deformerId == null) return att;
       const def = deformers.find((d) => d.id === att.deformerId);
       if (!def) return att;
-      const pts = resolveDeformerAtFrame(def, frame, deformerKeyframes);
+      const pts = isAnimating ? resolveDeformerAtFrame(def, frame, deformerKeyframes) : def.rest;
       return applyWarpToAttachment(att, def, pts);
     }),
-    [resolvedAttachments, deformers, deformerKeyframes, frame],
+    [resolvedAttachments, deformers, deformerKeyframes, frame, isAnimating],
   );
 
   const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
@@ -315,9 +338,16 @@ export const MainCanvas = () => {
   const activeAttachment = activeSlot && activeSlot.attachmentName
     ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName) ?? null
     : null;
+  // Gated on mode like `resolvedAttachments`, so the mesh overlay's vertex handles
+  // stay pinned to the rest geometry the sprite is drawn at in setup mode.
   const resolvedActiveAttachment =
     activeAttachment
-      ? resolveAttachmentAtFrame(activeAttachment, frame, attachmentOpacityKeyframes, meshDeformKeyframes)
+      ? resolveAttachmentAtFrame(
+          activeAttachment,
+          frame,
+          activeOpacityKeyframes,
+          activeMeshDeformKeyframes,
+        )
       : activeAttachment;
 
   const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;

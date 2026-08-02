@@ -55,10 +55,12 @@ export const AttachmentPropertiesPanel = () => {
   if (!attachment) return null;
 
   const clampOpacity = (value: number) => Math.min(1, Math.max(0, value));
+  // Setup mode edits the rest value, and the canvas draws the rest value there —
+  // so the slider must show it too, not the keyframed one.
   const resolvedAttachment = resolveAttachmentAtFrame(
     attachment,
     frame,
-    attachmentOpacityKeyframes,
+    mode === 'animate' ? attachmentOpacityKeyframes : {},
   );
 
   const handleUpdate = (field: string, value: number) => {

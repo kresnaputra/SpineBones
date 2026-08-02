@@ -72,8 +72,13 @@ export const MeshPropertiesPanel = () => {
 
   const attachmentKey = getAttachmentKey(attachment);
 
+  // In setup mode every edit here targets the rest mesh, so resolve against rest
+  // values rather than the frame's keyframed ones.
   const resolvedAttachment = resolveAttachmentAtFrame(
-    attachment, frame, attachmentOpacityKeyframes, meshDeformKeyframes,
+    attachment,
+    frame,
+    mode === 'animate' ? attachmentOpacityKeyframes : {},
+    mode === 'animate' ? meshDeformKeyframes : {},
   );
   const workingVertices = resolvedAttachment.mesh?.vertices ?? attachment.mesh.vertices;
 
