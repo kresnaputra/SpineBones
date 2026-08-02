@@ -4,14 +4,13 @@ import type {
   AttachmentOpacityKeyframes,
   Bone,
   Keyframes,
-  MeshDeformKeyframes,
   Slot,
 } from '../types';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
-import { resolveAttachmentAtFrame } from './meshAttachment';
+import { resolveAttachmentAtFrame } from './attachmentUtils';
 import { resolveSlotsAtFrame } from './slotAnimation';
 import type { SlotAttachmentKeyframes } from '../types';
 
@@ -20,7 +19,6 @@ interface ExportPngSequenceOptions {
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
-  meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   slotAttachmentKeyframes?: SlotAttachmentKeyframes;
   duration: number;
@@ -172,7 +170,6 @@ const getAutoFitTransform = ({
   slots,
   attachments,
   keyframes,
-  meshDeformKeyframes = {},
   attachmentOpacityKeyframes = {},
   totalFrames,
   frameWidth,
@@ -185,7 +182,6 @@ const getAutoFitTransform = ({
   slots: Slot[];
   attachments: Attachment[];
   keyframes: Keyframes;
-  meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
   totalFrames: number;
   frameWidth: number;
@@ -223,7 +219,6 @@ const getAutoFitTransform = ({
       const attachment = resolveAttachmentAtFrame(
         baseAttachment,
         frame,
-        meshDeformKeyframes,
         attachmentOpacityKeyframes,
       );
 
@@ -259,7 +254,6 @@ export const exportPngSequence = async ({
   slots,
   attachments,
   keyframes,
-  meshDeformKeyframes = {},
   attachmentOpacityKeyframes = {},
   slotAttachmentKeyframes = {},
   duration,
@@ -309,7 +303,6 @@ export const exportPngSequence = async ({
         slots,
         attachments,
         keyframes,
-        meshDeformKeyframes,
         attachmentOpacityKeyframes,
         totalFrames,
         frameWidth,
@@ -346,7 +339,6 @@ export const exportPngSequence = async ({
         resolveAttachmentAtFrame(
           attachment,
           frame,
-          meshDeformKeyframes,
           attachmentOpacityKeyframes,
         ),
       );
@@ -414,7 +406,6 @@ export const exportPngSequence = async ({
       resolveAttachmentAtFrame(
         attachment,
         frame,
-        meshDeformKeyframes,
         attachmentOpacityKeyframes,
       ),
     );

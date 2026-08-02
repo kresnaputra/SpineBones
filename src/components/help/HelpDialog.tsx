@@ -29,7 +29,6 @@ import {
   FolderTree,
   Keyboard,
   Eye,
-  Scan,
 } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
 
@@ -121,39 +120,11 @@ const sections: HelpSection[] = [
         the corresponding transform mode.
       </>,
       <>
-        Mesh <InlineIcon icon={Scan} /> deforms the active attachment by
-        letting you drag mesh points directly on the canvas. Select a bone with
-        an attachment first, then press <span className="help-kbd">H</span> or
-        choose Mesh from the toolbar.
-      </>,
-      <>
         Mirror H <InlineIcon icon={ArrowLeftRight} /> and Mirror V{" "}
         <InlineIcon icon={ArrowUpDown} /> flip the selected bones horizontally
         or vertically.
       </>,
       "Delete or Backspace removes the selected bones.",
-    ],
-  },
-  {
-    title: "Mesh Deformation",
-    icon: Scan,
-    items: [
-      <>
-        Select a bone that has an image attachment, then press{" "}
-        <span className="help-kbd">H</span> or choose Mesh{" "}
-        <InlineIcon icon={Scan} /> from the toolbar to enter mesh edit mode.
-      </>,
-      "The default mesh is a 2×2 grid of cells — 9 control points arranged in a 3×3 layout — covering the full attachment area.",
-      "Drag any control point to warp that region of the attachment image. Surrounding triangles deform using an affine transform so the image stretches smoothly.",
-      <>
-        Click <span className="text-text">OK</span> in the overlay to apply
-        the deformation, or <span className="text-text">Cancel</span> to
-        discard changes and restore the previous shape.
-      </>,
-      "In Setup mode, confirming a mesh edit updates the attachment's base mesh grid — this becomes the resting shape that animation keyframes deform relative to.",
-      "In Animate mode, dragging a control point and releasing the mouse automatically inserts a mesh keyframe at the current frame. You do not need to press K manually for mesh edits.",
-      "To animate a shape change, move the playhead to the first frame and drag points to the desired shape, then move to another frame and reshape again. SpineBones interpolates smoothly between mesh keyframes during playback and export.",
-      "Mesh keyframes are stored per slot and attachment name, so each attachment maintains its own independent deformation timeline.",
     ],
   },
   {
@@ -230,7 +201,6 @@ const sections: HelpSection[] = [
         Use Onion <InlineIcon icon={Eye} /> in Animate mode to preview the
         nearest previous and next moving poses directly on the canvas.
       </>,
-      "To animate mesh deformation, switch to Animate mode, shape the mesh on one frame, then move to another frame and shape it again. Playback and export interpolate the mesh smoothly between those frames.",
       "Frame Keys selects every keyframe on the active frame, then Delete or Backspace removes them all at once.",
       "Click a keyframe to select it, then Shift+click to build a multi-selection.",
       "Drag selected keyframes to move them together to a new frame.",
@@ -378,7 +348,7 @@ const sections: HelpSection[] = [
     title: "Keyboard Shortcuts",
     icon: Diamond,
     items: [
-      "Q, B, M, R, S, and H switch tools for Pose, Bone, Move, Rotate, Scale, and Mesh.",
+      "Q, B, M, R, and S switch tools for Pose, Bone, Move, Rotate, and Scale.",
       "W switches to Setup mode and E switches to Animate mode.",
       "O toggles onion skin preview while you are in Animate mode.",
       "K inserts keyframes for the current bone selection.",
@@ -405,7 +375,6 @@ const iconLegend = [
   { label: "Move", icon: Move },
   { label: "Rotate", icon: RotateCw },
   { label: "Scale", icon: Maximize2 },
-  { label: "Mesh", icon: Scan },
   { label: "Mirror H", icon: ArrowLeftRight },
   { label: "Mirror V", icon: ArrowUpDown },
   { label: "Key / Loop", icon: Diamond },

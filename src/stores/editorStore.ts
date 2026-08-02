@@ -33,6 +33,14 @@ interface EditorState {
   setAttachmentDragEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
   setCurrentProjectPath: (path: string | null) => void;
+  selectedMeshVertexIndices: number[];
+  setSelectedMeshVertexIndices: (indices: number[]) => void;
+  weightBrushBoneId: number | null;
+  weightBrushRadius: number;
+  weightBrushStrength: number;
+  setWeightBrushBoneId: (id: number | null) => void;
+  setWeightBrushRadius: (radius: number) => void;
+  setWeightBrushStrength: (strength: number) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -94,4 +102,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),
   setCurrentProjectPath: (currentProjectPath) => set({ currentProjectPath }),
+  selectedMeshVertexIndices: [],
+  setSelectedMeshVertexIndices: (selectedMeshVertexIndices) => set({ selectedMeshVertexIndices }),
+  weightBrushBoneId: null,
+  weightBrushRadius: 80,
+  weightBrushStrength: 0.3,
+  setWeightBrushBoneId: (weightBrushBoneId) => set({ weightBrushBoneId }),
+  setWeightBrushRadius: (weightBrushRadius) => set({ weightBrushRadius }),
+  setWeightBrushStrength: (weightBrushStrength) => set({ weightBrushStrength }),
 }));

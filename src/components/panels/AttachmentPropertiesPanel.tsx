@@ -1,7 +1,7 @@
 import { useEditorStore } from '../../stores/editorStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
-import { getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
+import { getAttachmentKey, resolveAttachmentAtFrame } from '../../utils/attachmentUtils';
 import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
@@ -9,7 +9,6 @@ export const AttachmentPropertiesPanel = () => {
   const {
     frame,
     keyframes,
-    meshDeformKeyframes,
     attachmentOpacityKeyframes,
     setAttachmentOpacityKeyframeAtFrame,
     setAttachmentOpacityKeyframe,
@@ -35,7 +34,7 @@ export const AttachmentPropertiesPanel = () => {
     (selectedSlotId !== null
       ? boneSlots.find((s) => s.id === selectedSlotId && s.attachmentName !== null)
       : null) ?? boneSlots.find((s) => s.attachmentName !== null);
-  
+
   if (!activeSlot || !activeSlot.attachmentName) {
     return (
       <div className="border-b border-border">
@@ -56,16 +55,17 @@ export const AttachmentPropertiesPanel = () => {
   if (!attachment) return null;
 
   const clampOpacity = (value: number) => Math.min(1, Math.max(0, value));
+  // Setup mode edits the rest value, and the canvas draws the rest value there —
+  // so the slider must show it too, not the keyframed one.
   const resolvedAttachment = resolveAttachmentAtFrame(
     attachment,
     frame,
-    meshDeformKeyframes,
-    attachmentOpacityKeyframes,
+    mode === 'animate' ? attachmentOpacityKeyframes : {},
   );
 
   const handleUpdate = (field: string, value: number) => {
     if (field === 'opacity' && mode === 'animate') {
-      const attachmentKey = getMeshAttachmentKey(attachment);
+      const attachmentKey = getAttachmentKey(attachment);
       const existingFrames = Object.keys(
         attachmentOpacityKeyframes[attachmentKey] ?? {},
       ).map(Number);
@@ -85,11 +85,7 @@ export const AttachmentPropertiesPanel = () => {
       }
 
       setAttachmentOpacityKeyframe(attachmentKey, clampOpacity(value));
-      updateAttachmentOpacityKeyframeEasing(
-        attachmentKey,
-        frame,
-        currentBoneEasing,
-      );
+      updateAttachmentOpacityKeyframeEasing(attachmentKey, frame, currentBoneEasing);
       return;
     }
 
@@ -119,7 +115,7 @@ export const AttachmentPropertiesPanel = () => {
         <div className="text-[9px] text-text-dim mb-2">
           Adjust offset to change rotation pivot
         </div>
-        
+
         <div className="flex items-center gap-2">
           <label className="text-[10px] text-text-dim w-16">Offset X</label>
           <input

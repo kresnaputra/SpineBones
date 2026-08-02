@@ -3,11 +3,23 @@ import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { computeAllWorldTransforms } from '../engine/transforms';
 import { useAnimationStore } from '../stores/animationStore';
 import { useCameraStore } from '../stores/cameraStore';
+import { useDeformerStore } from '../stores/deformerStore';
 import { useEditorStore } from '../stores/editorStore';
+import { usePhysicsStore } from '../stores/physicsStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSkeletonStore } from '../stores/skeletonStore';
 import { useSlotStore } from '../stores/slotStore';
-import type { Attachment, Bone, ProjectData, SetupPose } from '../types';
+import type {
+  Attachment,
+  AudioTrack,
+  Bone,
+  MeshTriangle,
+  MeshVertex,
+  MeshVertexWeight,
+  ProjectData,
+  SetupPose,
+} from '../types';
+import { buildMeshEdges } from './meshAttachment';
 import {
   getFileNameFromPath,
   openBinaryFile,
@@ -53,8 +65,14 @@ type ArchiveAttachment = Attachment & {
   assetPath?: string;
 };
 
-type ArchiveProjectData = Omit<ProjectData, 'attachments'> & {
+type ArchiveAudioTrack = Omit<AudioTrack, 'dataUrl'> & {
+  dataUrl?: string | null;
+  assetPath?: string | null;
+};
+
+type ArchiveProjectData = Omit<ProjectData, 'attachments' | 'audioTracks'> & {
   attachments: ArchiveAttachment[];
+  audioTracks?: ArchiveAudioTrack[];
   backgroundAssetPath?: string | null;
   audioAssetPath?: string | null;
 };
@@ -114,6 +132,78 @@ const bytesToDataUrl = (bytes: Uint8Array, mimeType: string) => {
       ? btoa(binary)
       : Buffer.from(binary, 'binary').toString('base64');
   return `data:${mimeType};base64,${base64}`;
+};
+
+const loadImageElement = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image for crop'));
+    img.src = src;
+  });
+
+const cropAttachmentImage = async (
+  imageData: string,
+  existingOpaqueBounds: Attachment['opaqueBounds'],
+): Promise<{ imageData: string; opaqueBounds: NonNullable<Attachment['opaqueBounds']> } | null> => {
+  const img = await loadImageElement(imageData);
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+
+  let ox: number, oy: number, cw: number, ch: number;
+
+  if (existingOpaqueBounds && existingOpaqueBounds.width > 0 && existingOpaqueBounds.height > 0) {
+    ox = existingOpaqueBounds.x;
+    oy = existingOpaqueBounds.y;
+    cw = existingOpaqueBounds.width;
+    ch = existingOpaqueBounds.height;
+  } else {
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const { data } = ctx.getImageData(0, 0, W, H);
+
+    let oxMin = W, oyMin = H, oxMax = -1, oyMax = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] > 0) {
+          if (x < oxMin) oxMin = x;
+          if (y < oyMin) oyMin = y;
+          if (x > oxMax) oxMax = x;
+          if (y > oyMax) oyMax = y;
+        }
+      }
+    }
+    if (oxMax < oxMin || oyMax < oyMin) return null;
+    ox = oxMin;
+    oy = oyMin;
+    cw = oxMax - oxMin + 1;
+    ch = oyMax - oyMin + 1;
+  }
+
+  if (cw >= W && ch >= H) return null;
+
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = cw;
+  cropCanvas.height = ch;
+  const cropCtx = cropCanvas.getContext('2d');
+  if (!cropCtx) return null;
+
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = W;
+  srcCanvas.height = H;
+  const srcCtx = srcCanvas.getContext('2d');
+  if (!srcCtx) return null;
+  srcCtx.drawImage(img, 0, 0);
+  cropCtx.drawImage(srcCanvas, ox, oy, cw, ch, 0, 0, cw, ch);
+
+  return {
+    imageData: cropCanvas.toDataURL('image/png'),
+    opaqueBounds: { x: ox, y: oy, width: cw, height: ch },
+  };
 };
 
 const blobToDataUrl = async (blob: Blob) =>
@@ -339,37 +429,58 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
     createdAt: new Date().toISOString(),
   };
 
-  const assetPathByDataUrl = new Map<string, string>();
+  const assetPathByDataUrl = new Map<string, string>(); // original imageData → assetPath
+  const cropInfoByDataUrl = new Map<string, NonNullable<Attachment['opaqueBounds']> | null>(); // original imageData → opaqueBounds if cropped
   let assetIndex = 0;
   const createAssetPath = (baseName: string, extension: string) =>
     `${manifest.assetsDir}/${String(++assetIndex).padStart(4, '0')}-${sanitizeFileSegment(baseName)}.${extension}`;
-  const archiveProject: ArchiveProjectData = {
-    ...projectData,
-    attachments: projectData.attachments.map((attachment) => {
-      const nextAttachment: ArchiveAttachment = {
-        ...attachment,
-      };
 
-      if (attachment.imageData) {
-        const existingAssetPath = assetPathByDataUrl.get(attachment.imageData);
-        if (existingAssetPath) {
-          nextAttachment.assetPath = existingAssetPath;
+  const processedAttachments: ArchiveAttachment[] = [];
+  for (const attachment of projectData.attachments) {
+    const nextAttachment: ArchiveAttachment = { ...attachment };
+
+    if (attachment.imageData) {
+      const originalImageData = attachment.imageData;
+
+      if (assetPathByDataUrl.has(originalImageData)) {
+        nextAttachment.assetPath = assetPathByDataUrl.get(originalImageData)!;
+        const cachedOpaqueBounds = cropInfoByDataUrl.get(originalImageData);
+        if (cachedOpaqueBounds) {
+          nextAttachment.opaqueBounds = cachedOpaqueBounds;
+          nextAttachment.imageIsCropped = true;
+        }
+      } else {
+        let imageDataToStore = originalImageData;
+
+        const cropped = await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
+        if (cropped) {
+          imageDataToStore = cropped.imageData;
+          nextAttachment.opaqueBounds = cropped.opaqueBounds;
+          nextAttachment.imageIsCropped = true;
+          cropInfoByDataUrl.set(originalImageData, cropped.opaqueBounds);
         } else {
-          const parsed = parseDataUrl(attachment.imageData);
-          const assetPath = createAssetPath(
-            `${attachment.slotId}-${attachment.name || 'attachment'}`,
-            parsed.extension,
-          );
-          assetPathByDataUrl.set(attachment.imageData, assetPath);
-          zip.file(assetPath, parsed.bytes);
-          nextAttachment.assetPath = assetPath;
+          cropInfoByDataUrl.set(originalImageData, null);
         }
 
-        delete nextAttachment.imageData;
+        const parsed = parseDataUrl(imageDataToStore);
+        const assetPath = createAssetPath(
+          `${attachment.slotId}-${attachment.name || 'attachment'}`,
+          parsed.extension,
+        );
+        assetPathByDataUrl.set(originalImageData, assetPath);
+        zip.file(assetPath, parsed.bytes);
+        nextAttachment.assetPath = assetPath;
       }
 
-      return nextAttachment;
-    }),
+      delete nextAttachment.imageData;
+    }
+
+    processedAttachments.push(nextAttachment);
+  }
+
+  const archiveProject: ArchiveProjectData = {
+    ...projectData,
+    attachments: processedAttachments,
   };
 
   if (projectData.backgroundImage) {
@@ -397,6 +508,28 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
       assetPathByDataUrl.set(projectData.audioData, archiveProject.audioAssetPath);
     }
     archiveProject.audioData = null;
+  }
+
+  if (projectData.audioTracks?.length) {
+    archiveProject.audioTracks = projectData.audioTracks.map((track) => {
+      const existingAssetPath = assetPathByDataUrl.get(track.dataUrl);
+      const assetPath =
+        existingAssetPath ??
+        createAssetPath(
+          `${track.id}-${track.name || 'audio-track'}`,
+          parseDataUrl(track.dataUrl).extension,
+        );
+      if (!existingAssetPath) {
+        const parsed = parseDataUrl(track.dataUrl);
+        zip.file(assetPath, parsed.bytes);
+        assetPathByDataUrl.set(track.dataUrl, assetPath);
+      }
+      return {
+        ...track,
+        dataUrl: null,
+        assetPath,
+      };
+    });
   }
 
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
@@ -478,13 +611,42 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
       })()
     : archiveProject.audioData ?? null;
 
+  const audioTracks = await Promise.all(
+    (archiveProject.audioTracks ?? []).map(async (track) => {
+      if (!track.assetPath) {
+        return {
+          id: track.id,
+          name: track.name,
+          dataUrl: track.dataUrl ?? '',
+          volume: track.volume,
+          offsetFrames: track.offsetFrames,
+        } as AudioTrack;
+      }
+
+      const assetEntry = zip.file(track.assetPath);
+      if (!assetEntry) {
+        throw new Error(`Project archive is missing audio asset: ${track.assetPath}`);
+      }
+      const data = await assetEntry.async('uint8array');
+      const { assetPath, dataUrl, ...restTrack } = track;
+      void assetPath;
+      void dataUrl;
+      return {
+        ...restTrack,
+        dataUrl: bytesToDataUrl(data, getMimeTypeFromAssetPath(track.assetPath)),
+      } as AudioTrack;
+    }),
+  );
+
   const {
     attachments: archivedAttachments,
+    audioTracks: archivedAudioTracks,
     backgroundAssetPath,
     audioAssetPath,
     ...projectRest
   } = archiveProject;
   void archivedAttachments;
+  void archivedAudioTracks;
   void backgroundAssetPath;
   void audioAssetPath;
 
@@ -493,6 +655,7 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
     attachments,
     backgroundImage,
     audioData,
+    audioTracks,
   };
 };
 
@@ -501,6 +664,8 @@ export const buildProjectData = (): ProjectData => {
   const animationState = useAnimationStore.getState();
   const slotState = useSlotStore.getState();
   const editorState = useEditorStore.getState();
+  const deformerState = useDeformerStore.getState();
+  const physicsState = usePhysicsStore.getState();
 
   // Normalize keyframes so the earliest frame across all bones becomes frame 0
   const originalKeyframes = animationState.keyframes;
@@ -522,21 +687,6 @@ export const buildProjectData = (): ProjectData => {
     }
   } else {
     Object.assign(normalizedKeyframes, originalKeyframes);
-  }
-
-  const originalMeshDeformKeyframes = animationState.meshDeformKeyframes;
-  const normalizedMeshDeformKeyframes: typeof originalMeshDeformKeyframes = {};
-  if (minFrame !== Infinity && minFrame > 0) {
-    for (const attachmentKey of Object.keys(originalMeshDeformKeyframes)) {
-      normalizedMeshDeformKeyframes[attachmentKey] = {};
-      for (const frameStr of Object.keys(originalMeshDeformKeyframes[attachmentKey])) {
-        const normalizedFrame = Number(frameStr) - minFrame;
-        normalizedMeshDeformKeyframes[attachmentKey][normalizedFrame] =
-          originalMeshDeformKeyframes[attachmentKey][Number(frameStr)];
-      }
-    }
-  } else {
-    Object.assign(normalizedMeshDeformKeyframes, originalMeshDeformKeyframes);
   }
 
   const originalAttachmentOpacityKeyframes = animationState.attachmentOpacityKeyframes;
@@ -612,11 +762,17 @@ export const buildProjectData = (): ProjectData => {
     attachments: slotState.attachments,
     keyframes: normalizedKeyframes,
     slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
-    meshDeformKeyframes: normalizedMeshDeformKeyframes,
     attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
+    meshDeformKeyframes: animationState.meshDeformKeyframes,
+    deformers: deformerState.deformers,
+    deformerKeyframes: deformerState.deformerKeyframes,
+    nextDeformerId: deformerState.nextDeformerId,
+    physicsConfigs: physicsState.configs,
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
+    audioTracks: animationState.audioTracks,
+    activeAudioTrackId: animationState.activeAudioTrackId,
     audioData: animationState.audioData,
     audioName: animationState.audioName,
     audioVolume: animationState.audioVolume,
@@ -646,27 +802,96 @@ export const applyProjectData = (
 
   useSlotStore.setState({
     slots,
-    attachments: (projectData.attachments ?? []).map((attachment) => ({
-      ...attachment,
-      opacity: attachment.opacity ?? 1,
-    })),
+    attachments: (projectData.attachments ?? []).map((attachment) => {
+      // Migrate old-format mesh fields into the new `mesh` field; both use the same
+      // attachment-local coordinate space (origin at the image centre) and UV range,
+      // so the geometry carries over as-is and existing deform keyframes keep working.
+      const next = {
+        ...attachment,
+        opacity: attachment.opacity ?? 1,
+      } as Attachment & Record<string, unknown>;
+      const legacyVertices = next.meshVertices as MeshVertex[] | undefined;
+      const legacyTriangles = next.meshTriangles as MeshTriangle[] | undefined;
+      const legacyGrid = next.meshGrid as { columns: number; rows: number } | undefined;
+      const legacyPinned = next.meshPinnedVertices as boolean[] | undefined;
+      const legacyWeights = next.meshVertexWeights as MeshVertexWeight[][] | undefined;
+      delete next.meshVertices;
+      delete next.meshTriangles;
+      delete next.meshGrid;
+      delete next.meshPinnedVertices;
+      delete next.meshVertexWeights;
+
+      const migrated = next as Attachment;
+      if (!migrated.mesh?.vertices.length && legacyVertices?.length && legacyTriangles?.length) {
+        migrated.type = 'mesh';
+        migrated.mesh = {
+          vertices: legacyVertices,
+          triangles: legacyTriangles,
+          edges: buildMeshEdges(legacyTriangles),
+          ...(legacyGrid ? { grid: legacyGrid } : {}),
+        };
+        if (legacyPinned?.length) migrated.pinned = legacyPinned;
+        if (legacyWeights?.length) migrated.vertexWeights = legacyWeights;
+      }
+
+      // Degrade mesh attachments that carry no usable geometry to plain images.
+      if (migrated.type === 'mesh' && !migrated.mesh?.vertices.length) {
+        migrated.type = 'image';
+        delete (next as Record<string, unknown>).mesh;
+      }
+      return migrated;
+    }),
     nextSlotId: Math.max(...slots.map((slot) => slot.id), 0) + 1,
   });
+
+  const audioTracks =
+    projectData.audioTracks?.length
+      ? projectData.audioTracks
+      : projectData.audioData
+        ? [
+            {
+              id: 1,
+              name: projectData.audioName ?? 'Audio track',
+              dataUrl: projectData.audioData,
+              volume: projectData.audioVolume ?? 0.8,
+              offsetFrames: projectData.audioOffsetFrames ?? 0,
+            },
+          ]
+        : [];
+  const activeAudioTrack =
+    audioTracks.find((track) => track.id === projectData.activeAudioTrackId) ??
+    audioTracks[0] ??
+    null;
 
   useAnimationStore.setState({
     keyframes: projectData.keyframes ?? {},
     slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
-    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
+    meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},
     duration: projectData.duration ?? 60,
     fps: projectData.fps ?? 24,
     frame: 0,
     playing: false,
-    audioData: projectData.audioData ?? null,
-    audioName: projectData.audioName ?? null,
-    audioVolume: projectData.audioVolume ?? 0.8,
-    audioOffsetFrames: projectData.audioOffsetFrames ?? 0,
+    audioTracks,
+    activeAudioTrackId: activeAudioTrack?.id ?? null,
+    nextAudioTrackId:
+      Math.max(
+        0,
+        ...audioTracks.map((track) => track.id),
+        projectData.audioData ? 1 : 0,
+      ) + 1,
+    audioData: activeAudioTrack?.dataUrl ?? null,
+    audioName: activeAudioTrack?.name ?? null,
+    audioVolume: activeAudioTrack?.volume ?? 0.8,
+    audioOffsetFrames: activeAudioTrack?.offsetFrames ?? 0,
   });
+
+  useDeformerStore.getState().replaceAll(
+    projectData.deformers ?? [],
+    projectData.nextDeformerId ?? 1,
+    projectData.deformerKeyframes ?? {},
+  );
+  usePhysicsStore.getState().replaceAll(projectData.physicsConfigs ?? []);
 
   useEditorStore.setState({
     backgroundImage: projectData.backgroundImage ?? null,
@@ -708,12 +933,14 @@ export const createNewProject = () => {
   useAnimationStore.setState({
     keyframes: {},
     slotAttachmentKeyframes: {},
-    meshDeformKeyframes: {},
     attachmentOpacityKeyframes: {},
     frame: 0,
     duration: 60,
     fps: 24,
     playing: false,
+    audioTracks: [],
+    activeAudioTrackId: null,
+    nextAudioTrackId: 1,
     audioData: null,
     audioName: null,
     audioVolume: 0.8,
@@ -767,6 +994,7 @@ export const saveProject = async (forceDialog = false) => {
   if (targetPath) {
     useEditorStore.getState().setCurrentProjectPath(targetPath);
     rememberRecentProject(await createCachedProjectPreview(projectData, targetPath));
+    useHistoryStore.getState().markClean();
   }
 
   return targetPath;

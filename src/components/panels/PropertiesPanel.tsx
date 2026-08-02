@@ -3,6 +3,10 @@ import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { AttachmentPropertiesPanel } from './AttachmentPropertiesPanel';
+import { DeformerPropertiesPanel } from './DeformerPropertiesPanel';
+import { MeshPropertiesPanel } from './MeshPropertiesPanel';
+import { WeightPaintPanel } from './WeightPaintPanel';
+import { PhysicsPanel } from './PhysicsPanel';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { getIkChain, getIkRootForBone } from '../../utils/ik';
 
@@ -52,6 +56,10 @@ export const PropertiesPanel = () => {
         ⚙️ Properties
       </div>
       
+      <PhysicsPanel />
+      <WeightPaintPanel />
+      <DeformerPropertiesPanel />
+      <MeshPropertiesPanel />
       <AttachmentPropertiesPanel />
       <div className="overflow-y-auto scrollbar-thin ">
         <PropRow label="Name">

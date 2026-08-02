@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Scan, Monitor } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -8,13 +8,13 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
+import { useDeformerStore } from '../../stores/deformerStore';
 import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
-import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, stripExtension } from '../../utils/nativeIO';
+import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, saveBlobToPath, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
+import { exportAudioMix } from '../../utils/audioExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
-import { ensureMeshAttachmentAsync } from '../../utils/meshAttachment';
-import type { Tool } from '../../types';
 
 const TOOL_ICONS = {
   pose: MousePointer,
@@ -22,7 +22,8 @@ const TOOL_ICONS = {
   move: Move,
   rotate: RotateCw,
   scale: Maximize2,
-  mesh: Scan,
+  mesh: ScanLine,
+  warp: Grid2x2,
 };
 
 const TOOL_LABELS = {
@@ -32,6 +33,7 @@ const TOOL_LABELS = {
   rotate: 'Rotate',
   scale: 'Scale',
   mesh: 'Mesh',
+  warp: 'Warp',
 };
 
 const TOOL_SHORTCUTS = {
@@ -40,7 +42,8 @@ const TOOL_SHORTCUTS = {
   move: 'G',
   rotate: 'R',
   scale: 'S',
-  mesh: 'M',
+  mesh: 'H',
+  warp: 'D',
 };
 
 const IMAGE_FILTERS = [
@@ -50,6 +53,11 @@ const IMAGE_FILTERS = [
   },
 ];
 
+const getSiblingPath = (path: string, fileName: string) => {
+  const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return separatorIndex >= 0 ? `${path.slice(0, separatorIndex + 1)}${fileName}` : fileName;
+};
+
 export const Toolbar = () => {
   const [showSpriteSheetDialog, setShowSpriteSheetDialog] = useState(false);
   const [showPngSequenceDialog, setShowPngSequenceDialog] = useState(false);
@@ -58,9 +66,7 @@ export const Toolbar = () => {
     mode,
     setTool,
     setMode,
-    selectedBoneId,
     selectedBoneIds,
-    selectedSlotId,
     onionSkinEnabled,
     toggleOnionSkin,
     showViewport,
@@ -68,39 +74,18 @@ export const Toolbar = () => {
     setBackgroundImage,
     setShowProjectBrowser,
   } = useEditorStore();
-  const { saveSetupPose, restoreSetupPose, updateBone } = useSkeletonStore();
-  const { insertKeyframe } = useAnimationStore();
-  const { bones } = useSkeletonStore();
-  const { slots, attachments, updateAttachment } = useSlotStore();
+  const saveSetupPose = useSkeletonStore((state) => state.saveSetupPose);
+  const restoreSetupPose = useSkeletonStore((state) => state.restoreSetupPose);
+  const updateBone = useSkeletonStore((state) => state.updateBone);
+  const insertKeyframe = useAnimationStore((state) => state.insertKeyframe);
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
   const showProjectBrowserButton = isDesktopApp();
 
-  const activeSlot =
-    selectedBoneId === null
-      ? null
-      : ((selectedSlotId !== null
-          ? slots.find(
-              (slot) =>
-                slot.id === selectedSlotId &&
-                slot.boneId === selectedBoneId &&
-                slot.attachmentName,
-            ) ?? null
-          : null) ??
-        slots.find((slot) => slot.boneId === selectedBoneId && slot.attachmentName) ??
-        null);
-  const activeAttachment =
-    activeSlot && activeSlot.attachmentName
-      ? attachments.find(
-          (attachment) =>
-            attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName,
-        ) ?? null
-      : null;
-
-
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
 
+    const { bones } = useSkeletonStore.getState();
     captureSnapshot();
     selectedBoneIds.forEach((boneId) => {
       const bone = bones.find((item) => item.id === boneId);
@@ -155,12 +140,13 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
-      const blob = await exportVideo(
+      const deformerState = useDeformerStore.getState();
+
+      const { blob, extension } = await exportVideo(
         bonesCopy,
         slotState.slots,
         slotState.attachments,
         animationState.keyframes,
-        animationState.meshDeformKeyframes,
         animationState.attachmentOpacityKeyframes,
         animationState.slotAttachmentKeyframes,
         animationState.duration,
@@ -168,15 +154,45 @@ export const Toolbar = () => {
         cameraState.x,
         cameraState.y,
         cameraState.zoom,
-        editorState.backgroundImage
+        editorState.backgroundImage,
+        undefined,
+        undefined,
+        animationState.meshDeformKeyframes,
+        deformerState.deformerKeyframes,
+        deformerState.deformers,
       );
-      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-animation.webm`;
-      await saveBlobFile(suggestedName, blob, [
+      const exportBaseName = `${stripExtension(getSuggestedProjectFileName())}-animation`;
+      const suggestedName = `${exportBaseName}.${extension}`;
+      const savedPath = await saveBlobFile(suggestedName, blob, [
         {
-          name: 'WebM Video',
-          extensions: ['webm'],
+          name: extension === 'mp4' ? 'MP4 Video' : 'WebM Video',
+          extensions: [extension],
         },
       ]);
+      if (isDesktopApp() && !savedPath) return;
+
+      const audioBlob = await exportAudioMix({
+        audioTracks: animationState.audioTracks,
+        keyframes: animationState.keyframes,
+        attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
+        slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
+        duration: animationState.duration,
+        fps: animationState.fps,
+      });
+
+      if (audioBlob) {
+        const audioName = `${exportBaseName}-audio.wav`;
+        if (savedPath && isDesktopApp()) {
+          await saveBlobToPath(getSiblingPath(savedPath, audioName), audioBlob);
+        } else {
+          await saveBlobFile(audioName, audioBlob, [
+            {
+              name: 'WAV Audio',
+              extensions: ['wav'],
+            },
+          ]);
+        }
+      }
       console.log('Video export completed!');
     } catch (error) {
       console.error('Video export failed:', error);
@@ -199,7 +215,6 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
-        meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
         slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
@@ -244,7 +259,6 @@ export const Toolbar = () => {
         slots: slotState.slots,
         attachments: slotState.attachments,
         keyframes: animationState.keyframes,
-        meshDeformKeyframes: animationState.meshDeformKeyframes,
         attachmentOpacityKeyframes: animationState.attachmentOpacityKeyframes,
         slotAttachmentKeyframes: animationState.slotAttachmentKeyframes,
         duration: animationState.duration,
@@ -316,23 +330,12 @@ export const Toolbar = () => {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
-      {(Object.keys(TOOL_ICONS) as Tool[]).map((t) => {
+      {(Object.keys(TOOL_ICONS) as Array<keyof typeof TOOL_ICONS>).map((t) => {
         const Icon = TOOL_ICONS[t];
         return (
           <button
             key={t}
-            onClick={async () => {
-              if (t === 'mesh') {
-                if (!activeSlot || !activeAttachment) return;
-                if (activeAttachment.type !== 'mesh') {
-                  captureSnapshot();
-                  updateAttachment(
-                    activeSlot.id,
-                    activeAttachment.name,
-                    await ensureMeshAttachmentAsync(activeAttachment),
-                  );
-                }
-              }
+            onClick={() => {
               setTool(t);
             }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
@@ -341,7 +344,6 @@ export const Toolbar = () => {
                 : 'bg-transparent text-text-dim border-transparent hover:bg-panel2 hover:text-text hover:border-border'
             }`}
             title={`${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})`}
-            disabled={t === 'mesh' && !activeAttachment}
           >
             <Icon size={14} />
             {TOOL_LABELS[t]}

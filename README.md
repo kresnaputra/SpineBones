@@ -561,12 +561,14 @@ This is intended as a lightweight Spine-like export for simple downstream workfl
 Video export produces:
 
 - `*.webm`
+- `*-audio.wav` when timeline audio tracks are present
 
 Video export behavior:
 
 - renders the animation frame by frame
 - uses `MediaRecorder`
 - can include the current background image if one is active
+- exports video-only WebM and a separate mixed WAV for all imported timeline audio tracks
 
 ## Full Shortcut Reference
 

@@ -457,11 +457,13 @@ const createServer = () => {
     async () => {
       const result = await requestJson('/state');
       return asTextResult('SpineBones audio state', {
+        audioTracks: result.audioTracks ?? [],
+        activeAudioTrackId: result.activeAudioTrackId ?? null,
         audioData: result.audioData ?? null,
         audioName: result.audioName ?? null,
         audioVolume: result.audioVolume ?? null,
         audioOffsetFrames: result.audioOffsetFrames ?? null,
-        hasAudio: Boolean(result.audioData),
+        hasAudio: Boolean(result.audioTracks?.length ?? result.audioData),
       });
     },
   );
@@ -1852,7 +1854,7 @@ const createServer = () => {
   server.registerTool(
     'spinebones_set_audio_track',
     {
-      description: 'Import a preview audio track from a local file path.',
+      description: 'Import an additional preview audio track from a local file path.',
       inputSchema: {
         path: z.string().min(1),
       },
@@ -1869,7 +1871,7 @@ const createServer = () => {
   server.registerTool(
     'spinebones_clear_audio_track',
     {
-      description: 'Remove the preview audio track.',
+      description: 'Remove all preview audio tracks.',
       inputSchema: {},
     },
     async () => {

@@ -1,5 +1,13 @@
-export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale' | 'mesh';
+export type Tool = 'pose' | 'bone' | 'move' | 'rotate' | 'scale' | 'mesh' | 'warp' | 'weights';
 export type Mode = 'setup' | 'animate';
+
+export interface AudioTrack {
+  id: number;
+  name: string;
+  dataUrl: string;
+  volume: number;
+  offsetFrames: number;
+}
 
 export type SetupPose = Record<
   number,
@@ -15,6 +23,33 @@ export interface Slot {
   drawOrder: number;
 }
 
+/** One mesh control point: rest-pose local position (x,y) + texture coord (u,v). */
+export interface MeshVertex {
+  x: number;
+  y: number;
+  u: number;
+  v: number;
+}
+
+/** Triangle as three indices into the vertex array. */
+export type MeshTriangle = [number, number, number];
+
+/** One bone's influence on a vertex; per-vertex weights sum to 1. */
+export interface MeshVertexWeight {
+  boneId: number;
+  weight: number;
+}
+
+/** Triangle mesh attached to an image: rest geometry + topology. */
+export interface AttachmentMesh {
+  vertices: MeshVertex[];
+  triangles: MeshTriangle[];
+  /** Unique undirected edges, for wireframe drawing and hit-testing. */
+  edges: [number, number][];
+  /** Set when the mesh was created from a grid; used for grid-line insertion. */
+  grid?: { columns: number; rows: number };
+}
+
 export interface Attachment {
   name: string;
   slotId: number;
@@ -28,6 +63,7 @@ export interface Attachment {
     width: number;
     height: number;
   };
+  imageIsCropped?: boolean;
   width: number;
   height: number;
   x: number;
@@ -35,18 +71,15 @@ export interface Attachment {
   rotation: number;
   scaleX: number;
   scaleY: number;
-  meshVertices?: MeshVertex[];
-  meshTriangles?: MeshTriangle[];
+  /** Present when type === 'mesh'. Rest mesh in attachment-local units. */
+  mesh?: AttachmentMesh;
+  /** Per-vertex bone weights (parallel to mesh.vertices). Empty/undefined = rigid to slot bone. */
+  vertexWeights?: MeshVertexWeight[][];
+  /** Edit-time: which vertices are pinned (excluded from relax/auto-weight). */
+  pinned?: boolean[];
+  /** Parent warp deformer id, if this attachment lives inside one. */
+  deformerId?: number;
 }
-
-export interface MeshVertex {
-  x: number;
-  y: number;
-  u: number;
-  v: number;
-}
-
-export type MeshTriangle = [number, number, number];
 
 export interface Bone {
   id: number;
@@ -92,6 +125,10 @@ export interface KeyframeData {
 }
 
 export type Keyframes = Record<number, Record<number, KeyframeData>>;
+/**
+ * Per-attachment, per-frame mesh deformation: absolute rest-local vertex
+ * positions (parallel to the attachment's mesh.vertices). Keyed by attachment key.
+ */
 export type MeshDeformKeyframes = Record<
   string,
   Record<
@@ -111,10 +148,42 @@ export type SlotAttachmentKeyframes = Record<
   Record<number, { attachmentName: string | null }>
 >;
 
+/** Warp deformer: a grid cage that bilinearly deforms enclosed mesh vertices. */
+export interface Deformer {
+  id: number;
+  name: string;
+  parentBoneId: number | null;
+  grid: { cols: number; rows: number };
+  /** (cols+1)*(rows+1) rest control points in bone-local attachment space. */
+  rest: { x: number; y: number }[];
+  /** Fixed bounding box used for bilinear coordinate inversion — never changes after creation. */
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+}
+
+/**
+ * Per-deformer, per-frame control-point offsets.
+ * Keyed by deformerId → frame → { points, easing }.
+ */
+export type DeformerKeyframes = Record<
+  number,
+  Record<number, { points: { x: number; y: number }[]; easing?: KeyframeEasing }>
+>;
+
 export interface CameraState {
   x: number;
   y: number;
   zoom: number;
+}
+
+/** Spring-damper physics configuration for a single bone. */
+export interface PhysicsConfig {
+  boneId: number;
+  /** Spring stiffness (1–100). Higher = snappier. */
+  stiffness: number;
+  /** Exponential damping rate per second (0.5–20). Higher = less oscillation. */
+  damping: number;
+  /** Downward gravitational force in world units/sec² (0–500). */
+  gravity: number;
 }
 
 export interface Point {
@@ -134,11 +203,17 @@ export interface ProjectData {
   attachments: Attachment[];
   keyframes: Keyframes;
   slotAttachmentKeyframes?: SlotAttachmentKeyframes;
-  meshDeformKeyframes?: MeshDeformKeyframes;
   attachmentOpacityKeyframes?: AttachmentOpacityKeyframes;
+  meshDeformKeyframes?: MeshDeformKeyframes;
+  deformers?: Deformer[];
+  deformerKeyframes?: DeformerKeyframes;
+  nextDeformerId?: number;
+  physicsConfigs?: PhysicsConfig[];
   duration: number;
   fps: number;
   backgroundImage?: string | null;
+  audioTracks?: AudioTrack[];
+  activeAudioTrackId?: number | null;
   audioData?: string | null;
   audioName?: string | null;
   audioVolume?: number;

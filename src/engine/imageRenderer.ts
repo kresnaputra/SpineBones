@@ -1,4 +1,4 @@
-import type { Slot, Attachment, Bone, MeshVertex } from '../types';
+import type { Slot, Attachment, Bone } from '../types';
 
 type AttachmentOutlineOptions = {
   strokeStyle?: string;
@@ -8,54 +8,6 @@ type AttachmentOutlineOptions = {
 
 const imageCache = new Map<string, HTMLImageElement>();
 const outlineCache = new Map<string, HTMLCanvasElement>();
-type ScreenPoint = { x: number; y: number };
-
-const inflateTrianglePoints = (
-  points: [ScreenPoint, ScreenPoint, ScreenPoint],
-  padding: number,
-): [ScreenPoint, ScreenPoint, ScreenPoint] => {
-  const centroid = {
-    x: (points[0].x + points[1].x + points[2].x) / 3,
-    y: (points[0].y + points[1].y + points[2].y) / 3,
-  };
-
-  return points.map((point) => {
-    const dx = point.x - centroid.x;
-    const dy = point.y - centroid.y;
-    const length = Math.hypot(dx, dy) || 1;
-    return {
-      x: point.x + (dx / length) * padding,
-      y: point.y + (dy / length) * padding,
-    };
-  }) as [ScreenPoint, ScreenPoint, ScreenPoint];
-};
-
-const getMeshBoundaryEdges = (triangles: Attachment['meshTriangles']) => {
-  const edgeCounts = new Map<string, [number, number, number]>();
-
-  triangles?.forEach(([i0, i1, i2]) => {
-    const edges: Array<[number, number]> = [
-      [i0, i1],
-      [i1, i2],
-      [i2, i0],
-    ];
-
-    edges.forEach(([start, end]) => {
-      const key =
-        start < end ? `${start}:${end}` : `${end}:${start}`;
-      const existing = edgeCounts.get(key);
-      if (existing) {
-        existing[2] += 1;
-      } else {
-        edgeCounts.set(key, [start, end, 1]);
-      }
-    });
-  });
-
-  return Array.from(edgeCounts.values())
-    .filter(([, , count]) => count === 1)
-    .map(([start, end]) => [start, end] as const);
-};
 
 export const clearAttachmentCache = (imageData: string): void => {
   imageCache.delete(imageData);
@@ -92,92 +44,6 @@ const getAttachmentTransform = (attachment: Attachment, bone: Bone, zoom: number
   const sin = Math.sin(totalRotation);
 
   return { totalRotation, totalScaleX, totalScaleY, scale, cos, sin };
-};
-
-export const getAttachmentMeshScreenVertices = (
-  attachment: Attachment,
-  bone: Bone,
-  worldToScreen: (x: number, y: number) => { x: number; y: number },
-  zoom: number,
-) => {
-  if (!attachment.meshVertices?.length) return [] as ScreenPoint[];
-  const screenPos = worldToScreen(bone._wx, bone._wy);
-  const { totalScaleX, totalScaleY, scale, cos, sin } = getAttachmentTransform(
-    attachment,
-    bone,
-    zoom,
-  );
-
-  return attachment.meshVertices.map((vertex) => {
-    // Keep the attachment pivot/offset aligned with the regular image renderer.
-    // In the non-mesh path, attachment.x/y are scaled by zoom, while the image
-    // size itself uses zoom * 0.5. Mesh vertices should preserve that same center.
-    const centerX = attachment.x * zoom;
-    const centerY = attachment.y * zoom;
-    const vertexX = vertex.x * totalScaleX * scale;
-    const vertexY = vertex.y * totalScaleY * scale;
-    return {
-      x: screenPos.x + (centerX + vertexX) * cos - (centerY + vertexY) * sin,
-      y: screenPos.y + (centerX + vertexX) * sin + (centerY + vertexY) * cos,
-    };
-  });
-};
-
-const pointInTriangle = (p: ScreenPoint, a: ScreenPoint, b: ScreenPoint, c: ScreenPoint) => {
-  const sign = (p1: ScreenPoint, p2: ScreenPoint, p3: ScreenPoint) =>
-    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-  const d1 = sign(p, a, b);
-  const d2 = sign(p, b, c);
-  const d3 = sign(p, c, a);
-  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
-  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
-  return !(hasNeg && hasPos);
-};
-
-const drawTexturedTriangle = (
-  ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  vertices: [MeshVertex, MeshVertex, MeshVertex],
-  points: [ScreenPoint, ScreenPoint, ScreenPoint],
-) => {
-  const [v0, v1, v2] = vertices;
-  const [p0, p1, p2] = points;
-  const [clipP0, clipP1, clipP2] = inflateTrianglePoints(points, 1);
-  const sx0 = v0.u * image.width;
-  const sy0 = v0.v * image.height;
-  const sx1 = v1.u * image.width;
-  const sy1 = v1.v * image.height;
-  const sx2 = v2.u * image.width;
-  const sy2 = v2.v * image.height;
-
-  const denom = sx0 * (sy1 - sy2) + sx1 * (sy2 - sy0) + sx2 * (sy0 - sy1);
-  if (Math.abs(denom) < 1e-6) return;
-
-  const a = (p0.x * (sy1 - sy2) + p1.x * (sy2 - sy0) + p2.x * (sy0 - sy1)) / denom;
-  const b = (p0.y * (sy1 - sy2) + p1.y * (sy2 - sy0) + p2.y * (sy0 - sy1)) / denom;
-  const c = (p0.x * (sx2 - sx1) + p1.x * (sx0 - sx2) + p2.x * (sx1 - sx0)) / denom;
-  const d = (p0.y * (sx2 - sx1) + p1.y * (sx0 - sx2) + p2.y * (sx1 - sx0)) / denom;
-  const e =
-    (p0.x * (sx1 * sy2 - sx2 * sy1) +
-      p1.x * (sx2 * sy0 - sx0 * sy2) +
-      p2.x * (sx0 * sy1 - sx1 * sy0)) /
-    denom;
-  const f =
-    (p0.y * (sx1 * sy2 - sx2 * sy1) +
-      p1.y * (sx2 * sy0 - sx0 * sy2) +
-      p2.y * (sx0 * sy1 - sx1 * sy0)) /
-    denom;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(clipP0.x, clipP0.y);
-  ctx.lineTo(clipP1.x, clipP1.y);
-  ctx.lineTo(clipP2.x, clipP2.y);
-  ctx.closePath();
-  ctx.clip();
-  ctx.transform(a, b, c, d, e, f);
-  ctx.drawImage(image, 0, 0);
-  ctx.restore();
 };
 
 const getOutlineCanvas = (
@@ -230,7 +96,7 @@ export const drawAttachment = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
   alpha = 1,
-  onImageLoad?: () => void
+  onImageLoad?: () => void,
 ): void => {
   if (!attachment.imageData) return;
 
@@ -244,22 +110,6 @@ export const drawAttachment = (
 
   ctx.save();
   ctx.globalAlpha = alpha * (attachment.opacity ?? 1);
-
-  if (attachment.type === 'mesh' && attachment.meshVertices?.length && attachment.meshTriangles?.length) {
-    const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);
-    attachment.meshTriangles.forEach(([i0, i1, i2]) => {
-      const v0 = attachment.meshVertices?.[i0];
-      const v1 = attachment.meshVertices?.[i1];
-      const v2 = attachment.meshVertices?.[i2];
-      const p0 = screenVertices[i0];
-      const p1 = screenVertices[i1];
-      const p2 = screenVertices[i2];
-      if (!v0 || !v1 || !v2 || !p0 || !p1 || !p2) return;
-      drawTexturedTriangle(ctx, img, [v0, v1, v2], [p0, p1, p2]);
-    });
-    ctx.restore();
-    return;
-  }
 
   const screenPos = worldToScreen(bone._wx, bone._wy);
   ctx.translate(screenPos.x, screenPos.y);
@@ -275,7 +125,15 @@ export const drawAttachment = (
   const offsetY = attachment.y * zoom;
 
   ctx.scale(flipX, flipY);
-  ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
+
+  if (attachment.imageIsCropped && attachment.opaqueBounds) {
+    const { x: ox, y: oy, width: cw, height: ch } = attachment.opaqueBounds;
+    const scaleX = w / attachment.width;
+    const scaleY = h / attachment.height;
+    ctx.drawImage(img, offsetX - w / 2 + ox * scaleX, offsetY - h / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
+  } else {
+    ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
+  }
 
   ctx.restore();
 };
@@ -288,17 +146,6 @@ export const hitTestAttachment = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number
 ): boolean => {
-  if (attachment.type === 'mesh' && attachment.meshVertices?.length && attachment.meshTriangles?.length) {
-    const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);
-    return attachment.meshTriangles.some(([i0, i1, i2]) => {
-      const p0 = screenVertices[i0];
-      const p1 = screenVertices[i1];
-      const p2 = screenVertices[i2];
-      if (!p0 || !p1 || !p2) return false;
-      return pointInTriangle({ x: sx, y: sy }, p0, p1, p2);
-    });
-  }
-
   const screenPos = worldToScreen(bone._wx, bone._wy);
   const totalRotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
 
@@ -329,37 +176,6 @@ export const drawAttachmentOutline = (
   zoom: number,
   options?: AttachmentOutlineOptions,
 ): void => {
-  if (attachment.type === 'mesh' && attachment.meshVertices?.length) {
-    const screenVertices = getAttachmentMeshScreenVertices(attachment, bone, worldToScreen, zoom);
-    const strokeStyle = options?.strokeStyle ?? 'rgba(124,58,237,0.95)';
-    const lineWidth = options?.lineWidth ?? 1.5;
-    const boundaryEdges = getMeshBoundaryEdges(attachment.meshTriangles);
-    ctx.save();
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = lineWidth;
-    ctx.setLineDash(options?.dash ?? [6, 4]);
-    boundaryEdges.forEach(([startIndex, endIndex]) => {
-      const p0 = screenVertices[startIndex];
-      const p1 = screenVertices[endIndex];
-      if (!p0 || !p1) return;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
-    screenVertices.forEach((point) => {
-      ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = strokeStyle;
-      ctx.beginPath();
-      ctx.rect(point.x - 4, point.y - 4, 8, 8);
-      ctx.fill();
-      ctx.stroke();
-    });
-    ctx.restore();
-    return;
-  }
-
   const image = attachment.imageData ? imageCache.get(attachment.imageData) : null;
   const screenPos = worldToScreen(bone._wx, bone._wy);
   const totalRotation = ((bone._wrot + attachment.rotation) * Math.PI) / 180;
@@ -384,13 +200,14 @@ export const drawAttachmentOutline = (
     if (outline) {
       ctx.save();
       ctx.globalAlpha = 0.95;
-      ctx.drawImage(
-        outline,
-        offsetX - width / 2,
-        offsetY - height / 2,
-        width,
-        height,
-      );
+      if (attachment.imageIsCropped && attachment.opaqueBounds) {
+        const { x: ox, y: oy, width: cw, height: ch } = attachment.opaqueBounds;
+        const scaleX = width / attachment.width;
+        const scaleY = height / attachment.height;
+        ctx.drawImage(outline, offsetX - width / 2 + ox * scaleX, offsetY - height / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
+      } else {
+        ctx.drawImage(outline, offsetX - width / 2, offsetY - height / 2, width, height);
+      }
       ctx.restore();
       ctx.restore();
       return;
@@ -412,11 +229,11 @@ export const drawSlots = (
   worldToScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
   alpha = 1,
-  onImageLoad?: () => void
+  onImageLoad?: () => void,
 ): void => {
   bones.forEach((bone) => {
     const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
-    
+
     boneSlots.forEach((slot) => {
       if (!slot.attachmentName) return;
 

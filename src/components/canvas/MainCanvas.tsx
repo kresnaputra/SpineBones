@@ -1,13 +1,30 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useMemo, useState, useEffectEvent } from 'react';
+import type { AttachmentOpacityKeyframes, MeshDeformKeyframes } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useCameraStore } from '../../stores/cameraStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { useDeformerStore } from '../../stores/deformerStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
-import { drawAttachmentOutline, drawSlotOutlines, drawSlots, hitTestAttachment,getAttachmentMeshScreenVertices } from '../../engine/imageRenderer';
+import { drawAttachmentOutline, drawSlotOutlines, hitTestAttachment } from '../../engine/imageRenderer';
+import { createMeshRenderer, type MeshRenderer } from '../../engine/webgl/meshRenderer';
+import { getMeshVertexScreenPositions, resolveDeformerAtFrame, applyWarpToAttachment } from '../../engine/meshSkinning';
+import { paintWeightBrush, weightToColor } from '../../utils/weightUtils';
+import { usePhysics } from '../../hooks/usePhysics';
+import { usePhysicsStore } from '../../stores/physicsStore';
+import {
+  getAttachmentKey,
+  resolveAttachmentAtFrame,
+} from '../../utils/attachmentUtils';
+import {
+  insertMeshVertex,
+  removeMeshVertices,
+  ensureMeshAttachmentAsync,
+} from '../../utils/meshAttachment';
+import { normalizeKeyframeEasing } from '../../utils/easing';
 import {
   getViewportRect,
   getViewportScale,
@@ -18,39 +35,105 @@ import {
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
-import { ensureMeshAttachmentAsync, getMeshAttachmentKey, resolveAttachmentAtFrame } from '../../utils/meshAttachment';
-import { normalizeKeyframeEasing } from '../../utils/easing';
 import { resolveSlotsAtFrame } from '../../utils/slotAnimation';
+
+/** Stable empty records so setup-mode resolution keeps a constant identity. */
+const EMPTY_MESH_DEFORM_KEYFRAMES: MeshDeformKeyframes = {};
+const EMPTY_ATTACHMENT_OPACITY_KEYFRAMES: AttachmentOpacityKeyframes = {};
 
 export const MainCanvas = () => {
   const IK_HANDLE_RADIUS = 10;
   const GHOST_MOVEMENT_EPSILON = 0.01;
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null); // top overlay (bones/handles, receives input)
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null); // bottom: grid/background
+  const glCanvasRef = useRef<HTMLCanvasElement>(null); // middle: WebGL sprites/meshes
+  const rendererRef = useRef<MeshRenderer | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const dragRafRef = useRef<number | null>(null);
+  const pendingDragPos = useRef<{ sx: number; sy: number } | null>(null);
   const [hoveredBoneId, setHoveredBoneId] = useState<number | null>(null);
+  const [hoveredMeshVertexIndex, setHoveredMeshVertexIndex] = useState<number | null>(null);
+  const [meshDragStart, setMeshDragStart] = useState<{
+    slotId: number;
+    attachmentName: string;
+    selectedIndices: number[];
+    startScreenX: number;
+    startScreenY: number;
+    totalRotation: number;
+    totalScaleX: number;
+    totalScaleY: number;
+    initialVertices: Array<{ x: number; y: number }>;
+  } | null>(null);
+  const [meshMarquee, setMeshMarquee] = useState<{
+    sx: number; sy: number; currentSx: number; currentSy: number;
+  } | null>(null);
+  const [selectedDeformerCPs, setSelectedDeformerCPs] = useState<number[]>([]);
+  const [hoveredDeformerCPIndex, setHoveredDeformerCPIndex] = useState<number | null>(null);
+  const [deformerDragState, setDeformerDragState] = useState<{
+    deformerId: number;
+    selectedCPIndices: number[];
+    startScreenX: number;
+    startScreenY: number;
+    totalRotation: number;
+    totalScaleX: number;
+    totalScaleY: number;
+    initialPoints: { x: number; y: number }[];
+  } | null>(null);
+  const [deformerMarquee, setDeformerMarquee] = useState<{
+    sx: number; sy: number; currentSx: number; currentSy: number;
+  } | null>(null);
+  const [weightBrushPos, setWeightBrushPos] = useState<{ x: number; y: number } | null>(null);
+  const isWeightPaintingRef = useRef(false);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const [backgroundLoaded, setBackgroundLoaded] = useState(0);
   const [imageLoadTrigger, setImageLoadTrigger] = useState(0);
   const [resizeTick, setResizeTick] = useState(0);
   
-  const { tool, mode, selectedBoneId, selectedBoneIds, selectedSlotId, selectBone, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage } = useEditorStore();
+  const {
+    tool,
+    mode,
+    selectedBoneId,
+    selectedBoneIds,
+    selectedSlotId,
+    selectBone,
+    showBoneIndicators,
+    showViewport,
+    onionSkinEnabled,
+    attachmentDragEnabled,
+    backgroundImage,
+    selectedMeshVertexIndices,
+    setSelectedMeshVertexIndices,
+    weightBrushBoneId,
+    weightBrushRadius,
+    weightBrushStrength,
+  } = useEditorStore();
   const { bones, skins, activeSkinId, addBone, updateBone, ikChainRootIds, setupPose, updateSetupPoseBone } = useSkeletonStore();
   const {
     keyframes,
     slotAttachmentKeyframes,
-    meshDeformKeyframes,
     attachmentOpacityKeyframes,
+    meshDeformKeyframes,
     frame,
     duration,
     insertKeyframe,
+    remapBoneKeyframesForParentChange,
     setMeshDeformKeyframe,
     setMeshDeformKeyframeAtFrame,
     updateMeshDeformKeyframeEasing,
-    remapBoneKeyframesForParentChange,
+    replaceMeshDeformKeyframesForAttachment,
+    clearMeshDeformKeyframesForAttachment,
   } = useAnimationStore();
   const { x: camX, y: camY, zoom: camZoom, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy } = useCameraStore();
-  const { slots, attachments, updateAttachment } = useSlotStore();
+  const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
+  const {
+    deformers,
+    deformerKeyframes,
+    setDeformerKeyframe: setDeformerKF,
+    updateDeformerKeyframeEasing,
+  } = useDeformerStore();
+  const physicsOffsets = usePhysicsStore((s) => s.offsets);
+  usePhysics();
 
   // Derive the shared viewport transform helpers for the current frame.
   // These are recomputed from camX/camY/camZoom/canvasSize on every render,
@@ -198,15 +281,43 @@ export const MainCanvas = () => {
     flipY: number;
   } | null>(null);
   const [ikDragStart, setIkDragStart] = useState<{ rootId: number; childId: number } | null>(null);
-  const [hoveredMeshVertexIndex, setHoveredMeshVertexIndex] = useState<number | null>(null);
-  const [meshDragStart, setMeshDragStart] = useState<{
-    slotId: number;
-    attachmentName: string;
-    vertexIndex: number;
-    startScreenX: number;
-    startScreenY: number;
-    initialVertices: NonNullable<typeof attachments[number]['meshVertices']>;
-  } | null>(null);
+
+  // Setup mode shows the rest rig: the timeline only calls applyKeyframes() in
+  // animate mode, so bones stay put there and nothing else may animate either.
+  // Blanking the keyframe records makes every resolver fall back to rest values.
+  const isAnimating = mode === 'animate';
+  const activeOpacityKeyframes = isAnimating
+    ? attachmentOpacityKeyframes
+    : EMPTY_ATTACHMENT_OPACITY_KEYFRAMES;
+  const activeMeshDeformKeyframes = isAnimating
+    ? meshDeformKeyframes
+    : EMPTY_MESH_DEFORM_KEYFRAMES;
+
+  const resolvedAttachments = useMemo(
+    () => attachments.map((attachment) =>
+      resolveAttachmentAtFrame(
+        attachment,
+        frame,
+        activeOpacityKeyframes,
+        activeMeshDeformKeyframes,
+      )
+    ),
+    [attachments, frame, activeOpacityKeyframes, activeMeshDeformKeyframes],
+  );
+
+  // Warp-deformed attachments fed to the GL renderer (mesh tool overlay uses un-warped).
+  // In setup mode the cage sits at its rest points — dragging it there edits the rest
+  // shape, so the warp is still applied, just never sampled from keyframes.
+  const warpedResolvedAttachments = useMemo(
+    () => resolvedAttachments.map((att) => {
+      if (att.deformerId == null) return att;
+      const def = deformers.find((d) => d.id === att.deformerId);
+      if (!def) return att;
+      const pts = isAnimating ? resolveDeformerAtFrame(def, frame, deformerKeyframes) : def.rest;
+      return applyWarpToAttachment(att, def, pts);
+    }),
+    [resolvedAttachments, deformers, deformerKeyframes, frame, isAnimating],
+  );
 
   const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
   const activeSlot = selectedBoneId === null
@@ -227,37 +338,24 @@ export const MainCanvas = () => {
   const activeAttachment = activeSlot && activeSlot.attachmentName
     ? attachments.find((attachment) => attachment.slotId === activeSlot.id && attachment.name === activeSlot.attachmentName) ?? null
     : null;
+  // Gated on mode like `resolvedAttachments`, so the mesh overlay's vertex handles
+  // stay pinned to the rest geometry the sprite is drawn at in setup mode.
   const resolvedActiveAttachment =
     activeAttachment
       ? resolveAttachmentAtFrame(
           activeAttachment,
           frame,
-          meshDeformKeyframes,
-          attachmentOpacityKeyframes,
+          activeOpacityKeyframes,
+          activeMeshDeformKeyframes,
         )
       : activeAttachment;
+
   const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;
 
-  useEffect(() => {
-    if (tool !== 'mesh' || !activeSlot || !activeAttachment || activeAttachment.type === 'mesh') {
-      return;
-    }
-
-    let cancelled = false;
-
-    const convertToMesh = async () => {
-      captureSnapshot();
-      const nextAttachment = await ensureMeshAttachmentAsync(activeAttachment);
-      if (cancelled) return;
-      updateAttachment(activeSlot.id, activeAttachment.name, nextAttachment);
-    };
-
-    void convertToMesh();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [tool, activeSlot, activeAttachment, updateAttachment, captureSnapshot]);
+  const activeDeformer =
+    activeAttachment?.deformerId != null
+      ? deformers.find((d) => d.id === activeAttachment.deformerId) ?? null
+      : null;
 
   useEffect(() => {
     if (!backgroundImage) {
@@ -281,12 +379,96 @@ export const MainCanvas = () => {
     img.src = backgroundImage;
   }, [backgroundImage]);
 
+  // Auto-convert image attachment to mesh when mesh tool is active.
+  const { updateAttachment } = useSlotStore();
+  useEffect(() => {
+    if (tool !== 'mesh' || !activeSlot || !activeAttachment || activeAttachment.type === 'mesh') return;
+    const convert = async () => {
+      captureSnapshot();
+      const next = await ensureMeshAttachmentAsync(activeAttachment);
+      clearMeshDeformKeyframesForAttachment(getAttachmentKey(activeAttachment));
+      updateAttachment(activeSlot.id, activeAttachment.name, next);
+    };
+    void convert();
+  }, [tool, activeSlot, activeAttachment]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear vertex selection when leaving mesh tool or switching active attachment.
+  useEffect(() => {
+    setSelectedMeshVertexIndices([]);
+  }, [tool, activeSlot?.id, activeAttachment?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle Delete key for mesh vertices (dispatched by useKeyboardShortcuts).
+  const handleMeshDeleteVertices = useEffectEvent(() => {
+    if (tool !== 'mesh') return;
+    if (selectedMeshVertexIndices.length === 0) return;
+    if (!activeAttachment || activeAttachment.type !== 'mesh' || !activeSlot) return;
+    const attachmentKey = getAttachmentKey(activeAttachment);
+    captureSnapshot();
+    const animState = useAnimationStore.getState();
+    const result = removeMeshVertices(activeAttachment, selectedMeshVertexIndices, animState.meshDeformKeyframes, attachmentKey);
+    const { updateAttachment: ua } = useSlotStore.getState();
+    ua(activeSlot.id, activeAttachment.name, result.attachment);
+    const nextFrames = result.meshDeformKeyframes[attachmentKey];
+    if (nextFrames && Object.keys(nextFrames).length > 0) {
+      replaceMeshDeformKeyframesForAttachment(attachmentKey, nextFrames);
+    } else {
+      clearMeshDeformKeyframesForAttachment(attachmentKey);
+    }
+    setSelectedMeshVertexIndices([]);
+  });
+
+  useEffect(() => {
+    window.addEventListener('spine:mesh-delete-vertices', handleMeshDeleteVertices);
+    return () => window.removeEventListener('spine:mesh-delete-vertices', handleMeshDeleteVertices);
+  }, []);
+
+  // Create the WebGL renderer once; recreate it on context loss.
+  useEffect(() => {
+    const glCanvas = glCanvasRef.current;
+    if (!glCanvas) return;
+
+    const init = () => {
+      const gl = glCanvas.getContext('webgl', {
+        alpha: true,
+        premultipliedAlpha: true,
+        antialias: true,
+      });
+      if (!gl) {
+        console.error('WebGL not available; mesh rendering disabled');
+        return;
+      }
+      rendererRef.current = createMeshRenderer(gl);
+      setImageLoadTrigger((t) => t + 1); // force a redraw once the renderer exists
+    };
+
+    const handleLost = (e: Event) => {
+      e.preventDefault();
+      rendererRef.current = null;
+    };
+    const handleRestored = () => init();
+
+    glCanvas.addEventListener('webglcontextlost', handleLost);
+    glCanvas.addEventListener('webglcontextrestored', handleRestored);
+    init();
+
+    return () => {
+      glCanvas.removeEventListener('webglcontextlost', handleLost);
+      glCanvas.removeEventListener('webglcontextrestored', handleRestored);
+      rendererRef.current?.dispose();
+      rendererRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       if (!canvasRef.current || !wrapRef.current) return;
       const { clientWidth, clientHeight } = wrapRef.current;
-      canvasRef.current.width = clientWidth;
-      canvasRef.current.height = clientHeight;
+      for (const c of [canvasRef.current, bgCanvasRef.current, glCanvasRef.current]) {
+        if (c) {
+          c.width = clientWidth;
+          c.height = clientHeight;
+        }
+      }
       setCanvasSize(clientWidth, clientHeight);
       setResizeTick((tick) => tick + 1);
     };
@@ -309,10 +491,14 @@ export const MainCanvas = () => {
   }, [setCanvasSize]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // `canvas`/`ctx` = bottom layer (grid + background); `ov` = top overlay
+    // (bones, handles, outlines). Sprites/meshes render on the WebGL layer between.
+    const canvas = bgCanvasRef.current;
+    const overlayCanvas = canvasRef.current;
+    if (!canvas || !overlayCanvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ov = overlayCanvas.getContext('2d');
+    if (!ctx || !ov) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const viewportRect = getViewportRect(canvas.width, canvas.height);
@@ -384,6 +570,17 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
+    // Apply physics offsets only when not using a tool that needs stable bone positions
+    if (tool !== 'mesh' && tool !== 'warp' && tool !== 'weights') {
+      for (const bone of bones) {
+        const offset = physicsOffsets[bone.id];
+        if (offset) {
+          bone._wx += offset.dx;
+          bone._wy += offset.dy;
+        }
+      }
+    }
+
     const handleImageLoad = () => {
       setImageLoadTrigger(prev => prev + 1);
     };
@@ -411,30 +608,191 @@ export const MainCanvas = () => {
     const previousMovedBones = previousFrame ? getMovedGhostBones(previousFrame) : [];
     const nextMovedBones = nextFrame ? getMovedGhostBones(nextFrame) : [];
 
-    ctx.save();
-    if (showViewport) {
-      ctx.beginPath();
-      ctx.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
-      ctx.clip();
+    // ── WebGL sprite/mesh layer (between the bg and overlay) ────────────────
+    const renderer = rendererRef.current;
+    if (renderer) {
+      const passes: { bones: typeof bones; alpha: number }[] = [{ bones, alpha: 1 }];
+      if (previousMovedBones.length > 0) passes.push({ bones: previousMovedBones, alpha: 0.2 });
+      if (nextMovedBones.length > 0) passes.push({ bones: nextMovedBones, alpha: 0.2 });
+      renderer.render({
+        slots: resolvedSlots,
+        attachments: warpedResolvedAttachments,
+        passes,
+        camX,
+        camY,
+        camZoom,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        viewportRect,
+        clip: showViewport ? viewportRect : undefined,
+        onTextureReady: handleImageLoad,
+      });
     }
-    const resolvedAttachments = attachments.map((attachment) =>
-      resolveAttachmentAtFrame(
-        attachment,
-        frame,
-        meshDeformKeyframes,
-        attachmentOpacityKeyframes,
-      ),
-    );
-    drawSlots(ctx, resolvedSlots, resolvedAttachments, bones, previewWorldToScreen, effectiveZoom, 1, handleImageLoad);
 
-    if (activeSlot && activeBone && activeAttachment && (attachmentDragEnabled || tool === 'mesh')) {
-      drawAttachmentOutline(
-        ctx,
-        resolvedActiveAttachment ?? activeAttachment,
-        activeBone,
-        previewWorldToScreen,
-        effectiveZoom,
+    // ── Overlay layer: bones, handles, outlines (vector — never seams) ──────
+    ov.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    ov.save();
+    if (showViewport) {
+      ov.beginPath();
+      ov.rect(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+      ov.clip();
+    }
+
+    if (activeSlot && activeBone && activeAttachment && attachmentDragEnabled) {
+      const outlineAttachment = resolvedActiveAttachment ?? activeAttachment;
+      drawAttachmentOutline(ov, outlineAttachment, activeBone, previewWorldToScreen, effectiveZoom);
+    }
+
+    // Mesh wireframe + vertex handles (overlay canvas, never affects GL texture)
+    if (tool === 'mesh' && meshAttachment?.mesh && activeBone) {
+      const screenVerts = getMeshVertexScreenPositions(
+        meshAttachment, activeBone, bones, previewWorldToScreen,
+        meshAttachment.mesh.vertices,
       );
+      const edges = meshAttachment.mesh.edges;
+      // Draw edges
+      ov.save();
+      ov.strokeStyle = 'rgba(124,58,237,0.55)';
+      ov.lineWidth = 1;
+      ov.setLineDash([]);
+      for (const [a, b] of edges) {
+        const pa = screenVerts[a]; const pb = screenVerts[b];
+        if (!pa || !pb) continue;
+        ov.beginPath();
+        ov.moveTo(pa.x, pa.y);
+        ov.lineTo(pb.x, pb.y);
+        ov.stroke();
+      }
+      // Draw vertex circles
+      for (let i = 0; i < screenVerts.length; i += 1) {
+        const sp = screenVerts[i];
+        if (!sp) continue;
+        const isSelected = selectedMeshVertexIndices.includes(i);
+        const isHovered = hoveredMeshVertexIndex === i;
+        const isPinned = meshAttachment.pinned?.[i];
+        ov.beginPath();
+        ov.arc(sp.x, sp.y, isSelected || isHovered ? 6 : 4, 0, Math.PI * 2);
+        ov.fillStyle = isPinned ? 'rgba(245,158,11,0.9)' : isSelected ? 'rgba(124,58,237,1)' : 'rgba(255,255,255,0.9)';
+        ov.fill();
+        ov.strokeStyle = isSelected ? '#fff' : 'rgba(124,58,237,0.8)';
+        ov.lineWidth = 1.5;
+        ov.stroke();
+      }
+      // Marquee selection rectangle
+      if (meshMarquee) {
+        const mx = Math.min(meshMarquee.sx, meshMarquee.currentSx);
+        const my = Math.min(meshMarquee.sy, meshMarquee.currentSy);
+        const mw = Math.abs(meshMarquee.currentSx - meshMarquee.sx);
+        const mh = Math.abs(meshMarquee.currentSy - meshMarquee.sy);
+        ov.fillStyle = 'rgba(124,58,237,0.08)';
+        ov.fillRect(mx, my, mw, mh);
+        ov.strokeStyle = 'rgba(124,58,237,0.7)';
+        ov.lineWidth = 1;
+        ov.setLineDash([4, 3]);
+        ov.strokeRect(mx, my, mw, mh);
+      }
+      ov.restore();
+    }
+
+    // Warp deformer control-point overlay
+    if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
+      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const screenPts = getMeshVertexScreenPositions(
+        activeAttachment, activeBone, bones, previewWorldToScreen, currentPts,
+      );
+      const { cols, rows } = activeDeformer.grid;
+      const idx = (col: number, row: number) => row * (cols + 1) + col;
+      ov.save();
+      ov.strokeStyle = 'rgba(6,182,212,0.7)';
+      ov.lineWidth = 1;
+      ov.setLineDash([]);
+      // horizontal lines
+      for (let row = 0; row <= rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const pa = screenPts[idx(col, row)];
+          const pb = screenPts[idx(col + 1, row)];
+          if (!pa || !pb) continue;
+          ov.beginPath();
+          ov.moveTo(pa.x, pa.y);
+          ov.lineTo(pb.x, pb.y);
+          ov.stroke();
+        }
+      }
+      // vertical lines
+      for (let col = 0; col <= cols; col++) {
+        for (let row = 0; row < rows; row++) {
+          const pa = screenPts[idx(col, row)];
+          const pb = screenPts[idx(col, row + 1)];
+          if (!pa || !pb) continue;
+          ov.beginPath();
+          ov.moveTo(pa.x, pa.y);
+          ov.lineTo(pb.x, pb.y);
+          ov.stroke();
+        }
+      }
+      // control point handles
+      for (let i = 0; i < screenPts.length; i++) {
+        const sp = screenPts[i];
+        if (!sp) continue;
+        const isSelected = selectedDeformerCPs.includes(i);
+        const isHovered = hoveredDeformerCPIndex === i;
+        const size = isSelected || isHovered ? 6 : 4;
+        ov.fillStyle = isSelected ? 'rgba(6,182,212,1)' : 'rgba(6,182,212,0.7)';
+        ov.strokeStyle = '#fff';
+        ov.lineWidth = 1;
+        ov.fillRect(sp.x - size / 2, sp.y - size / 2, size, size);
+        ov.strokeRect(sp.x - size / 2, sp.y - size / 2, size, size);
+      }
+      // marquee
+      if (deformerMarquee) {
+        const mx = Math.min(deformerMarquee.sx, deformerMarquee.currentSx);
+        const my = Math.min(deformerMarquee.sy, deformerMarquee.currentSy);
+        const mw = Math.abs(deformerMarquee.currentSx - deformerMarquee.sx);
+        const mh = Math.abs(deformerMarquee.currentSy - deformerMarquee.sy);
+        ov.fillStyle = 'rgba(6,182,212,0.08)';
+        ov.fillRect(mx, my, mw, mh);
+        ov.strokeStyle = 'rgba(6,182,212,0.7)';
+        ov.lineWidth = 1;
+        ov.setLineDash([4, 3]);
+        ov.strokeRect(mx, my, mw, mh);
+      }
+      ov.restore();
+    }
+
+    // Weight paint heatmap + brush circle overlay
+    if (tool === 'weights' && activeAttachment?.type === 'mesh' && activeAttachment.mesh && activeBone) {
+      const verts = activeAttachment.mesh.vertices;
+      const screenVerts = getMeshVertexScreenPositions(
+        activeAttachment, activeBone, bones, previewWorldToScreen, verts,
+      );
+      ov.save();
+      // Draw per-vertex heatmap circles
+      for (let i = 0; i < screenVerts.length; i++) {
+        const sp = screenVerts[i];
+        if (!sp) continue;
+        let w = 0;
+        if (weightBrushBoneId !== null) {
+          const entry = activeAttachment.vertexWeights?.[i]?.find((e) => e.boneId === weightBrushBoneId);
+          w = entry?.weight ?? 0;
+        }
+        ov.beginPath();
+        ov.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+        ov.fillStyle = weightToColor(w);
+        ov.fill();
+        ov.strokeStyle = 'rgba(255,255,255,0.3)';
+        ov.lineWidth = 0.5;
+        ov.stroke();
+      }
+      // Draw brush circle at mouse position
+      if (weightBrushPos && weightBrushBoneId !== null) {
+        ov.beginPath();
+        ov.arc(weightBrushPos.x, weightBrushPos.y, weightBrushRadius, 0, Math.PI * 2);
+        ov.strokeStyle = 'rgba(255,255,255,0.6)';
+        ov.lineWidth = 1;
+        ov.setLineDash([4, 3]);
+        ov.stroke();
+      }
+      ov.restore();
     }
 
     if (showBoneIndicators) {
@@ -450,7 +808,7 @@ export const MainCanvas = () => {
           hoveredBoneId === bone.id ||
           hoveredBoneId === parent.id;
 
-        drawBoneRelation(ctx, parent, bone, isHighlighted, previewWorldToScreen);
+        drawBoneRelation(ov, parent, bone, isHighlighted, previewWorldToScreen);
       });
 
       bones.forEach((bone) => {
@@ -459,7 +817,7 @@ export const MainCanvas = () => {
         const isHovered = hoveredBoneId === bone.id;
         const hasKeyframe = mode === 'animate' && keyframes[bone.id]?.[frame] !== undefined;
 
-        drawBone(ctx, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, previewWorldToScreen);
+        drawBone(ov, bone, skin, isSelected, isHovered, tool, mode, hasKeyframe, previewWorldToScreen);
       });
     }
 
@@ -469,57 +827,52 @@ export const MainCanvas = () => {
       const ikChain = getIkChain(activeIkRootId, bones);
       if (ikChain) {
         const handle = previewWorldToScreen(ikChain.target.x, ikChain.target.y);
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.18)';
-        ctx.fill();
-        ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(handle.x - 6, handle.y);
-        ctx.lineTo(handle.x + 6, handle.y);
-        ctx.moveTo(handle.x, handle.y - 6);
-        ctx.lineTo(handle.x, handle.y + 6);
-        ctx.stroke();
-        ctx.restore();
+        ov.save();
+        ov.beginPath();
+        ov.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
+        ov.fillStyle = 'rgba(6, 182, 212, 0.18)';
+        ov.fill();
+        ov.strokeStyle = '#06b6d4';
+        ov.lineWidth = 2;
+        ov.stroke();
+        ov.beginPath();
+        ov.moveTo(handle.x - 6, handle.y);
+        ov.lineTo(handle.x + 6, handle.y);
+        ov.moveTo(handle.x, handle.y - 6);
+        ov.lineTo(handle.x, handle.y + 6);
+        ov.stroke();
+        ov.restore();
       }
     }
 
     if (previousMovedBones.length > 0) {
-      drawSlots(ctx, resolvedSlots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, {
+      drawSlotOutlines(ov, slots, resolvedAttachments, previousMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(8,145,178,0.9)',
         lineWidth: 2,
         dash: [6, 4],
       });
       previousMovedBones.forEach((bone) => {
-        drawGhostBone(ctx, bone, '#0891b2', 0.4, previewWorldToScreen);
+        drawGhostBone(ov, bone, '#0891b2', 0.4, previewWorldToScreen);
       });
     }
 
     if (nextMovedBones.length > 0) {
-      drawSlots(ctx, resolvedSlots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, 0.2, handleImageLoad);
-      drawSlotOutlines(ctx, slots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, {
+      drawSlotOutlines(ov, slots, resolvedAttachments, nextMovedBones, previewWorldToScreen, effectiveZoom, {
         strokeStyle: 'rgba(219,39,119,0.9)',
         lineWidth: 2,
         dash: [6, 4],
       });
       nextMovedBones.forEach((bone) => {
-        drawGhostBone(ctx, bone, '#db2777', 0.4, previewWorldToScreen);
+        drawGhostBone(ov, bone, '#db2777', 0.4, previewWorldToScreen);
       });
     }
-    ctx.restore();
+    ov.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, meshDeformKeyframes, attachmentOpacityKeyframes, frame, duration, setupPose, slots, attachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedAttachments, warpedResolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, meshAttachment, selectedMeshVertexIndices, hoveredMeshVertexIndex, meshMarquee, activeDeformer, deformers, deformerKeyframes, selectedDeformerCPs, hoveredDeformerCPIndex, deformerMarquee, weightBrushBoneId, weightBrushRadius, weightBrushPos, physicsOffsets]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-
+  // useEffectEvent ensures this always captures the latest state/props,
+  // even when called from a requestAnimationFrame callback.
+  const processDragAt = useEffectEvent((sx: number, sy: number) => {
     if (isPanning && panStart) {
       // Divide by vpScale so that the camera store's zoom-division gives
       // world-unit delta = screenDelta / effectiveZoom (= camZoom * vpScale).
@@ -545,51 +898,66 @@ export const MainCanvas = () => {
       return;
     }
 
+    // Mesh marquee update
+    if (meshMarquee) {
+      setMeshMarquee((prev) => prev ? { ...prev, currentSx: sx, currentSy: sy } : null);
+      return;
+    }
+
+    // Mesh vertex drag
     if (meshDragStart && activeBone) {
-      const nextVertices = meshDragStart.initialVertices.map((vertex, index) => {
-        if (index !== meshDragStart.vertexIndex) return vertex;
-        return {
-          ...vertex,
-          x: vertex.x + (sx - meshDragStart.startScreenX) / camZoom,
-          y: vertex.y + (sy - meshDragStart.startScreenY) / camZoom,
-        };
-      });
+      const dx = sx - meshDragStart.startScreenX;
+      const dy = sy - meshDragStart.startScreenY;
+      const cos = Math.cos(-meshDragStart.totalRotation);
+      const sin = Math.sin(-meshDragStart.totalRotation);
+      const meshScale = effectiveZoom * 0.5;
+      const localDx = (dx * cos - dy * sin) / (meshScale * meshDragStart.totalScaleX || 1);
+      const localDy = (dx * sin + dy * cos) / (meshScale * meshDragStart.totalScaleY || 1);
+      const selectedSet = new Set(meshDragStart.selectedIndices);
+      const nextVerts = meshDragStart.initialVertices.map((v, i) =>
+        selectedSet.has(i) ? { x: v.x + localDx, y: v.y + localDy } : v,
+      );
       if (mode === 'animate') {
-        const attachmentKey = getMeshAttachmentKey({
-          slotId: meshDragStart.slotId,
-          name: meshDragStart.attachmentName,
-        });
-        const existingFrames = Object.keys(
-          meshDeformKeyframes[attachmentKey] ?? {},
-        ).map(Number);
-        const currentBoneEasing = normalizeKeyframeEasing(
-          keyframes[activeBone.id]?.[frame]?.easing,
-        );
-
-        if (
-          frame > 0 &&
-          activeAttachment?.meshVertices &&
-          !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
-        ) {
-          setMeshDeformKeyframeAtFrame(
-            attachmentKey,
-            0,
-            activeAttachment.meshVertices.map((vertex) => ({
-              x: vertex.x,
-              y: vertex.y,
-            })),
-          );
-        }
-
-        setMeshDeformKeyframe(
-          attachmentKey,
-          nextVertices.map((vertex) => ({ x: vertex.x, y: vertex.y })),
-        );
-        updateMeshDeformKeyframeEasing(attachmentKey, frame, currentBoneEasing);
+        const attachmentKey = getAttachmentKey({ slotId: meshDragStart.slotId, name: meshDragStart.attachmentName });
+        setMeshDeformKeyframe(attachmentKey, nextVerts);
       } else {
-        updateAttachment(meshDragStart.slotId, meshDragStart.attachmentName, {
-          meshVertices: nextVertices,
-        });
+        const { updateAttachment: ua, attachments: atts } = useSlotStore.getState();
+        const att = atts.find(
+          (a) => a.slotId === meshDragStart.slotId && a.name === meshDragStart.attachmentName,
+        );
+        if (att?.mesh) {
+          // Use nextVerts (from initialVertices + cumulative delta), not att.mesh.vertices,
+          // to avoid double-accumulation on every mouse-move call.
+          ua(meshDragStart.slotId, meshDragStart.attachmentName, {
+            mesh: { ...att.mesh, vertices: att.mesh.vertices.map((v, i) => ({ ...v, x: nextVerts[i]!.x, y: nextVerts[i]!.y })) },
+          });
+        }
+      }
+      return;
+    }
+
+    // Deformer marquee update
+    if (deformerMarquee) {
+      setDeformerMarquee((prev) => prev ? { ...prev, currentSx: sx, currentSy: sy } : null);
+      return;
+    }
+
+    // Deformer control-point drag
+    if (deformerDragState && activeBone) {
+      const dx = sx - deformerDragState.startScreenX;
+      const dy = sy - deformerDragState.startScreenY;
+      const cos = Math.cos(-deformerDragState.totalRotation);
+      const sin = Math.sin(-deformerDragState.totalRotation);
+      const localDx = (dx * cos - dy * sin) / (effectiveZoom * 0.5 * (deformerDragState.totalScaleX || 1));
+      const localDy = (dx * sin + dy * cos) / (effectiveZoom * 0.5 * (deformerDragState.totalScaleY || 1));
+      const selectedSet = new Set(deformerDragState.selectedCPIndices);
+      const nextPts = deformerDragState.initialPoints.map((p, i) =>
+        selectedSet.has(i) ? { x: p.x + localDx, y: p.y + localDy } : p,
+      );
+      if (mode === 'animate') {
+        setDeformerKF(deformerDragState.deformerId, frame, nextPts);
+      } else {
+        useDeformerStore.getState().updateDeformer(deformerDragState.deformerId, { rest: nextPts });
       }
       return;
     }
@@ -680,16 +1048,88 @@ export const MainCanvas = () => {
       return;
     }
 
-    if (tool === 'mesh' && meshAttachment && activeBone) {
-      const screenVertices = getAttachmentMeshScreenVertices(meshAttachment, activeBone, previewWorldToScreen, effectiveZoom);
-      const hoveredIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);
-      setHoveredMeshVertexIndex(hoveredIndex >= 0 ? hoveredIndex : null);
+    const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
+    setHoveredBoneId(hit?.id || null);
+  });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    // Weight paint: update brush position and paint if button held
+    if (tool === 'weights') {
+      setWeightBrushPos({ x: sx, y: sy });
       setHoveredBoneId(null);
+      if (
+        isWeightPaintingRef.current &&
+        activeAttachment?.type === 'mesh' && activeAttachment.mesh &&
+        activeBone && activeSlot && weightBrushBoneId !== null
+      ) {
+        const erase = e.shiftKey;
+        const fallbackBoneId = activeBone.id;
+        computeAllWorldTransforms(bones);
+        const screenVerts = getMeshVertexScreenPositions(
+          activeAttachment, activeBone, bones, previewWorldToScreen, activeAttachment.mesh.vertices,
+        );
+        const nextWeights = (activeAttachment.vertexWeights
+          ? [...activeAttachment.vertexWeights]
+          : activeAttachment.mesh.vertices.map(() => []));
+        let changed = false;
+        for (let i = 0; i < screenVerts.length; i++) {
+          const sp = screenVerts[i];
+          if (!sp) continue;
+          const dist = Math.hypot(sp.x - sx, sp.y - sy);
+          if (dist > weightBrushRadius) continue;
+          const t = 1 - dist / weightBrushRadius;
+          const smooth = t * t * (3 - 2 * t);
+          const delta = (erase ? -1 : 1) * weightBrushStrength * smooth;
+          nextWeights[i] = paintWeightBrush(nextWeights[i] ?? [], weightBrushBoneId, fallbackBoneId, delta);
+          changed = true;
+        }
+        if (changed) {
+          useSlotStore.getState().updateAttachment(activeSlot.id, activeAttachment.name, { vertexWeights: nextWeights });
+        }
+      }
       return;
     }
 
-    const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
-    setHoveredBoneId(hit?.id || null);
+    const isActiveDrag =
+      isDragging || isPanning || attachmentDragStart !== null ||
+      ikDragStart !== null || meshDragStart !== null || meshMarquee !== null ||
+      deformerDragState !== null || deformerMarquee !== null;
+
+    if (!isActiveDrag) {
+      // Hover cheap path: also update hovered mesh vertex index.
+      if (tool === 'mesh' && meshAttachment?.mesh && activeBone) {
+        const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, meshAttachment.mesh.vertices);
+        const hi = screenVerts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 8);
+        setHoveredMeshVertexIndex(hi >= 0 ? hi : null);
+        setHoveredBoneId(null);
+      } else if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
+        const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+        const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+        const hi = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 8);
+        setHoveredDeformerCPIndex(hi >= 0 ? hi : null);
+        setHoveredBoneId(null);
+      } else {
+        processDragAt(sx, sy);
+      }
+      return;
+    }
+
+    // Active drag: store latest position and process at most once per frame.
+    // This prevents a high-polling mouse from queuing more renders than the
+    // display can consume, which causes lag that grows the longer you drag.
+    pendingDragPos.current = { sx, sy };
+    if (dragRafRef.current === null) {
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        const pos = pendingDragPos.current;
+        if (pos) processDragAt(pos.sx, pos.sy);
+      });
+    }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -700,84 +1140,149 @@ export const MainCanvas = () => {
 
     const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
 
-    if (tool === 'mesh' && activeSlot && activeBone && activeAttachment) {
-      if (activeAttachment.type !== 'mesh') {
-        return;
-      }
-      const ensuredAttachment = activeAttachment;
-      const displayAttachment =
-        mode === 'animate'
-          ? resolveAttachmentAtFrame(
-              ensuredAttachment,
-              frame,
-              meshDeformKeyframes,
-              attachmentOpacityKeyframes,
-            )
-          : ensuredAttachment;
-      const screenVertices = getAttachmentMeshScreenVertices(displayAttachment, activeBone, previewWorldToScreen, effectiveZoom);
-      const targetVertexIndex = screenVertices.findIndex((point) => Math.hypot(point.x - sx, point.y - sy) <= 10);
-      if (targetVertexIndex >= 0 && displayAttachment.meshVertices) {
-        if (activeBone.id !== selectedBoneId) selectBone(activeBone.id);
-        if (meshDragStart === null) captureSnapshot();
-        if (mode === 'animate') {
-          const attachmentKey = getMeshAttachmentKey({
-            slotId: activeSlot.id,
-            name: ensuredAttachment.name,
-          });
-          const existingFrames = Object.keys(
-            meshDeformKeyframes[attachmentKey] ?? {},
-          ).map(Number);
-          const currentBoneEasing = normalizeKeyframeEasing(
-            keyframes[activeBone.id]?.[frame]?.easing,
-          );
+    // ── Weight paint interactions ──────────────────────────────────────────
+    if (tool === 'weights' && e.button === 0 && weightBrushBoneId !== null) {
+      captureSnapshot();
+      isWeightPaintingRef.current = true;
+      return;
+    }
 
-          if (
-            frame > 0 &&
-            ensuredAttachment.meshVertices &&
-            !existingFrames.some((keyframeFrame) => keyframeFrame < frame)
-          ) {
-            setMeshDeformKeyframeAtFrame(
-              attachmentKey,
-              0,
-              ensuredAttachment.meshVertices.map((vertex) => ({
-                x: vertex.x,
-                y: vertex.y,
-              })),
-            );
-            updateMeshDeformKeyframeEasing(attachmentKey, 0, currentBoneEasing);
+    // ── Warp tool interactions ─────────────────────────────────────────────
+    if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
+      if (e.button !== 0) return;
+      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+      const targetIdx = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
+
+      if (targetIdx >= 0) {
+        // Click on a control point → select + start drag
+        const nextSelected = e.shiftKey
+          ? selectedDeformerCPs.includes(targetIdx)
+            ? selectedDeformerCPs.filter((i) => i !== targetIdx)
+            : [...selectedDeformerCPs, targetIdx]
+          : selectedDeformerCPs.includes(targetIdx)
+            ? selectedDeformerCPs
+            : [targetIdx];
+        setSelectedDeformerCPs(nextSelected);
+        captureSnapshot();
+        computeAllWorldTransforms(bones);
+        const totalRotation = (activeBone._wrot * Math.PI) / 180;
+        const totalScaleX = activeBone.scaleX;
+        const totalScaleY = activeBone.scaleY;
+        if (mode === 'animate' && !(frame in (deformerKeyframes[activeDeformer.id] ?? {}))) {
+          const existingFrames = Object.keys(deformerKeyframes[activeDeformer.id] ?? {}).map(Number);
+          const boneEasing = normalizeKeyframeEasing(keyframes[activeBone.id]?.[frame]?.easing);
+          if (frame > 0 && !existingFrames.some((targetFrame) => targetFrame < frame)) {
+            setDeformerKF(activeDeformer.id, 0, activeDeformer.rest);
+            updateDeformerKeyframeEasing(activeDeformer.id, 0, boneEasing);
           }
-
-          setMeshDeformKeyframeAtFrame(
-            attachmentKey,
-            frame,
-            displayAttachment.meshVertices.map((vertex) => ({
-              x: vertex.x,
-              y: vertex.y,
-            })),
-          );
-          updateMeshDeformKeyframeEasing(
-            attachmentKey,
-            frame,
-            currentBoneEasing,
-          );
-          insertKeyframe(activeBone.id, {
-            x: activeBone.x,
-            y: activeBone.y,
-            rotation: activeBone.rotation,
-            scaleX: activeBone.scaleX,
-            scaleY: activeBone.scaleY,
-          });
+          setDeformerKF(activeDeformer.id, frame, currentPts);
+          updateDeformerKeyframeEasing(activeDeformer.id, frame, boneEasing);
         }
-        setMeshDragStart({
-          slotId: activeSlot.id,
-          attachmentName: ensuredAttachment.name,
-          vertexIndex: targetVertexIndex,
+        setDeformerDragState({
+          deformerId: activeDeformer.id,
+          selectedCPIndices: nextSelected,
           startScreenX: sx,
           startScreenY: sy,
-          initialVertices: displayAttachment.meshVertices.map((vertex) => ({ ...vertex })),
+          totalRotation,
+          totalScaleX,
+          totalScaleY,
+          initialPoints: currentPts,
+        });
+      } else {
+        // Click on empty space → clear selection + start marquee
+        if (!e.shiftKey) setSelectedDeformerCPs([]);
+        setDeformerMarquee({ sx, sy, currentSx: sx, currentSy: sy });
+      }
+      return;
+    }
+
+    // ── Mesh tool interactions ────────────────────────────────────────────
+    if (tool === 'mesh' && activeSlot && activeBone && activeAttachment?.type === 'mesh' && meshAttachment?.mesh) {
+      const displayVerts = meshAttachment.mesh.vertices;
+      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, displayVerts);
+      const targetIdx = screenVerts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
+      const attachmentKey = getAttachmentKey(activeAttachment);
+
+      // Right-click on vertex: remove it
+      if (e.button === 2 && targetIdx >= 0) {
+        e.preventDefault();
+        captureSnapshot();
+        const animState = useAnimationStore.getState();
+        const result = removeMeshVertices(activeAttachment, [targetIdx], animState.meshDeformKeyframes, attachmentKey);
+        const { updateAttachment: ua } = useSlotStore.getState();
+        ua(activeSlot.id, activeAttachment.name, result.attachment);
+        const nf = result.meshDeformKeyframes[attachmentKey];
+        if (nf && Object.keys(nf).length > 0) replaceMeshDeformKeyframesForAttachment(attachmentKey, nf);
+        else clearMeshDeformKeyframesForAttachment(attachmentKey);
+        setSelectedMeshVertexIndices([]);
+        return;
+      }
+
+      if (e.button !== 0) return;
+
+      // Alt+click: insert vertex
+      if (e.altKey) {
+        captureSnapshot();
+        const animState = useAnimationStore.getState();
+        const result = insertMeshVertex(activeAttachment, sx, sy, screenVerts, animState.meshDeformKeyframes, attachmentKey);
+        if (result) {
+          const { updateAttachment: ua } = useSlotStore.getState();
+          ua(activeSlot.id, activeAttachment.name, result.attachment);
+          const nf = result.meshDeformKeyframes[attachmentKey];
+          if (nf && Object.keys(nf).length > 0) replaceMeshDeformKeyframesForAttachment(attachmentKey, nf);
+          const newIdx = (result.attachment.mesh?.vertices.length ?? 1) - 1;
+          setSelectedMeshVertexIndices([newIdx]);
+        }
+        return;
+      }
+
+      // Click on vertex: select + start drag
+      if (targetIdx >= 0) {
+        let nextSelected: number[];
+        if (e.shiftKey) {
+          nextSelected = selectedMeshVertexIndices.includes(targetIdx)
+            ? selectedMeshVertexIndices.filter((i) => i !== targetIdx)
+            : [...selectedMeshVertexIndices, targetIdx];
+        } else {
+          nextSelected = selectedMeshVertexIndices.includes(targetIdx) ? selectedMeshVertexIndices : [targetIdx];
+        }
+        setSelectedMeshVertexIndices(nextSelected);
+        if (nextSelected.length === 0) return;
+
+        if (meshDragStart === null) captureSnapshot();
+
+        if (mode === 'animate') {
+          const existingFrames = Object.keys(meshDeformKeyframes[attachmentKey] ?? {}).map(Number);
+          const boneEasing = normalizeKeyframeEasing(keyframes[activeBone.id]?.[frame]?.easing);
+          if (frame > 0 && activeAttachment.mesh && !existingFrames.some((f) => f < frame)) {
+            setMeshDeformKeyframeAtFrame(attachmentKey, 0, activeAttachment.mesh.vertices.map((v) => ({ x: v.x, y: v.y })));
+            updateMeshDeformKeyframeEasing(attachmentKey, 0, boneEasing);
+          }
+          setMeshDeformKeyframeAtFrame(attachmentKey, frame, displayVerts.map((v) => ({ x: v.x, y: v.y })));
+          updateMeshDeformKeyframeEasing(attachmentKey, frame, boneEasing);
+          insertKeyframe(activeBone.id, { x: activeBone.x, y: activeBone.y, rotation: activeBone.rotation, scaleX: activeBone.scaleX, scaleY: activeBone.scaleY });
+        }
+
+        const totalRotation = ((activeBone._wrot + activeAttachment.rotation) * Math.PI) / 180;
+        setMeshDragStart({
+          slotId: activeSlot.id,
+          attachmentName: activeAttachment.name,
+          selectedIndices: nextSelected,
+          startScreenX: sx,
+          startScreenY: sy,
+          totalRotation,
+          totalScaleX: activeAttachment.scaleX * activeBone.scaleX,
+          totalScaleY: activeAttachment.scaleY * activeBone.scaleY,
+          initialVertices: displayVerts.map((v) => ({ x: v.x, y: v.y })),
         });
         return;
       }
+
+      // Click on empty space: start marquee or deselect
+      if (!e.shiftKey) setSelectedMeshVertexIndices([]);
+      setMeshMarquee({ sx, sy, currentSx: sx, currentSy: sy });
+      return;
     }
 
     if (e.button === 2) {
@@ -965,6 +1470,12 @@ export const MainCanvas = () => {
   };
 
   const handleMouseUp = () => {
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    pendingDragPos.current = null;
+
     setIsPanning(false);
     setPanStart(null);
 
@@ -1000,11 +1511,45 @@ export const MainCanvas = () => {
     }
 
     setAttachmentDragStart(null);
-    setMeshDragStart(null);
     setIkDragStart(null);
     setIsDragging(false);
     setDragStart(null);
-    setHoveredMeshVertexIndex(null);
+
+    // Mesh: commit marquee selection
+    if (meshMarquee && meshAttachment?.mesh && activeBone) {
+      const mx0 = Math.min(meshMarquee.sx, meshMarquee.currentSx);
+      const my0 = Math.min(meshMarquee.sy, meshMarquee.currentSy);
+      const mx1 = Math.max(meshMarquee.sx, meshMarquee.currentSx);
+      const my1 = Math.max(meshMarquee.sy, meshMarquee.currentSy);
+      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, meshAttachment.mesh.vertices);
+      const inside = screenVerts
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.x >= mx0 && p.x <= mx1 && p.y >= my0 && p.y <= my1)
+        .map(({ i }) => i);
+      setSelectedMeshVertexIndices(inside);
+    }
+    setMeshMarquee(null);
+    setMeshDragStart(null);
+
+    // Warp: commit deformer marquee selection
+    if (deformerMarquee && activeDeformer && activeBone && activeAttachment) {
+      const mx0 = Math.min(deformerMarquee.sx, deformerMarquee.currentSx);
+      const my0 = Math.min(deformerMarquee.sy, deformerMarquee.currentSy);
+      const mx1 = Math.max(deformerMarquee.sx, deformerMarquee.currentSx);
+      const my1 = Math.max(deformerMarquee.sy, deformerMarquee.currentSy);
+      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+      const inside = screenPts
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.x >= mx0 && p.x <= mx1 && p.y >= my0 && p.y <= my1)
+        .map(({ i }) => i);
+      setSelectedDeformerCPs(inside);
+    }
+    setDeformerMarquee(null);
+    setDeformerDragState(null);
+
+    // Weight paint: stop painting on mouse up
+    isWeightPaintingRef.current = false;
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -1031,15 +1576,17 @@ export const MainCanvas = () => {
         backgroundSize: '100% 100%, 40px 40px, 40px 40px',
       }}
     >
+      <canvas ref={bgCanvasRef} className="absolute top-0 left-0 pointer-events-none" />
+      <canvas ref={glCanvasRef} className="absolute top-0 left-0 pointer-events-none" />
       <canvas
         ref={canvasRef}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        onMouseLeave={() => { setWeightBrushPos(null); isWeightPaintingRef.current = false; }}
         onWheel={handleWheel}
         onContextMenu={handleContextMenu}
         className="absolute top-0 left-0 cursor-crosshair"
-        style={{ cursor: tool === 'mesh' && hoveredMeshVertexIndex !== null ? 'grab' : undefined }}
       />
       
       <div className="absolute bottom-3 left-3 text-[10px] text-text-dim bg-bg/80 px-2.5 py-1.5 rounded-md border border-border leading-relaxed pointer-events-none">

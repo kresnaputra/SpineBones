@@ -1,5 +1,11 @@
-import type { Bone, Skin, KeyframeEasing, Keyframes } from '../types';
+import type { Skin, KeyframeEasing, Keyframes } from '../types';
 import { normalizeKeyframeEasing } from '../utils/easing';
+
+export type TimelineBone = {
+  id: number;
+  name: string;
+  skinId: number;
+};
 
 type AudioTrackRenderData = {
   enabled: boolean;
@@ -7,6 +13,19 @@ type AudioTrackRenderData = {
   offsetFrames: number;
   audioDurationFrames: number;
   waveformPeaks: number[];
+};
+
+type TimelineSelection = {
+  kind: 'bone' | 'sprite';
+  boneId: number;
+  frame: number;
+  slotId?: number;
+};
+
+type SpriteSwapMarker = {
+  slotId: number;
+  frame: number;
+  attachmentName: string | null;
 };
 
 export const drawTimelineHeader = (
@@ -81,10 +100,11 @@ export const drawTimelineHeader = (
 
 export const drawTimeline = (
   ctx: CanvasRenderingContext2D,
-  bones: Bone[],
+  bones: TimelineBone[],
   skins: Skin[],
   keyframes: Keyframes,
-  selectedKeyframes: Array<{ boneId: number; frame: number }>,
+  spriteSwapMarkersByBone: Record<number, SpriteSwapMarker[]>,
+  selectedKeyframes: TimelineSelection[],
   frame: number,
   duration: number,
   selectedBoneId: number | null,
@@ -106,8 +126,15 @@ export const drawTimeline = (
   const headerW = 120;
   const paddingRight = 50;
   const computedFrameW = frameW ?? Math.max(8, (width - headerW - paddingRight) / duration);
-  const selectedKeyframeSet = new Set(
-    selectedKeyframes.map((keyframe) => `${keyframe.boneId}:${keyframe.frame}`),
+  const selectedBoneKeyframeSet = new Set(
+    selectedKeyframes
+      .filter((keyframe) => keyframe.kind === 'bone')
+      .map((keyframe) => `${keyframe.boneId}:${keyframe.frame}`),
+  );
+  const selectedSpriteKeyframeSet = new Set(
+    selectedKeyframes
+      .filter((keyframe) => keyframe.kind === 'sprite' && typeof keyframe.slotId === 'number')
+      .map((keyframe) => `${keyframe.slotId}:${keyframe.frame}`),
   );
   const selectedFrameSet = new Set(selectedKeyframes.map((keyframe) => keyframe.frame));
 
@@ -187,12 +214,27 @@ export const drawTimeline = (
   // Keyframes
   bones.forEach((bone, i) => {
     const y = audioRowH + i * rowH;
+    const spriteTrackTop = y + rowH - 12;
+    const spriteTrackY = spriteTrackTop + 4;
+
+    if ((spriteSwapMarkersByBone[bone.id] ?? []).length > 0) {
+      ctx.fillStyle = 'rgba(34,211,238,0.08)';
+      ctx.fillRect(headerW, spriteTrackTop - 3, width - headerW, 8);
+    }
+
+    ctx.strokeStyle = 'rgba(34,211,238,0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(headerW, spriteTrackY);
+    ctx.lineTo(width, spriteTrackY);
+    ctx.stroke();
+
     if (keyframes[bone.id]) {
       Object.keys(keyframes[bone.id]).forEach((kf) => {
         const frameNumber = parseInt(kf);
         const fx = frameToX(frameNumber);
         if (fx < headerW - 8 || fx > width + 8) return;
-        const isSelectedKeyframe = selectedKeyframeSet.has(`${bone.id}:${frameNumber}`);
+        const isSelectedKeyframe = selectedBoneKeyframeSet.has(`${bone.id}:${frameNumber}`);
         const easing = normalizeKeyframeEasing(keyframes[bone.id][frameNumber]?.easing);
         ctx.save();
         ctx.translate(fx, y + rowH / 2);
@@ -207,6 +249,24 @@ export const drawTimeline = (
         ctx.restore();
       });
     }
+
+    const spriteFrames = spriteSwapMarkersByBone[bone.id] ?? [];
+    spriteFrames.forEach((marker) => {
+      const fx = frameToX(marker.frame);
+      if (fx < headerW - 8 || fx > width + 8) return;
+      const isSelectedSpriteKeyframe = selectedSpriteKeyframeSet.has(
+        `${marker.slotId}:${marker.frame}`,
+      );
+      ctx.save();
+      ctx.fillStyle = isSelectedSpriteKeyframe ? '#0891b2' : '#22d3ee';
+      ctx.strokeStyle = isSelectedSpriteKeyframe ? '#ecfeff' : '#a5f3fc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(fx - 7, spriteTrackY - 4, 14, 8, 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    });
   });
 
   // Selected frame highlight columns
@@ -232,12 +292,27 @@ export const drawTimeline = (
     const y = audioRowH + i * rowH;
     const skinCol = skins.find((s) => s.id === bone.skinId)?.color || '#7c3aed';
     const isSelected = selectedBoneIds.includes(bone.id) || selectedBoneId === bone.id;
+    const spriteMarkerCount = (spriteSwapMarkersByBone[bone.id] ?? []).length;
 
     ctx.fillStyle = isSelected ? 'rgba(124,58,237,0.15)' : i % 2 === 0 ? '#13131a' : '#111119';
     ctx.fillRect(0, y, headerW, rowH);
     ctx.fillStyle = isSelected ? '#a855f7' : '#94a3b8';
     ctx.font = '10px JetBrains Mono';
     ctx.fillText(bone.name, 8, y + rowH / 2 + 4);
+    if (spriteMarkerCount > 0) {
+      const badgeW = 34;
+      const badgeH = 10;
+      const badgeX = headerW - badgeW - 6;
+      const badgeY = y + rowH - badgeH - 4;
+      ctx.fillStyle = 'rgba(34,211,238,0.12)';
+      ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+      ctx.strokeStyle = 'rgba(34,211,238,0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(badgeX + 0.5, badgeY + 0.5, badgeW - 1, badgeH - 1);
+      ctx.fillStyle = 'rgba(34,211,238,0.95)';
+      ctx.font = '8px JetBrains Mono';
+      ctx.fillText(`SPR ${spriteMarkerCount}`, badgeX + 4, badgeY + 7);
+    }
     ctx.fillStyle = skinCol;
     ctx.fillRect(0, y, 3, rowH);
     ctx.strokeStyle = 'rgba(42,42,61,0.5)';

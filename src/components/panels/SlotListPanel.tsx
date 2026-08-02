@@ -5,7 +5,7 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { openImageFile } from '../../utils/nativeIO';
 import { useHistoryStore } from '../../stores/historyStore';
-import { getOpaqueBoundsFromImageData } from '../../utils/meshAttachment';
+import { getOpaqueBoundsFromImageData } from '../../utils/attachmentUtils';
 import { resolveSlotAttachmentAtFrame } from '../../utils/slotAnimation';
 
 const IMAGE_FILTERS = [
