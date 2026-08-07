@@ -13,7 +13,6 @@ interface PhysicsState {
   updateConfig: (boneId: number, changes: Partial<Omit<PhysicsConfig, 'boneId'>>) => void;
   removeConfig: (boneId: number) => void;
   setRuntime: (boneId: number, rt: PhysicsRuntime) => void;
-  setOffset: (boneId: number, dx: number, dy: number) => void;
   clearOffsets: () => void;
   replaceAll: (configs: PhysicsConfig[]) => void;
 }
@@ -44,9 +43,6 @@ export const usePhysicsStore = create<PhysicsState>((set) => ({
 
   setRuntime: (boneId, rt) =>
     set((s) => ({ runtimes: { ...s.runtimes, [boneId]: rt } })),
-
-  setOffset: (boneId, dx, dy) =>
-    set((s) => ({ offsets: { ...s.offsets, [boneId]: { dx, dy } } })),
 
   clearOffsets: () => set({ offsets: {}, runtimes: {} }),
 

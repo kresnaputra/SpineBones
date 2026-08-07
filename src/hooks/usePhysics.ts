@@ -39,6 +39,7 @@ export const usePhysics = () => {
         computeAllWorldTransforms(bones);
 
         const nextRuntimes = { ...runtimes };
+        const nextOffsets: Record<number, { dx: number; dy: number }> = {};
         for (const cfg of cfgs) {
           const bone = bones.find((b) => b.id === cfg.boneId);
           if (!bone) continue;
@@ -47,13 +48,9 @@ export const usePhysics = () => {
           };
           const newRt = stepPhysics(rt, bone._wx, bone._wy, cfg, dt);
           nextRuntimes[cfg.boneId] = newRt;
-          usePhysicsStore.getState().setOffset(
-            cfg.boneId,
-            newRt.wx - bone._wx,
-            newRt.wy - bone._wy,
-          );
+          nextOffsets[cfg.boneId] = { dx: newRt.wx - bone._wx, dy: newRt.wy - bone._wy };
         }
-        usePhysicsStore.setState({ runtimes: nextRuntimes });
+        usePhysicsStore.setState({ runtimes: nextRuntimes, offsets: nextOffsets });
       }
 
       rafRef.current = requestAnimationFrame(tick);

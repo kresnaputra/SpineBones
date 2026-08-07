@@ -319,7 +319,10 @@ export const MainCanvas = () => {
     [resolvedAttachments, deformers, deformerKeyframes, frame, isAnimating],
   );
 
-  const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);
+  const resolvedSlots = useMemo(
+    () => resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes),
+    [slots, frame, slotAttachmentKeyframes],
+  );
   const activeSlot = selectedBoneId === null
     ? null
     : ((selectedSlotId !== null
@@ -570,14 +573,12 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
-    // Apply physics offsets only when not using a tool that needs stable bone positions
-    if (tool !== 'mesh' && tool !== 'warp' && tool !== 'weights') {
-      for (const bone of bones) {
-        const offset = physicsOffsets[bone.id];
-        if (offset) {
-          bone._wx += offset.dx;
-          bone._wy += offset.dy;
-        }
+    // Apply physics offsets to bones
+    for (const bone of bones) {
+      const offset = physicsOffsets[bone.id];
+      if (offset) {
+        bone._wx += offset.dx;
+        bone._wy += offset.dy;
       }
     }
 
@@ -1221,22 +1222,6 @@ export const MainCanvas = () => {
 
       if (e.button !== 0) return;
 
-      // Alt+click: insert vertex
-      if (e.altKey) {
-        captureSnapshot();
-        const animState = useAnimationStore.getState();
-        const result = insertMeshVertex(activeAttachment, sx, sy, screenVerts, animState.meshDeformKeyframes, attachmentKey);
-        if (result) {
-          const { updateAttachment: ua } = useSlotStore.getState();
-          ua(activeSlot.id, activeAttachment.name, result.attachment);
-          const nf = result.meshDeformKeyframes[attachmentKey];
-          if (nf && Object.keys(nf).length > 0) replaceMeshDeformKeyframesForAttachment(attachmentKey, nf);
-          const newIdx = (result.attachment.mesh?.vertices.length ?? 1) - 1;
-          setSelectedMeshVertexIndices([newIdx]);
-        }
-        return;
-      }
-
       // Click on vertex: select + start drag
       if (targetIdx >= 0) {
         let nextSelected: number[];
@@ -1277,6 +1262,22 @@ export const MainCanvas = () => {
           initialVertices: displayVerts.map((v) => ({ x: v.x, y: v.y })),
         });
         return;
+      }
+
+      // Double-click on empty space inside the mesh: add a new vertex there
+      if (e.detail >= 2) {
+        const animState = useAnimationStore.getState();
+        const insertResult = insertMeshVertex(activeAttachment, sx, sy, screenVerts, animState.meshDeformKeyframes, attachmentKey);
+        if (insertResult) {
+          captureSnapshot();
+          const { updateAttachment: ua } = useSlotStore.getState();
+          ua(activeSlot.id, activeAttachment.name, insertResult.attachment);
+          const nf = insertResult.meshDeformKeyframes[attachmentKey];
+          if (nf && Object.keys(nf).length > 0) replaceMeshDeformKeyframesForAttachment(attachmentKey, nf);
+          const newIdx = (insertResult.attachment.mesh?.vertices.length ?? 1) - 1;
+          setSelectedMeshVertexIndices([newIdx]);
+          return;
+        }
       }
 
       // Click on empty space: start marquee or deselect

@@ -298,6 +298,18 @@ const getBarycentric = (p: ScreenPoint, p0: ScreenPoint, p1: ScreenPoint, p2: Sc
 const isInside = (b: { t0: number; t1: number; t2: number }) =>
   b.t0 >= -HIT_TOLERANCE && b.t1 >= -HIT_TOLERANCE && b.t2 >= -HIT_TOLERANCE;
 
+const EDGE_HIT_PX = 8;
+
+/** Closest point on segment a-b to p, as { dist, t } (t clamped to [0,1]). */
+const distToSegment = (p: ScreenPoint, a: ScreenPoint, b: ScreenPoint) => {
+  const dx = b.x - a.x; const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq < EPSILON ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = a.x + t * dx; const cy = a.y + t * dy;
+  return { dist: Math.hypot(p.x - cx, p.y - cy), t };
+};
+
 const interpVertex = (
   b: { t0: number; t1: number; t2: number },
   v0: MeshVertex, v1: MeshVertex, v2: MeshVertex,
@@ -429,9 +441,84 @@ const tryGridInsert = (
 };
 
 /**
+ * Insert a vertex directly on the mesh edge nearest (sx, sy), if within EDGE_HIT_PX.
+ * Splits every triangle sharing that edge (1 for a boundary edge, 2 for an interior
+ * edge) so both sides stay welded — avoids the crack/hanging-node a naive
+ * single-triangle split would leave when the click lands on a shared line.
+ */
+const trySplitEdge = (
+  attachment: Attachment,
+  sx: number, sy: number,
+  screenVerts: ScreenPoint[],
+  meshDeformKeyframes: MeshDeformKeyframes,
+  attachmentKey: string,
+): { attachment: Attachment; meshDeformKeyframes: MeshDeformKeyframes } | null => {
+  const { mesh } = attachment;
+  if (!mesh?.edges.length) return null;
+  const point = { x: sx, y: sy };
+
+  let best: { a: number; b: number; t: number; dist: number } | null = null;
+  for (const [a, b] of mesh.edges) {
+    const pa = screenVerts[a]; const pb = screenVerts[b];
+    if (!pa || !pb) continue;
+    const { dist, t } = distToSegment(point, pa, pb);
+    if (t < 0.04 || t > 0.96) continue; // too close to an existing vertex
+    if (dist <= EDGE_HIT_PX && (!best || dist < best.dist)) best = { a, b, t, dist };
+  }
+  if (!best) return null;
+
+  const { a, b, t } = best;
+  const va = mesh.vertices[a]; const vb = mesh.vertices[b];
+  if (!va || !vb) return null;
+  const newVertex: MeshVertex = {
+    x: lerp(va.x, vb.x, t),
+    y: lerp(va.y, vb.y, t),
+    u: lerp(va.u, vb.u, t),
+    v: lerp(va.v, vb.v, t),
+  };
+
+  const edgeTriangles = mesh.triangles.filter((tri) => tri.includes(a) && tri.includes(b));
+  if (edgeTriangles.length === 0) return null;
+
+  const newIdx = mesh.vertices.length;
+  const replacementTris: MeshTriangle[] = [];
+  for (const tri of edgeTriangles) {
+    const [i0, i1, i2] = tri;
+    let p: number; let q: number; let r: number;
+    if ((i0 === a && i1 === b) || (i0 === b && i1 === a)) { p = i0; q = i1; r = i2; }
+    else if ((i1 === a && i2 === b) || (i1 === b && i2 === a)) { p = i1; q = i2; r = i0; }
+    else { p = i2; q = i0; r = i1; }
+    replacementTris.push([p, newIdx, r], [newIdx, q, r]);
+  }
+  const newTris = [...mesh.triangles.filter((tri) => !edgeTriangles.includes(tri)), ...replacementTris];
+  const newVerts = [...mesh.vertices, newVertex];
+
+  const nextKFs = { ...meshDeformKeyframes };
+  const existing = nextKFs[attachmentKey];
+  if (existing) {
+    const updated: typeof existing = {};
+    for (const [frameStr, kf] of Object.entries(existing)) {
+      updated[Number(frameStr)] = { ...kf, vertices: [...kf.vertices, { x: newVertex.x, y: newVertex.y }] };
+    }
+    nextKFs[attachmentKey] = updated;
+  }
+
+  return {
+    attachment: {
+      ...attachment,
+      mesh: { vertices: newVerts, triangles: newTris, edges: buildMeshEdges(newTris) },
+      pinned: attachment.pinned ? [...attachment.pinned, false] : undefined,
+      vertexWeights: attachment.vertexWeights ? [...attachment.vertexWeights, []] : undefined,
+    },
+    meshDeformKeyframes: nextKFs,
+  };
+};
+
+/**
  * Insert a vertex by splitting the triangle that contains (sx, sy) in screen space.
  * For grid meshes, inserts a new grid row/column through the point instead.
- * Returns null if (sx, sy) is outside all triangles.
+ * If the click lands on/near an existing edge, that edge is split instead (keeps
+ * both adjacent triangles welded). Returns null if (sx, sy) is outside the mesh.
  */
 export const insertMeshVertex = (
   attachment: Attachment,
@@ -446,6 +533,12 @@ export const insertMeshVertex = (
   // Try grid-line insertion first
   const gridResult = tryGridInsert(attachment, sx, sy, screenVerts, meshDeformKeyframes, attachmentKey);
   if (gridResult) return gridResult;
+
+  // Non-grid mesh: prefer splitting the nearest edge if the click landed on/near one
+  if (!mesh.grid) {
+    const edgeResult = trySplitEdge(attachment, sx, sy, screenVerts, meshDeformKeyframes, attachmentKey);
+    if (edgeResult) return edgeResult;
+  }
 
   // Fall back: split the triangle that contains the click
   const point = { x: sx, y: sy };

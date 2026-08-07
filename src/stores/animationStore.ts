@@ -13,6 +13,19 @@ import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
 
+// Sorted-frame-number cache keyed by a bone's keyframes object identity, which is
+// only replaced when that bone's keyframes actually change (see insertKeyframe etc.
+// below — always `{ ...state.keyframes[boneId], ... }`). Lets playback re-run
+// applyKeyframes() every tick without re-sorting unchanged keyframe data each time.
+const sortedFramesCache = new WeakMap<object, number[]>();
+const getSortedFrames = (boneKeyframes: object): number[] => {
+  const cached = sortedFramesCache.get(boneKeyframes);
+  if (cached) return cached;
+  const sorted = Object.keys(boneKeyframes).map(Number).sort((a, b) => a - b);
+  sortedFramesCache.set(boneKeyframes, sorted);
+  return sorted;
+};
+
 interface AnimationState {
   keyframes: Keyframes;
   slotAttachmentKeyframes: SlotAttachmentKeyframes;
@@ -548,9 +561,7 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           return bone;
         }
 
-        const frames = Object.keys(boneKeyframes)
-          .map(Number)
-          .sort((a, b) => a - b);
+        const frames = getSortedFrames(boneKeyframes);
 
         if (frames.length === 0) {
           // No keyframes, restore setup pose

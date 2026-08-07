@@ -179,7 +179,7 @@ export const MeshPropertiesPanel = () => {
       <div className="px-3 py-2 border-b border-border/50 space-y-0.5">
         <div className="text-[9px] text-text-dim flex gap-1.5 items-start">
           <span className="text-text-dim/60">+</span>
-          <span><span className="text-text">Alt+click</span> inside mesh to add vertex</span>
+          <span><span className="text-text">Double-click</span> empty space inside mesh to add vertex</span>
         </div>
         <div className="text-[9px] text-text-dim flex gap-1.5 items-start">
           <span className="text-text-dim/60">−</span>

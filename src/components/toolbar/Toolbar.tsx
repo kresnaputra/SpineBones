@@ -36,14 +36,13 @@ const TOOL_LABELS = {
   warp: 'Warp',
 };
 
-const TOOL_SHORTCUTS = {
+const TOOL_SHORTCUTS: Partial<Record<keyof typeof TOOL_LABELS, string>> = {
   pose: 'Q',
   bone: 'B',
-  move: 'G',
+  move: 'M',
   rotate: 'R',
   scale: 'S',
   mesh: 'H',
-  warp: 'D',
 };
 
 const IMAGE_FILTERS = [
@@ -343,7 +342,7 @@ export const Toolbar = () => {
                 ? 'bg-accent text-white border-accent'
                 : 'bg-transparent text-text-dim border-transparent hover:bg-panel2 hover:text-text hover:border-border'
             }`}
-            title={`${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})`}
+            title={TOOL_SHORTCUTS[t] ? `${TOOL_LABELS[t]} (${TOOL_SHORTCUTS[t]})` : TOOL_LABELS[t]}
           >
             <Icon size={14} />
             {TOOL_LABELS[t]}
