@@ -438,6 +438,12 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
   const processedAttachments: ArchiveAttachment[] = [];
   for (const attachment of projectData.attachments) {
     const nextAttachment: ArchiveAttachment = { ...attachment };
+    // Mesh attachments are never crop-archived (see below) — clear a stale flag from
+    // a project saved before this fix, or the stored (actually full-size) image would
+    // be wrongly treated as pre-cropped on the next load.
+    if (attachment.type === 'mesh' && nextAttachment.imageIsCropped) {
+      nextAttachment.imageIsCropped = false;
+    }
 
     if (attachment.imageData) {
       const originalImageData = attachment.imageData;
@@ -452,7 +458,14 @@ const serializeProjectArchive = async (projectData: ProjectData) => {
       } else {
         let imageDataToStore = originalImageData;
 
-        const cropped = await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
+        // Mesh vertex UVs are baked against the *original* image's pixel space and
+        // the mesh renderer has no notion of `opaqueBounds`/`imageIsCropped` (only
+        // the plain-image quad path reads those), so cropping a mesh's source image
+        // here would silently shift every UV to sample the wrong texture region.
+        const cropped =
+          attachment.type === 'mesh'
+            ? null
+            : await cropAttachmentImage(originalImageData, attachment.opaqueBounds);
         if (cropped) {
           imageDataToStore = cropped.imageData;
           nextAttachment.opaqueBounds = cropped.opaqueBounds;
@@ -575,11 +588,38 @@ const parseProjectFile = async (bytes: Uint8Array, fileName: string) => {
 
       const data = await assetEntry.async('uint8array');
       const { assetPath, ...restAttachment } = attachment;
-      return {
+      const resolved = {
         ...restAttachment,
         opacity: restAttachment.opacity ?? 1,
         imageData: bytesToDataUrl(data, getMimeTypeFromAssetPath(assetPath)),
       } as Attachment;
+
+      // Projects saved before mesh attachments were excluded from crop-archiving
+      // (see serializeProjectArchive) have an asset that's already cropped to
+      // opaqueBounds, while the mesh's vertex UVs are still baked against the
+      // original, larger image — remap them into the cropped asset's UV space so
+      // the mesh samples the right pixels instead of a shifted/wrong region.
+      if (
+        resolved.type === 'mesh' &&
+        resolved.imageIsCropped &&
+        resolved.opaqueBounds &&
+        resolved.mesh?.vertices.length &&
+        resolved.width > 0 &&
+        resolved.height > 0
+      ) {
+        const { x: ox, y: oy, width: cw, height: ch } = resolved.opaqueBounds;
+        resolved.mesh = {
+          ...resolved.mesh,
+          vertices: resolved.mesh.vertices.map((v) => ({
+            ...v,
+            u: (v.u * resolved.width - ox) / cw,
+            v: (v.v * resolved.height - oy) / ch,
+          })),
+        };
+        resolved.imageIsCropped = false;
+      }
+
+      return resolved;
     }),
   );
 
