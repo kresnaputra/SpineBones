@@ -28,10 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "app",
-    "resources": [
-      "../scripts/spinebones-mcp-server.bundle.mjs"
-    ],
+    "targets": "all",
     "fileAssociations": [
       {
         "ext": [

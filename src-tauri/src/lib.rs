@@ -1,5 +1,6 @@
 use std::{
   env,
+  fs,
   io::{Read, Write},
   net::{TcpListener, TcpStream},
   path::PathBuf,
@@ -716,30 +717,77 @@ fn start_mcp_bridge_server(
   });
 }
 
+/// The bundled MCP server is compiled into the binary so a packaged app never
+/// depends on files from the machine it was built on. `build.rs` keeps this
+/// bundle up to date.
+const EMBEDDED_MCP_SERVER: &str = include_str!("../../scripts/spinebones-mcp-server.bundle.mjs");
+
+/// Writes the embedded MCP server into the app data directory so a runtime
+/// (node/bun) can execute it. The file name carries the app version and script
+/// size, so a new build extracts to a fresh path instead of overwriting a
+/// script a running server still holds open.
+fn extract_embedded_mcp_server(app: &AppHandle) -> Result<PathBuf, String> {
+  let dir = app
+    .path()
+    .app_local_data_dir()
+    .map_err(|error| format!("no app data directory: {error}"))?
+    .join("mcp");
+  fs::create_dir_all(&dir).map_err(|error| format!("could not create {}: {error}", dir.display()))?;
+
+  let script_path = dir.join(format!(
+    "spinebones-mcp-server-{}-{}.mjs",
+    env!("CARGO_PKG_VERSION"),
+    EMBEDDED_MCP_SERVER.len()
+  ));
+  let already_extracted = fs::metadata(&script_path)
+    .map(|meta| meta.len() == EMBEDDED_MCP_SERVER.len() as u64)
+    .unwrap_or(false);
+  if !already_extracted {
+    fs::write(&script_path, EMBEDDED_MCP_SERVER)
+      .map_err(|error| format!("could not write {}: {error}", script_path.display()))?;
+  }
+
+  remove_stale_extracted_servers(&dir, &script_path);
+  Ok(script_path)
+}
+
+fn remove_stale_extracted_servers(dir: &PathBuf, keep: &PathBuf) {
+  let Ok(entries) = fs::read_dir(dir) else {
+    return;
+  };
+  for entry in entries.flatten() {
+    let path = entry.path();
+    let is_extracted_server = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .is_some_and(|name| name.starts_with("spinebones-mcp-server-") && name.ends_with(".mjs"));
+    if is_extracted_server && &path != keep {
+      let _ = fs::remove_file(path);
+    }
+  }
+}
+
 fn resolve_mcp_server_path(app: &AppHandle, workspace_root: &PathBuf) -> (PathBuf, String) {
-  if let Ok(resource_dir) = app.path().resource_dir() {
-    // Tauri replaces ".." with "_up_" in bundled resource paths
-    let bundled_script_up = resource_dir
-      .join("_up_")
+  // In a dev build the workspace is the machine we are running on, so prefer
+  // the unbundled script to keep edit-and-restart fast.
+  if cfg!(debug_assertions) {
+    let dev_script = workspace_root
       .join("scripts")
-      .join("spinebones-mcp-server.bundle.mjs");
-    if bundled_script_up.exists() {
-      return (bundled_script_up, "bundled script".to_string());
-    }
-    let bundled_script = resource_dir
-      .join("scripts")
-      .join("spinebones-mcp-server.bundle.mjs");
-    if bundled_script.exists() {
-      return (bundled_script, "bundled script".to_string());
+      .join("spinebones-mcp-server.mjs");
+    if dev_script.exists() {
+      return (dev_script, "development script".to_string());
     }
   }
 
-  let dev_script = workspace_root.join("scripts").join("spinebones-mcp-server.mjs");
-  if dev_script.exists() {
-    return (dev_script, "development script".to_string());
+  match extract_embedded_mcp_server(app) {
+    Ok(script_path) => (script_path, "embedded script".to_string()),
+    Err(error) => (
+      workspace_root
+        .join("scripts")
+        .join("spinebones-mcp-server.mjs"),
+      format!("unresolved ({error})"),
+    ),
   }
-
-  (workspace_root.join("scripts").join("spinebones-mcp-server.mjs"), "unresolved".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
