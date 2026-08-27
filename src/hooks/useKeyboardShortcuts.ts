@@ -78,6 +78,7 @@ export const useKeyboardShortcuts = () => {
         r: 'rotate',
         s: 'scale',
         h: 'mesh',
+        g: 'warp',
         p: 'weights',
       };
 

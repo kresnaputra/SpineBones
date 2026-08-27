@@ -11,6 +11,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "eslint .",
+    "verify:phase-a": "bun scripts/phase-a/verify-transform-parity.ts",
     "mcp:server": "node scripts/spinebones-mcp-server.mjs",
     "preview": "bun run build && wrangler dev",
     "deploy": "bun run build && wrangler deploy"

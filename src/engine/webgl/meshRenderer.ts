@@ -2,6 +2,8 @@ import type { Attachment, Bone, Slot } from '../../types';
 import type { ViewportRect } from '../viewport';
 import { getViewportEffectiveZoom } from '../viewport';
 import { getAttachmentGeometry } from '../meshSkinning';
+import { computeDrawSequence } from '../drawOrder';
+import { create, ortho2D, toFloat32, type Mat4 } from '../mat4';
 import { createProgram, TextureCache, type GLProgram } from './glContext';
 
 /**
@@ -46,8 +48,12 @@ export interface MeshRenderer {
   dispose: () => void;
 }
 
-/** Build the (ax, ay, bx, by) world→clip transform shared with the export path. */
-const computeTransform = (
+/**
+ * Build the (ax, ay, bx, by) world→clip transform shared with the export path.
+ * Exported so the Phase A parity harness verifies this exact function rather
+ * than a copy of the formula that could drift away from it.
+ */
+export const computeTransform = (
   viewportRect: ViewportRect,
   camX: number,
   camY: number,
@@ -72,6 +78,10 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
   const uvBuffer = gl.createBuffer()!;
   const indexBuffer = gl.createBuffer()!;
 
+  // Reused per frame: the world->clip matrix and its float32 upload buffer.
+  const mvp: Mat4 = create();
+  const mvpUpload = new Float32Array(16);
+
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.disable(gl.DEPTH_TEST);
@@ -92,7 +102,9 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, geo.positions, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(glProgram.attribs.aPos);
-    gl.vertexAttribPointer(glProgram.attribs.aPos, 2, gl.FLOAT, false, 0, 0);
+    // 3 floats per position, matching `vec3 aPos` and the stride `meshSkinning`
+    // writes. Z is always 0 today; depth sorting is a later phase's problem.
+    gl.vertexAttribPointer(glProgram.attribs.aPos, 3, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, geo.uvs, gl.DYNAMIC_DRAW);
@@ -136,18 +148,22 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
       scene.canvasWidth,
       scene.canvasHeight,
     );
-    gl.uniform4f(glProgram.uniforms.uTransform, ax, ay, bx, by);
+    // `computeTransform` is left exactly as it was: the contract that camZoom 1
+    // shows the same world extent in the editor and the export depends on that
+    // formula, and `exportRenderer` is numerically calibrated against it.
+    // Wrapping it in a matrix adds only exact-zero terms, so the pixels do not
+    // move — see `scripts/phase-a/verify-transform-parity.ts`.
+    gl.uniformMatrix4fv(
+      glProgram.uniforms.uMVP,
+      false, // WebGL 1 permits no other value
+      toFloat32(ortho2D(ax, ay, bx, by, mvp), mvpUpload),
+    );
 
     for (const pass of scene.passes) {
-      for (const bone of pass.bones) {
-        for (const slot of scene.slots) {
-          if (slot.boneId !== bone.id || !slot.attachmentName) continue;
-          const attachment = scene.attachments.find(
-            (a) => a.slotId === slot.id && a.name === slot.attachmentName,
-          );
-          if (!attachment) continue;
-          drawAttachment(attachment, bone, pass.bones, pass.alpha, scene.onTextureReady);
-        }
+      // Each pass has its own bone array (onion-skin ghosts are separate poses),
+      // so the sequence is resolved per pass.
+      for (const item of computeDrawSequence(pass.bones, scene.slots, scene.attachments)) {
+        drawAttachment(item.attachment, item.bone, pass.bones, pass.alpha, scene.onTextureReady);
       }
     }
   };

@@ -1,5 +1,6 @@
 import type { Attachment, Bone, Deformer, DeformerKeyframes, MeshVertex, MeshVertexWeight } from '../types';
 import { applyEasing } from '../utils/easing';
+import { create, fromTranslationRotationZ, transformPoint, type Mat4 } from './mat4';
 
 /**
  * Pure geometry module shared by the live WebGL preview and the offscreen
@@ -15,7 +16,11 @@ import { applyEasing } from '../utils/easing';
  */
 
 export interface AttachmentGeometry {
-  /** Interleaved is avoided: positions are world-space x,y pairs. */
+  /**
+   * Interleaved is avoided: positions are world-space x,y,z triplets. Z is
+   * always 0 for now — nothing writes depth until the renderer can sort by it —
+   * but the buffer carries it so the vertex format never has to change again.
+   */
   positions: Float32Array;
   /** Texture coords, u,v pairs (parallel to positions). */
   uvs: Float32Array;
@@ -25,18 +30,41 @@ export interface AttachmentGeometry {
 
 const SPRITE_SCALE = 0.5;
 
-const deg2rad = (deg: number) => (deg * Math.PI) / 180;
+interface AttachmentFrame {
+  /** `T(bone._wx, bone._wy) * Rz(bone._wrot + attachment.rotation)`. */
+  matrix: Mat4;
+  totalScaleX: number;
+  totalScaleY: number;
+  flipX: number;
+  flipY: number;
+}
 
-/** Build the world-space transform for an attachment on a single bone. */
-const boneFrame = (attachment: Attachment, bone: Bone) => {
-  const rot = deg2rad(bone._wrot + attachment.rotation);
+/**
+ * Scratch matrices.
+ *
+ * `boneFrame` runs once per vertex *per bone weight*, so a dense weighted mesh
+ * would allocate hundreds of matrices per attachment per frame. Each of the
+ * three call sites below owns one buffer instead. They are safe to share within
+ * a call site because every one of them is a synchronous leaf: a frame is built
+ * and consumed before the next `boneFrame` call, and none of them nest.
+ */
+const SKIN_FRAME: Mat4 = create();
+const QUAD_FRAME: Mat4 = create();
+const POINT_FRAME: Mat4 = create();
+
+/**
+ * Build the world-space transform for an attachment on a single bone.
+ *
+ * The rotation is summed in degrees *before* being turned into a matrix, on
+ * purpose: composing `Rz(bone._wrot) * Rz(attachment.rotation)` instead would
+ * evaluate cos(a+b) as cos(a)cos(b) - sin(a)sin(b) and drift from the value the
+ * scalar pipeline produces.
+ */
+const boneFrame = (attachment: Attachment, bone: Bone, out: Mat4): AttachmentFrame => {
   const totalScaleX = attachment.scaleX * bone.scaleX;
   const totalScaleY = attachment.scaleY * bone.scaleY;
   return {
-    bx: bone._wx,
-    by: bone._wy,
-    cos: Math.cos(rot),
-    sin: Math.sin(rot),
+    matrix: fromTranslationRotationZ(bone._wx, bone._wy, bone._wrot + attachment.rotation, out),
     totalScaleX,
     totalScaleY,
     flipX: totalScaleX < 0 ? -1 : 1,
@@ -44,15 +72,13 @@ const boneFrame = (attachment: Attachment, bone: Bone) => {
   };
 };
 
-/** Rotate local (lx,ly) by the frame and translate to world space. */
+/** Place attachment-local (lx, ly, lz) into world space. */
 const toWorld = (
-  frame: ReturnType<typeof boneFrame>,
+  frame: AttachmentFrame,
   lx: number,
   ly: number,
-): [number, number] => [
-  frame.bx + lx * frame.cos - ly * frame.sin,
-  frame.by + lx * frame.sin + ly * frame.cos,
-];
+  lz = 0,
+): [number, number, number] => transformPoint(frame.matrix, lx, ly, lz);
 
 /**
  * World-space position of a single mesh vertex, blended across its bone
@@ -64,29 +90,32 @@ const skinVertex = (
   attachment: Attachment,
   bone: Bone,
   allBones: Bone[],
-): [number, number] => {
+  depth: number,
+): [number, number, number] => {
   if (weights && weights.length >= 2 && allBones.length > 0) {
     let wx = 0;
     let wy = 0;
+    let wz = 0;
     let total = 0;
     for (const { boneId, weight } of weights) {
       if (weight <= 0) continue;
       const wb = allBones.find((b) => b.id === boneId) ?? bone;
-      const frame = boneFrame(attachment, wb);
+      const frame = boneFrame(attachment, wb, SKIN_FRAME);
       const lx = attachment.x * frame.flipX + vertex.x * frame.totalScaleX * SPRITE_SCALE;
       const ly = attachment.y * frame.flipY + vertex.y * frame.totalScaleY * SPRITE_SCALE;
-      const [px, py] = toWorld(frame, lx, ly);
+      const [px, py, pz] = toWorld(frame, lx, ly, depth);
       wx += weight * px;
       wy += weight * py;
+      wz += weight * pz;
       total += weight;
     }
-    if (total > 0) return [wx / total, wy / total];
+    if (total > 0) return [wx / total, wy / total, wz / total];
   }
 
-  const frame = boneFrame(attachment, bone);
+  const frame = boneFrame(attachment, bone, SKIN_FRAME);
   const lx = attachment.x * frame.flipX + vertex.x * frame.totalScaleX * SPRITE_SCALE;
   const ly = attachment.y * frame.flipY + vertex.y * frame.totalScaleY * SPRITE_SCALE;
-  return toWorld(frame, lx, ly);
+  return toWorld(frame, lx, ly, depth);
 };
 
 /** World-space position of one vertex rigidly attached to a single bone (no weights). */
@@ -95,15 +124,16 @@ export const getVertexWorldPos = (
   attachment: Attachment,
   bone: Bone,
 ): [number, number] => {
-  const frame = boneFrame(attachment, bone);
+  const frame = boneFrame(attachment, bone, POINT_FRAME);
   const lx = attachment.x * frame.flipX + vertex.x * frame.totalScaleX * SPRITE_SCALE;
   const ly = attachment.y * frame.flipY + vertex.y * frame.totalScaleY * SPRITE_SCALE;
-  return toWorld(frame, lx, ly);
+  const [wx, wy] = toWorld(frame, lx, ly);
+  return [wx, wy];
 };
 
 /** Quad geometry for a plain image attachment (matches Canvas drawAttachment). */
-const quadGeometry = (attachment: Attachment, bone: Bone): AttachmentGeometry => {
-  const frame = boneFrame(attachment, bone);
+const quadGeometry = (attachment: Attachment, bone: Bone, depth: number): AttachmentGeometry => {
+  const frame = boneFrame(attachment, bone, QUAD_FRAME);
   const fullW = attachment.width * Math.abs(frame.totalScaleX) * SPRITE_SCALE;
   const fullH = attachment.height * Math.abs(frame.totalScaleY) * SPRITE_SCALE;
 
@@ -142,12 +172,13 @@ const quadGeometry = (attachment: Attachment, bone: Bone): AttachmentGeometry =>
     [fx(left), fy(bottom), 0, 1],
   ];
 
-  const positions = new Float32Array(8);
+  const positions = new Float32Array(12);
   const uvs = new Float32Array(8);
   corners.forEach(([lx, ly, u, v], i) => {
-    const [px, py] = toWorld(frame, lx, ly);
-    positions[i * 2] = px;
-    positions[i * 2 + 1] = py;
+    const [px, py, pz] = toWorld(frame, lx, ly, depth);
+    positions[i * 3] = px;
+    positions[i * 3 + 1] = py;
+    positions[i * 3 + 2] = pz;
     uvs[i * 2] = u;
     uvs[i * 2 + 1] = v;
   });
@@ -164,18 +195,20 @@ const meshGeometry = (
   attachment: Attachment,
   bone: Bone,
   allBones: Bone[],
+  depth: number,
 ): AttachmentGeometry => {
   const mesh = attachment.mesh!;
   const verts = mesh.vertices;
-  const positions = new Float32Array(verts.length * 2);
+  const positions = new Float32Array(verts.length * 3);
   const uvs = new Float32Array(verts.length * 2);
 
   for (let i = 0; i < verts.length; i += 1) {
     const v = verts[i]!;
     const weights = attachment.vertexWeights?.[i];
-    const [px, py] = skinVertex(v, weights, attachment, bone, allBones);
-    positions[i * 2] = px;
-    positions[i * 2 + 1] = py;
+    const [px, py, pz] = skinVertex(v, weights, attachment, bone, allBones, depth);
+    positions[i * 3] = px;
+    positions[i * 3 + 1] = py;
+    positions[i * 3 + 2] = pz;
     uvs[i * 2] = v.u;
     uvs[i * 2 + 1] = v.v;
   }
@@ -204,7 +237,7 @@ export const getMeshVertexScreenPositions = (
   const verts = vertices ?? attachment.mesh?.vertices ?? [];
   return verts.map((v, i) => {
     const weights = attachment.vertexWeights?.[i];
-    const [wx, wy] = skinVertex(v, weights, attachment, bone, allBones);
+    const [wx, wy] = skinVertex(v, weights, attachment, bone, allBones, 0);
     return worldToScreen(wx, wy);
   });
 };
@@ -304,9 +337,11 @@ export const getAttachmentGeometry = (
   attachment: Attachment,
   bone: Bone,
   allBones: Bone[],
+  /** World-space Z for every vertex — the attachment's layer. See `drawOrder`. */
+  depth = 0,
 ): AttachmentGeometry => {
   if (attachment.type === 'mesh' && attachment.mesh?.vertices.length && attachment.mesh.triangles.length) {
-    return meshGeometry(attachment, bone, allBones);
+    return meshGeometry(attachment, bone, allBones, depth);
   }
-  return quadGeometry(attachment, bone);
+  return quadGeometry(attachment, bone, depth);
 };

@@ -110,7 +110,7 @@ When the application starts and the project is empty, SpineBones automatically l
 
 The top toolbar contains:
 
-- Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`, `Mesh`
+- Tool selection: `Pose`, `Bone`, `Move`, `Rotate`, `Scale`, `Mesh`, `Warp`, `Weights`
 - `Undo` and `Redo`
 - `Key` to insert keyframes for the selected bones
 - `Clear` to remove all animation keyframes from the timeline

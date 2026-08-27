@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine } from 'lucide-react';
+import { MousePointer, Bone, Move, RotateCw, Maximize2, Undo2, Redo2, Save, Upload, Video, Image, XCircle, ArrowLeftRight, ArrowUpDown, Grid2x2, Eye, Images, FolderOpen, Monitor, ScanLine, Paintbrush } from 'lucide-react';
 import { SpriteSheetExportDialog } from '../export/SpriteSheetExportDialog';
 import { PngSequenceExportDialog } from '../export/PngSequenceExportDialog';
 import { useEditorStore } from '../../stores/editorStore';
@@ -24,6 +24,7 @@ const TOOL_ICONS = {
   scale: Maximize2,
   mesh: ScanLine,
   warp: Grid2x2,
+  weights: Paintbrush,
 };
 
 const TOOL_LABELS = {
@@ -34,6 +35,7 @@ const TOOL_LABELS = {
   scale: 'Scale',
   mesh: 'Mesh',
   warp: 'Warp',
+  weights: 'Weights',
 };
 
 const TOOL_SHORTCUTS: Partial<Record<keyof typeof TOOL_LABELS, string>> = {
@@ -43,6 +45,8 @@ const TOOL_SHORTCUTS: Partial<Record<keyof typeof TOOL_LABELS, string>> = {
   rotate: 'R',
   scale: 'S',
   mesh: 'H',
+  warp: 'G',
+  weights: 'P',
 };
 
 const IMAGE_FILTERS = [

@@ -8,13 +8,13 @@
  */
 
 const VERTEX_SRC = `
-attribute vec2 aPos;
+attribute vec3 aPos;
 attribute vec2 aUV;
-uniform vec4 uTransform; // (ax, ay, bx, by): clip = pos * (ax,ay) + (bx,by)
+uniform mat4 uMVP; // world -> clip
 varying vec2 vUV;
 void main() {
   vUV = aUV;
-  gl_Position = vec4(aPos.x * uTransform.x + uTransform.z, aPos.y * uTransform.y + uTransform.w, 0.0, 1.0);
+  gl_Position = uMVP * vec4(aPos, 1.0);
 }
 `;
 
@@ -33,7 +33,7 @@ export interface GLProgram {
   program: WebGLProgram;
   attribs: { aPos: number; aUV: number };
   uniforms: {
-    uTransform: WebGLUniformLocation;
+    uMVP: WebGLUniformLocation;
     uSampler: WebGLUniformLocation;
     uAlpha: WebGLUniformLocation;
   };
@@ -68,10 +68,10 @@ export const createProgram = (gl: WebGLRenderingContext): GLProgram => {
     throw new Error(`Program link error: ${log}`);
   }
 
-  const uTransform = gl.getUniformLocation(program, 'uTransform');
+  const uMVP = gl.getUniformLocation(program, 'uMVP');
   const uSampler = gl.getUniformLocation(program, 'uSampler');
   const uAlpha = gl.getUniformLocation(program, 'uAlpha');
-  if (!uTransform || !uSampler || !uAlpha) {
+  if (!uMVP || !uSampler || !uAlpha) {
     throw new Error('Failed to resolve shader uniforms');
   }
 
@@ -81,7 +81,7 @@ export const createProgram = (gl: WebGLRenderingContext): GLProgram => {
       aPos: gl.getAttribLocation(program, 'aPos'),
       aUV: gl.getAttribLocation(program, 'aUV'),
     },
-    uniforms: { uTransform, uSampler, uAlpha },
+    uniforms: { uMVP, uSampler, uAlpha },
   };
 };
 

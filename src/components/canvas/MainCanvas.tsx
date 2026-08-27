@@ -573,12 +573,16 @@ export const MainCanvas = () => {
 
     computeAllWorldTransforms(bones);
 
-    // Apply physics offsets to bones
-    for (const bone of bones) {
-      const offset = physicsOffsets[bone.id];
-      if (offset) {
-        bone._wx += offset.dx;
-        bone._wy += offset.dy;
+    // Apply physics offsets only when not using a tool that needs stable bone
+    // positions. Restored from a4e94df, which added this guard to stop bones
+    // drifting under the cursor while editing; 79ec81f dropped it by accident.
+    if (tool !== 'mesh' && tool !== 'warp' && tool !== 'weights') {
+      for (const bone of bones) {
+        const offset = physicsOffsets[bone.id];
+        if (offset) {
+          bone._wx += offset.dx;
+          bone._wy += offset.dy;
+        }
       }
     }
 
