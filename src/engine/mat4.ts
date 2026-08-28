@@ -244,6 +244,29 @@ export const ortho2D = (
 };
 
 /**
+ * Inverse of a rigid transform — rotation plus translation, no scale.
+ *
+ * A rotation's inverse is its transpose, so this needs no general inversion:
+ * transpose the upper-left 3x3, then negate the translation through it. Every
+ * frame this codebase builds is rigid (scale is applied separately, by the
+ * caller), so this is always the right inverse to use.
+ */
+export const invertRigid = (m: ReadonlyMat4, out: Mat4 = create()): Mat4 => {
+  const tx = m[12]!;
+  const ty = m[13]!;
+  const tz = m[14]!;
+
+  out[0] = m[0]!; out[1] = m[4]!; out[2] = m[8]!; out[3] = 0;
+  out[4] = m[1]!; out[5] = m[5]!; out[6] = m[9]!; out[7] = 0;
+  out[8] = m[2]!; out[9] = m[6]!; out[10] = m[10]!; out[11] = 0;
+  out[12] = -(m[0]! * tx + m[1]! * ty + m[2]! * tz);
+  out[13] = -(m[4]! * tx + m[5]! * ty + m[6]! * tz);
+  out[14] = -(m[8]! * tx + m[9]! * ty + m[10]! * tz);
+  out[15] = 1;
+  return out;
+};
+
+/**
  * Transform a point (implicit w = 1), ignoring any perspective row.
  * Accepts a float32 matrix so callers can measure what the GPU actually sees.
  *

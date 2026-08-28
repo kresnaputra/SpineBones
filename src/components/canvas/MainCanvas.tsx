@@ -9,7 +9,7 @@ import { useDeformerStore } from '../../stores/deformerStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
 import { computeDrawSequence } from '../../engine/drawOrder';
-import { orbitPlaneConditioning } from '../../engine/mat4';
+import { invertRigid, orbitPlaneConditioning, transformPoint } from '../../engine/mat4';
 import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
 import { drawAttachmentOutline, drawSlotOutlines, hitTestAttachment } from '../../engine/imageRenderer';
 import { createMeshRenderer, type MeshRenderer } from '../../engine/webgl/meshRenderer';
@@ -36,7 +36,7 @@ import {
   MIN_PLANE_CONDITIONING,
 } from '../../engine/viewport';
 import { hitTestBone } from '../../engine/hitTest';
-import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
+import { getIkChain, getIkRootForBone, isIkChainTilted, solveTwoBoneIk } from '../../utils/ik';
 import { getAdjacentKeyframes, sampleBonesAtFrame } from '../../utils/animationPose';
 import { resolveSlotsAtFrame } from '../../utils/slotAnimation';
 
@@ -921,15 +921,27 @@ export const MainCanvas = () => {
     if (activeIkRootId !== null && ikChainRootIds.includes(activeIkRootId)) {
       const ikChain = getIkChain(activeIkRootId, bones);
       if (ikChain) {
+        // A tilted chain cannot be solved in the screen plane, so the handle is
+        // drawn dimmed and struck through rather than silently doing nothing.
+        const ikDisabled = isIkChainTilted(activeIkRootId, bones);
         const handle = previewWorldToScreen(ikChain.target.x, ikChain.target.y);
         ov.save();
         ov.beginPath();
         ov.arc(handle.x, handle.y, IK_HANDLE_RADIUS, 0, Math.PI * 2);
-        ov.fillStyle = 'rgba(6, 182, 212, 0.18)';
+        ov.fillStyle = ikDisabled ? 'rgba(148,163,184,0.12)' : 'rgba(6, 182, 212, 0.18)';
         ov.fill();
-        ov.strokeStyle = '#06b6d4';
+        ov.strokeStyle = ikDisabled ? '#94a3b8' : '#06b6d4';
         ov.lineWidth = 2;
+        if (ikDisabled) ov.setLineDash([3, 3]);
         ov.stroke();
+        ov.setLineDash([]);
+        if (ikDisabled) {
+          const r = IK_HANDLE_RADIUS * 0.75;
+          ov.beginPath();
+          ov.moveTo(handle.x - r, handle.y - r);
+          ov.lineTo(handle.x + r, handle.y + r);
+          ov.stroke();
+        }
         ov.beginPath();
         ov.moveTo(handle.x - 6, handle.y);
         ov.lineTo(handle.x + 6, handle.y);
@@ -1136,7 +1148,15 @@ export const MainCanvas = () => {
 
           if (initialState.parentId !== null) {
             const parent = bones.find((b) => b.id === initialState.parentId);
-            if (parent) {
+            if (parent?._wm) {
+              // A tilted parent's local X axis is foreshortened by cos(tilt) in
+              // world XY — and past 90 degrees that factor goes negative, which
+              // is what made the bone run away from the cursor. Undo the parent's
+              // full frame instead of just its Z angle.
+              const [lx, ly] = transformPoint(invertRigid(parent._wm), nextX, nextY, 0);
+              nextX = lx / parent.scaleX;
+              nextY = ly / parent.scaleY;
+            } else if (parent) {
               const cos = Math.cos((-parent._wrot * Math.PI) / 180);
               const sin = Math.sin((-parent._wrot * Math.PI) / 180);
               const localDx = nextX - parent._wx;

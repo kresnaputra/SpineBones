@@ -347,6 +347,59 @@ export const runMat4SelfChecks = async (): Promise<SelfCheckResult | null> => {
     );
   }
 
+  // --- rigid inverse: the move tool's world -> local conversion --------------
+  // Converting a dragged world point into a tilted parent's local space using
+  // only its Z angle foreshortens by cos(tilt) — and past 90 degrees the sign
+  // flips, so the bone runs the wrong way. These pin the real inverse down.
+  {
+    let worstRound = 0;
+    let worstPoint = 0;
+    for (const [tx, ty, rotZ, rotY, rotX] of [
+      [0, 0, 0, 0, 0],
+      [12.5, -7.25, 33.5, 0, 0],
+      [-41.75, 62.5, -18.25, 47.5, 0],
+      [8.5, 19.75, 61.25, 118.5, -29.75], // past 90 degrees: where the sign flipped
+    ] as const) {
+      const frame = m.multiply(
+        m.fromTranslation(tx, ty, 0),
+        m.multiply(m.multiply(m.fromRotationY(rotY), m.fromRotationX(rotX)), m.fromTranslationRotationZ(0, 0, rotZ)),
+      );
+      worstRound = Math.max(worstRound, maxAbsDiff(m.multiply(frame, m.invertRigid(frame)), IDENTITY));
+
+      for (const [px, py, pz] of [[0, 0, 0], [147.25, -83.5, 0], [-61.75, 209.25, 34.5]] as const) {
+        const [wx, wy, wz] = m.transformPoint(frame, px, py, pz);
+        const [bx, by, bz] = m.transformPoint(m.invertRigid(frame), wx!, wy!, wz!);
+        worstPoint = Math.max(worstPoint, Math.abs(bx! - px), Math.abs(by! - py), Math.abs(bz! - pz));
+      }
+    }
+    check('frame * invertRigid(frame) is the identity', worstRound < 1e-12, `max delta ${worstRound}`);
+    check('a point survives frame then inverse unchanged', worstPoint < 1e-9, `max drift ${worstPoint}`);
+
+    // The failure this fixed: past 90 degrees the Z-only conversion puts the
+    // bone on the *opposite* side of the parent from the cursor. What matters is
+    // not the sign of the local coordinate — it is legitimately negative here —
+    // but where the bone ends up in the world once the frame is reapplied.
+    const parent = m.fromRotationY(120);
+    const cursorWorldX = 100;
+
+    // Z-only: local x is taken as the world delta, unchanged.
+    const [naiveWorldX] = m.transformPoint(parent, cursorWorldX, 0, 0);
+    // Full inverse: map into the parent's frame first.
+    const [localX, localY] = m.transformPoint(m.invertRigid(parent), cursorWorldX, 0, 0);
+    const [fixedWorldX] = m.transformPoint(parent, localX!, localY!, 0);
+
+    check(
+      'past 90 degrees the Z-only conversion lands the bone on the wrong side',
+      Math.sign(naiveWorldX!) !== Math.sign(cursorWorldX),
+      `naive landed at ${naiveWorldX}`,
+    );
+    check(
+      'the full inverse lands the bone on the cursor side',
+      Math.sign(fixedWorldX!) === Math.sign(cursorWorldX),
+      `landed at ${fixedWorldX}`,
+    );
+  }
+
   // --- accessors -----------------------------------------------------------
   check(
     'getTranslation reads the translation column',

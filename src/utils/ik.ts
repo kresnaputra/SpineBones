@@ -63,6 +63,46 @@ export const getIkChain = (rootId: number, bones: Bone[]): IkChain | null => {
   };
 };
 
+/**
+ * Whether an IK chain is tilted out of the screen plane.
+ *
+ * The solver below works in world XY with unforeshortened bone lengths. A tilted
+ * chain is foreshortened in that plane — a bone of length 80 tilted 40 degrees
+ * spans only 61 — so the solver aims for a reach it does not have and the tip
+ * falls short. Measured: 18.6 units off at 40 degrees, 45.9 at 65.
+ *
+ * Solving this properly means working in the chain's own plane rather than the
+ * screen's: intersect the cursor ray with the plane spanned by the root bone's
+ * local axes, map the hit into that frame, and solve there. Until that exists,
+ * refusing is the honest answer — a silently wrong limb is worse than one that
+ * does not move.
+ */
+export const isIkChainTilted = (rootId: number, bones: Bone[]): boolean => {
+  const chain = getIkChain(rootId, bones);
+  if (!chain) return false;
+
+  // A threshold, not an exact comparison. Dragging a gizmo ring back to "flat"
+  // by eye leaves something like 0.0003 degrees behind, and an exact test would
+  // then keep IK switched off forever with no way to tell why. Half a degree
+  // foreshortens an 80-unit bone by 0.003 units — far below anything visible.
+  const TILT_EPSILON_DEGREES = 0.5;
+  const tilted = (bone: Bone | null | undefined): boolean =>
+    !!bone &&
+    (Math.abs(bone.rotationX ?? 0) > TILT_EPSILON_DEGREES ||
+      Math.abs(bone.rotationY ?? 0) > TILT_EPSILON_DEGREES);
+
+  // Ancestors count too: inherited tilt foreshortens the chain just the same.
+  let ancestor: Bone | null | undefined = chain.root;
+  const seen = new Set<number>();
+  while (ancestor && !seen.has(ancestor.id)) {
+    seen.add(ancestor.id);
+    if (tilted(ancestor)) return true;
+    ancestor = ancestor.parentId === null ? null : bones.find((b) => b.id === ancestor!.parentId);
+  }
+
+  return tilted(chain.child) || tilted(chain.end);
+};
+
 export const solveTwoBoneIk = (
   rootId: number,
   target: Point,
@@ -70,6 +110,10 @@ export const solveTwoBoneIk = (
 ): { rootRotation: number; childRotation: number; childX?: number; childY?: number } | null => {
   const chain = getIkChain(rootId, bones);
   if (!chain) return null;
+
+  // See `isIkChainTilted`: the maths below cannot represent a chain that leaves
+  // the screen plane, so refuse rather than return a plausible wrong answer.
+  if (isIkChainTilted(rootId, bones)) return null;
 
   const { root, child, end, target: currentTarget } = chain;
   const parent = root.parentId !== null
