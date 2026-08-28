@@ -23,9 +23,44 @@ precision mediump float;
 varying vec2 vUV;
 uniform sampler2D uSampler;
 uniform float uAlpha;
+uniform vec2 uTextureSize;
+uniform float uPixelSize;
+uniform float uPixelFrame;
+uniform float uLineBoil;
+float hash(vec2 value) {
+  return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453);
+}
 void main() {
+  vec2 sampleUV = vUV;
+  vec2 cell = floor(vUV * uTextureSize / max(uPixelSize, 1.0));
+  if (uPixelSize > 1.0) {
+    vec2 block = vec2(uPixelSize);
+    sampleUV = (cell * block + block * 0.5) / uTextureSize;
+    sampleUV = clamp(sampleUV, vec2(0.0), vec2(1.0));
+  }
+
+  vec4 color = texture2D(uSampler, sampleUV);
+  if (uLineBoil > 0.5) {
+    float phase = mod(uPixelFrame, 3.0);
+    vec2 stepUV = vec2(uPixelSize) / uTextureSize;
+    vec4 edgeColor = texture2D(uSampler, clamp(sampleUV + vec2(-stepUV.x, 0.0), vec2(0.0), vec2(1.0)));
+    vec4 candidate = texture2D(uSampler, clamp(sampleUV + vec2(stepUV.x, 0.0), vec2(0.0), vec2(1.0)));
+    if (candidate.a > edgeColor.a) edgeColor = candidate;
+    candidate = texture2D(uSampler, clamp(sampleUV + vec2(0.0, -stepUV.y), vec2(0.0), vec2(1.0)));
+    if (candidate.a > edgeColor.a) edgeColor = candidate;
+    candidate = texture2D(uSampler, clamp(sampleUV + vec2(0.0, stepUV.y), vec2(0.0), vec2(1.0)));
+    if (candidate.a > edgeColor.a) edgeColor = candidate;
+
+    float outerNoise = hash(cell + phase * 23.0);
+    float innerNoise = hash(cell.yx + phase * 41.0);
+    if (color.a < 0.12 && edgeColor.a >= 0.12 && outerNoise < 0.72) {
+      color = edgeColor;
+    } else if (color.a >= 0.12 && edgeColor.a < 0.12 && innerNoise < 0.12) {
+      color = vec4(0.0);
+    }
+  }
   // Texture is premultiplied; scaling by uAlpha keeps it premultiplied.
-  gl_FragColor = texture2D(uSampler, vUV) * uAlpha;
+  gl_FragColor = color * uAlpha;
 }
 `;
 
@@ -36,6 +71,10 @@ export interface GLProgram {
     uMVP: WebGLUniformLocation;
     uSampler: WebGLUniformLocation;
     uAlpha: WebGLUniformLocation;
+    uTextureSize: WebGLUniformLocation;
+    uPixelSize: WebGLUniformLocation;
+    uPixelFrame: WebGLUniformLocation;
+    uLineBoil: WebGLUniformLocation;
   };
 }
 
@@ -71,7 +110,11 @@ export const createProgram = (gl: WebGLRenderingContext): GLProgram => {
   const uMVP = gl.getUniformLocation(program, 'uMVP');
   const uSampler = gl.getUniformLocation(program, 'uSampler');
   const uAlpha = gl.getUniformLocation(program, 'uAlpha');
-  if (!uMVP || !uSampler || !uAlpha) {
+  const uTextureSize = gl.getUniformLocation(program, 'uTextureSize');
+  const uPixelSize = gl.getUniformLocation(program, 'uPixelSize');
+  const uPixelFrame = gl.getUniformLocation(program, 'uPixelFrame');
+  const uLineBoil = gl.getUniformLocation(program, 'uLineBoil');
+  if (!uMVP || !uSampler || !uAlpha || !uTextureSize || !uPixelSize || !uPixelFrame || !uLineBoil) {
     throw new Error('Failed to resolve shader uniforms');
   }
 
@@ -81,7 +124,15 @@ export const createProgram = (gl: WebGLRenderingContext): GLProgram => {
       aPos: gl.getAttribLocation(program, 'aPos'),
       aUV: gl.getAttribLocation(program, 'aUV'),
     },
-    uniforms: { uMVP, uSampler, uAlpha },
+    uniforms: {
+      uMVP,
+      uSampler,
+      uAlpha,
+      uTextureSize,
+      uPixelSize,
+      uPixelFrame,
+      uLineBoil,
+    },
   };
 };
 

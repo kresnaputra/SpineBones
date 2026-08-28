@@ -3,7 +3,7 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
 import { useSlotStore } from '../../stores/slotStore';
-import { openImageFile } from '../../utils/nativeIO';
+import { getFileNameFromPath, openImageFile } from '../../utils/nativeIO';
 import { useHistoryStore } from '../../stores/historyStore';
 import { getOpaqueBoundsFromImageData } from '../../utils/attachmentUtils';
 import { resolveSlotAttachmentAtFrame } from '../../utils/slotAnimation';
@@ -148,8 +148,11 @@ export const SlotListPanel = () => {
                       {slotAttachments.length} attachment{slotAttachments.length === 1 ? '' : 's'}
                     </div>
                     {activeAttachment && (
-                      <div className="text-[9px] text-text-dim">
-                        {activeAttachment.imagePath}
+                      <div
+                        className="truncate text-[9px] text-text-dim"
+                        title={activeAttachment.imagePath}
+                      >
+                        {getFileNameFromPath(activeAttachment.imagePath)}
                       </div>
                     )}
                   </div>

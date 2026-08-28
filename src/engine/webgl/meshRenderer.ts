@@ -122,8 +122,24 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    const textureFilter = attachment.pixelated ? gl.NEAREST : gl.LINEAR;
+    const textureWidth = attachment.imageIsCropped
+      ? attachment.opaqueBounds?.width ?? attachment.width
+      : attachment.width;
+    const textureHeight = attachment.imageIsCropped
+      ? attachment.opaqueBounds?.height ?? attachment.height
+      : attachment.height;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, textureFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, textureFilter);
     gl.uniform1i(glProgram.uniforms.uSampler, 0);
     gl.uniform1f(glProgram.uniforms.uAlpha, alpha * (attachment.opacity ?? 1));
+    gl.uniform2f(glProgram.uniforms.uTextureSize, textureWidth, textureHeight);
+    gl.uniform1f(glProgram.uniforms.uPixelSize, attachment.pixelated ? attachment.pixelSize ?? 4 : 1);
+    gl.uniform1f(glProgram.uniforms.uPixelFrame, attachment.pixelFrame ?? 0);
+    gl.uniform1f(
+      glProgram.uniforms.uLineBoil,
+      attachment.pixelated && attachment.lineBoil ? 1 : 0,
+    );
 
     gl.drawElements(gl.TRIANGLES, geo.indices.length, gl.UNSIGNED_SHORT, 0);
   };

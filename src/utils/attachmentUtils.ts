@@ -119,6 +119,7 @@ export const resolveAttachmentAtFrame = (
   return {
     ...attachment,
     opacity: resolveAttachmentOpacityAtFrame(attachment, frame, attachmentOpacityKeyframes),
+    pixelFrame: frame,
     mesh: resolvedMesh,
   };
 };

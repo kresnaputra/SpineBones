@@ -57,6 +57,10 @@ export interface Attachment {
   imagePath: string;
   imageData?: string;
   opacity?: number;
+  pixelated?: boolean;
+  pixelSize?: number;
+  lineBoil?: boolean;
+  pixelFrame?: number;
   opaqueBounds?: {
     x: number;
     y: number;
@@ -242,6 +246,9 @@ export interface ProjectData {
   duration: number;
   fps: number;
   backgroundImage?: string | null;
+  pixelArtEnabled?: boolean;
+  pixelArtSize?: number;
+  lineBoilEnabled?: boolean;
   audioTracks?: AudioTrack[];
   activeAudioTrackId?: number | null;
   audioData?: string | null;

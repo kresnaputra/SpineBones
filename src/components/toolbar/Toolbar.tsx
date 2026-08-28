@@ -74,6 +74,12 @@ export const Toolbar = () => {
     toggleOnionSkin,
     showViewport,
     toggleViewport,
+    pixelArtEnabled,
+    pixelArtSize,
+    lineBoilEnabled,
+    setPixelArtEnabled,
+    setPixelArtSize,
+    setLineBoilEnabled,
     setBackgroundImage,
     setShowProjectBrowser,
   } = useEditorStore();
@@ -84,6 +90,43 @@ export const Toolbar = () => {
   const { captureSnapshot, undo, redo, past, future } = useHistoryStore();
   const showToolbarFileActions = !isDesktopApp();
   const showProjectBrowserButton = isDesktopApp();
+
+  const handlePixelArtToggle = () => {
+    const enabled = !pixelArtEnabled;
+    captureSnapshot();
+    setPixelArtEnabled(enabled);
+    useSlotStore.setState((state) => ({
+      attachments: state.attachments.map((attachment) => ({
+        ...attachment,
+        pixelated: enabled,
+        pixelSize: pixelArtSize,
+      })),
+    }));
+  };
+
+  const handleLineBoilToggle = () => {
+    const enabled = !lineBoilEnabled;
+    captureSnapshot();
+    setLineBoilEnabled(enabled);
+    useSlotStore.setState((state) => ({
+      attachments: state.attachments.map((attachment) => ({
+        ...attachment,
+        lineBoil: enabled,
+      })),
+    }));
+  };
+
+  const handlePixelArtSizeChange = (size: number) => {
+    const nextSize = Math.max(1, Math.min(32, Math.round(size)));
+    captureSnapshot();
+    setPixelArtSize(nextSize);
+    useSlotStore.setState((state) => ({
+      attachments: state.attachments.map((attachment) => ({
+        ...attachment,
+        pixelSize: nextSize,
+      })),
+    }));
+  };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
     if (selectedBoneIds.length === 0) return;
@@ -504,6 +547,44 @@ export const Toolbar = () => {
         <Monitor size={14} />
         Viewport
       </button>
+
+      <div className="flex items-center gap-1 rounded border border-border bg-panel2 p-1">
+        <button
+          onClick={handlePixelArtToggle}
+          className={`flex items-center gap-2 rounded border px-2 py-1 text-[11px] transition-all ${
+            pixelArtEnabled
+              ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
+              : 'border-transparent bg-transparent text-text-dim hover:border-border hover:text-text'
+          }`}
+          title="Toggle pixel-art rendering for all sprites"
+        >
+          <Grid2x2 size={14} />
+          Pixel Art
+        </button>
+        <button
+          onClick={handleLineBoilToggle}
+          disabled={!pixelArtEnabled}
+          className={`rounded border px-2 py-1 text-[11px] transition-all disabled:opacity-40 ${
+            lineBoilEnabled && pixelArtEnabled
+              ? 'border-rose-500/50 bg-rose-500/20 text-rose-300'
+              : 'border-transparent bg-transparent text-text-dim hover:border-border hover:text-text'
+          }`}
+          title="Redraw pixel edges with a deterministic variation on every frame"
+        >
+          Line Boil
+        </button>
+        <label className="flex items-center gap-1 text-[10px] text-text-dim" title="Pixel block size">
+          Size
+          <input
+            type="number"
+            min="1"
+            max="32"
+            value={pixelArtSize}
+            onChange={(event) => handlePixelArtSizeChange(Number(event.target.value) || 1)}
+            className="w-11 rounded border border-border bg-panel px-1 py-1 text-center text-[11px] text-text focus:border-accent focus:outline-none"
+          />
+        </label>
+      </div>
 
       <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
         <button

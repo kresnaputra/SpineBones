@@ -8,10 +8,16 @@ type AttachmentOutlineOptions = {
 };
 
 const imageCache = new Map<string, HTMLImageElement>();
+const pixelImageCache = new Map<string, HTMLCanvasElement>();
 const outlineCache = new Map<string, HTMLCanvasElement>();
 
 export const clearAttachmentCache = (imageData: string): void => {
   imageCache.delete(imageData);
+  for (const key of pixelImageCache.keys()) {
+    if (key.startsWith(`${imageData}::`)) {
+      pixelImageCache.delete(key);
+    }
+  }
   for (const key of outlineCache.keys()) {
     if (key.startsWith(`${imageData}::`)) {
       outlineCache.delete(key);
@@ -34,6 +40,83 @@ export const loadImage = (imageData: string): Promise<HTMLImageElement> => {
     img.onerror = reject;
     img.src = imageData;
   });
+};
+
+const getPixelImage = (
+  imageData: string,
+  image: HTMLImageElement,
+  pixelSize: number,
+  lineBoil: boolean,
+  frame: number,
+): HTMLCanvasElement => {
+  const size = Math.max(1, Math.min(32, Math.round(pixelSize)));
+  const phase = lineBoil ? Math.abs(Math.round(frame)) % 3 : 0;
+  const key = `${imageData}::${size}::${lineBoil ? phase : 'still'}`;
+  const cached = pixelImageCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(image.width / size));
+  canvas.height = Math.max(1, Math.ceil(image.height / size));
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    if (lineBoil && canvas.width > 2 && canvas.height > 2) {
+      const imageDataResult = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const source = new Uint8ClampedArray(imageDataResult.data);
+      const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+
+      for (let y = 0; y < canvas.height; y += 1) {
+        for (let x = 0; x < canvas.width; x += 1) {
+          const index = (y * canvas.width + x) * 4;
+          const alpha = source[index + 3] ?? 0;
+          let opaqueNeighbor = -1;
+          let opaqueAlpha = alpha;
+          let transparentNeighbor = -1;
+          let transparentAlpha = alpha;
+
+          directions.forEach(([dx, dy]) => {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || nx >= canvas.width || ny < 0 || ny >= canvas.height) return;
+            const neighborIndex = (ny * canvas.width + nx) * 4;
+            const neighborAlpha = source[neighborIndex + 3] ?? 0;
+            if (neighborAlpha > opaqueAlpha) {
+              opaqueAlpha = neighborAlpha;
+              opaqueNeighbor = neighborIndex;
+            }
+            if (neighborAlpha < transparentAlpha) {
+              transparentAlpha = neighborAlpha;
+              transparentNeighbor = neighborIndex;
+            }
+          });
+
+          const hash = Math.abs(
+            Math.imul(x + 17, 73856093) ^
+              Math.imul(y + 31, 19349663) ^
+              Math.imul(phase + 7, 83492791),
+          );
+          const sourceIndex =
+            alpha < 48 && opaqueAlpha >= 48 && hash % 100 < 72
+              ? opaqueNeighbor
+              : alpha >= 48 && transparentAlpha < 48 && hash % 100 < 8
+                ? transparentNeighbor
+                : -1;
+          if (sourceIndex < 0) continue;
+
+          imageDataResult.data[index] = source[sourceIndex] ?? 0;
+          imageDataResult.data[index + 1] = source[sourceIndex + 1] ?? 0;
+          imageDataResult.data[index + 2] = source[sourceIndex + 2] ?? 0;
+          imageDataResult.data[index + 3] = source[sourceIndex + 3] ?? 0;
+        }
+      }
+      ctx.putImageData(imageDataResult, 0, 0);
+    }
+  }
+  pixelImageCache.set(key, canvas);
+  return canvas;
 };
 
 const getAttachmentTransform = (attachment: Attachment, bone: Bone, zoom: number) => {
@@ -109,8 +192,19 @@ export const drawAttachment = (
     return;
   }
 
+  const source = attachment.pixelated
+    ? getPixelImage(
+        attachment.imageData,
+        img,
+        attachment.pixelSize ?? 4,
+        attachment.lineBoil ?? false,
+        attachment.pixelFrame ?? 0,
+      )
+    : img;
+
   ctx.save();
   ctx.globalAlpha = alpha * (attachment.opacity ?? 1);
+  ctx.imageSmoothingEnabled = !attachment.pixelated;
 
   const screenPos = worldToScreen(bone._wx, bone._wy);
   ctx.translate(screenPos.x, screenPos.y);
@@ -131,9 +225,9 @@ export const drawAttachment = (
     const { x: ox, y: oy, width: cw, height: ch } = attachment.opaqueBounds;
     const scaleX = w / attachment.width;
     const scaleY = h / attachment.height;
-    ctx.drawImage(img, offsetX - w / 2 + ox * scaleX, offsetY - h / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
+    ctx.drawImage(source, offsetX - w / 2 + ox * scaleX, offsetY - h / 2 + oy * scaleY, cw * scaleX, ch * scaleY);
   } else {
-    ctx.drawImage(img, offsetX - w / 2, offsetY - h / 2, w, h);
+    ctx.drawImage(source, offsetX - w / 2, offsetY - h / 2, w, h);
   }
 
   ctx.restore();
@@ -190,6 +284,7 @@ export const drawAttachmentOutline = (
   const offsetY = attachment.y * zoom;
 
   ctx.save();
+  ctx.imageSmoothingEnabled = !attachment.pixelated;
   ctx.translate(screenPos.x, screenPos.y);
   ctx.rotate(totalRotation);
   ctx.scale(flipX, flipY);

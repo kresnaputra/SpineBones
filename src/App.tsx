@@ -63,6 +63,9 @@ type McpEditorCommand = {
   attachmentName?: string;
   attachmentPath?: string;
   drawOrder?: number;
+  pixelated?: boolean;
+  pixelSize?: number;
+  lineBoil?: boolean;
   frame?: number;
   startFrame?: number;
   endFrame?: number;
@@ -1281,11 +1284,30 @@ const setViewFlagsFromCommand = (payload: McpEditorCommand) => {
   if (payload.commandType === 'toggle_attachment_drag') {
     editor.setAttachmentDragEnabled(Boolean(payload.value));
   }
+  if (payload.commandType === 'set_pixel_art') {
+    const enabled = payload.pixelated ?? Boolean(payload.value);
+    const size = Math.max(1, Math.min(32, Math.round(payload.pixelSize ?? editor.pixelArtSize)));
+    const lineBoil = payload.lineBoil ?? editor.lineBoilEnabled;
+    editor.setPixelArtEnabled(enabled);
+    editor.setPixelArtSize(size);
+    editor.setLineBoilEnabled(lineBoil);
+    useSlotStore.setState((state) => ({
+      attachments: state.attachments.map((attachment) => ({
+        ...attachment,
+        pixelated: enabled,
+        pixelSize: size,
+        lineBoil,
+      })),
+    }));
+  }
   return {
     ok: true,
     onionSkinEnabled: useEditorStore.getState().onionSkinEnabled,
     showBoneIndicators: useEditorStore.getState().showBoneIndicators,
     attachmentDragEnabled: useEditorStore.getState().attachmentDragEnabled,
+    pixelArtEnabled: useEditorStore.getState().pixelArtEnabled,
+    pixelArtSize: useEditorStore.getState().pixelArtSize,
+    lineBoilEnabled: useEditorStore.getState().lineBoilEnabled,
   };
 };
 
@@ -1482,6 +1504,9 @@ const buildMcpSnapshot = () => {
     showBoneIndicators: editor.showBoneIndicators,
     onionSkinEnabled: editor.onionSkinEnabled,
     attachmentDragEnabled: editor.attachmentDragEnabled,
+    pixelArtEnabled: editor.pixelArtEnabled,
+    pixelArtSize: editor.pixelArtSize,
+    lineBoilEnabled: editor.lineBoilEnabled,
     backgroundImage: editor.backgroundImage,
     camera: {
       x: camera.x,
@@ -1532,6 +1557,9 @@ const buildMcpSnapshot = () => {
       rotation: attachment.rotation,
       scaleX: attachment.scaleX,
       scaleY: attachment.scaleY,
+      pixelated: attachment.pixelated ?? false,
+      pixelSize: attachment.pixelSize ?? 4,
+      lineBoil: attachment.lineBoil ?? false,
     })),
     frame: animation.frame,
     duration: animation.duration,
@@ -2001,7 +2029,8 @@ function App() {
       if (
         payload.commandType === 'set_onion_skin' ||
         payload.commandType === 'set_bone_indicators' ||
-        payload.commandType === 'toggle_attachment_drag'
+        payload.commandType === 'toggle_attachment_drag' ||
+        payload.commandType === 'set_pixel_art'
       ) {
         const result = setViewFlagsFromCommand(payload);
         console.info('MCP view flags:', result);

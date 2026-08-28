@@ -16,6 +16,9 @@ interface ProjectSnapshot {
     selectedBoneId: ReturnType<typeof useEditorStore.getState>['selectedBoneId'];
     selectedBoneIds: ReturnType<typeof useEditorStore.getState>['selectedBoneIds'];
     selectedSlotId: ReturnType<typeof useEditorStore.getState>['selectedSlotId'];
+    pixelArtEnabled: ReturnType<typeof useEditorStore.getState>['pixelArtEnabled'];
+    pixelArtSize: ReturnType<typeof useEditorStore.getState>['pixelArtSize'];
+    lineBoilEnabled: ReturnType<typeof useEditorStore.getState>['lineBoilEnabled'];
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
@@ -106,6 +109,9 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       selectedBoneId: editor.selectedBoneId,
       selectedBoneIds: editor.selectedBoneIds,
       selectedSlotId: editor.selectedSlotId,
+      pixelArtEnabled: editor.pixelArtEnabled,
+      pixelArtSize: editor.pixelArtSize,
+      lineBoilEnabled: editor.lineBoilEnabled,
     },
     skeleton: {
       // `_wm` is a transient render frame, recomputed every pose. Keeping it out
@@ -163,6 +169,9 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     selectedBoneId: snapshot.editor.selectedBoneId,
     selectedBoneIds: cloneSnapshot(snapshot.editor.selectedBoneIds),
     selectedSlotId: snapshot.editor.selectedSlotId,
+    pixelArtEnabled: snapshot.editor.pixelArtEnabled ?? true,
+    pixelArtSize: snapshot.editor.pixelArtSize ?? 4,
+    lineBoilEnabled: snapshot.editor.lineBoilEnabled ?? true,
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),

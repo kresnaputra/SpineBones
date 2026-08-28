@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Slot, Attachment } from '../types';
 import { clearAttachmentCache } from '../engine/imageRenderer';
+import { useEditorStore } from './editorStore';
 
 interface SlotState {
   slots: Slot[];
@@ -66,10 +67,14 @@ export const useSlotStore = create<SlotState>((set, get) => ({
   },
 
   addAttachment: (slotId, attachment) => {
+    const { pixelArtEnabled, pixelArtSize, lineBoilEnabled } = useEditorStore.getState();
     const newAttachment: Attachment = {
       ...attachment,
       slotId,
       opacity: attachment.opacity ?? 1,
+      pixelated: pixelArtEnabled,
+      pixelSize: pixelArtSize,
+      lineBoil: lineBoilEnabled,
     };
 
     set((state) => ({

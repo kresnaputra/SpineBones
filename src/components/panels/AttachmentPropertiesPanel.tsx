@@ -101,7 +101,7 @@ export const AttachmentPropertiesPanel = () => {
         <button
           type="button"
           onClick={() => setAttachmentDragEnabled(!attachmentDragEnabled)}
-          className={`min-w-[88px] rounded-md border px-3 py-1 text-[10px] font-bold uppercase tracking-wide shadow-sm transition-all ${
+          className={`min-w-22 rounded-md border px-3 py-1 text-[10px] font-bold uppercase tracking-wide shadow-sm transition-all ${
             attachmentDragEnabled
               ? 'border-accent bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_14px_rgba(124,58,237,0.35)]'
               : 'border-border bg-panel text-text-dim hover:border-accent/60 hover:text-text'

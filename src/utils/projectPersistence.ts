@@ -387,7 +387,20 @@ const renderProjectThumbnail = async (projectData: ProjectData) => {
     y: size / 2 + (y - centerY) * zoom,
   });
 
-  drawSlots(ctx, projectData.slots, projectData.attachments, bones, worldToScreen, zoom);
+  drawSlots(
+    ctx,
+    projectData.slots,
+    projectData.attachments.map((attachment) => ({
+      ...attachment,
+      pixelated: projectData.pixelArtEnabled ?? true,
+      pixelSize: projectData.pixelArtSize ?? 4,
+      lineBoil: projectData.lineBoilEnabled ?? true,
+      pixelFrame: 0,
+    })),
+    bones,
+    worldToScreen,
+    zoom,
+  );
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -788,7 +801,7 @@ export const buildProjectData = (): ProjectData => {
   });
 
   return {
-    version: '1.4',
+    version: '1.6',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -831,6 +844,9 @@ export const buildProjectData = (): ProjectData => {
     duration: animationState.duration,
     fps: animationState.fps,
     backgroundImage: editorState.backgroundImage,
+    pixelArtEnabled: editorState.pixelArtEnabled,
+    pixelArtSize: editorState.pixelArtSize,
+    lineBoilEnabled: editorState.lineBoilEnabled,
     audioTracks: animationState.audioTracks,
     activeAudioTrackId: animationState.activeAudioTrackId,
     audioData: animationState.audioData,
@@ -850,6 +866,9 @@ export const applyProjectData = (
   }));
   const skins = projectData.skins ?? [{ id: 0, name: 'default', color: '#7c3aed' }];
   const slots = projectData.slots ?? [];
+  const pixelArtEnabled = projectData.pixelArtEnabled ?? true;
+  const pixelArtSize = Math.max(1, Math.min(32, Math.round(projectData.pixelArtSize ?? 4)));
+  const lineBoilEnabled = projectData.lineBoilEnabled ?? true;
   const setupPose = Object.fromEntries(
     Object.entries(projectData.setupPose ?? {}).map(([boneId, pose]) => [
       Number(boneId),
@@ -881,6 +900,9 @@ export const applyProjectData = (
       const next = {
         ...attachment,
         opacity: attachment.opacity ?? 1,
+        pixelated: pixelArtEnabled,
+        pixelSize: pixelArtSize,
+        lineBoil: lineBoilEnabled,
       } as Attachment & Record<string, unknown>;
       const legacyVertices = next.meshVertices as MeshVertex[] | undefined;
       const legacyTriangles = next.meshTriangles as MeshTriangle[] | undefined;
@@ -980,6 +1002,9 @@ export const applyProjectData = (
 
   useEditorStore.setState({
     backgroundImage: projectData.backgroundImage ?? null,
+    pixelArtEnabled,
+    pixelArtSize,
+    lineBoilEnabled,
     currentProjectPath: sourcePath,
     selectedBoneId: null,
     selectedBoneIds: [],
@@ -1041,6 +1066,9 @@ export const createNewProject = () => {
     showBoneIndicators: state.showBoneIndicators,
     onionSkinEnabled: state.onionSkinEnabled,
     attachmentDragEnabled: false,
+    pixelArtEnabled: true,
+    pixelArtSize: 4,
+    lineBoilEnabled: true,
     backgroundImage: null,
     currentProjectPath: null,
   }));

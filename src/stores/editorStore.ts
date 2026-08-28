@@ -15,6 +15,9 @@ interface EditorState {
   showViewport: boolean;
   onionSkinEnabled: boolean;
   attachmentDragEnabled: boolean;
+  pixelArtEnabled: boolean;
+  pixelArtSize: number;
+  lineBoilEnabled: boolean;
   backgroundImage: string | null;
   currentProjectPath: string | null;
   setTool: (tool: Tool) => void;
@@ -31,6 +34,9 @@ interface EditorState {
   setOnionSkinEnabled: (enabled: boolean) => void;
   toggleOnionSkin: () => void;
   setAttachmentDragEnabled: (enabled: boolean) => void;
+  setPixelArtEnabled: (enabled: boolean) => void;
+  setPixelArtSize: (size: number) => void;
+  setLineBoilEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
   setCurrentProjectPath: (path: string | null) => void;
   selectedMeshVertexIndices: number[];
@@ -57,6 +63,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   showViewport: false,
   onionSkinEnabled: false,
   attachmentDragEnabled: false,
+  pixelArtEnabled: true,
+  pixelArtSize: 4,
+  lineBoilEnabled: true,
   backgroundImage: null,
   currentProjectPath: null,
   setTool: (tool) => set({ tool }),
@@ -100,6 +109,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setOnionSkinEnabled: (onionSkinEnabled) => set({ onionSkinEnabled }),
   toggleOnionSkin: () => set((state) => ({ onionSkinEnabled: !state.onionSkinEnabled })),
   setAttachmentDragEnabled: (attachmentDragEnabled) => set({ attachmentDragEnabled }),
+  setPixelArtEnabled: (pixelArtEnabled) => set({ pixelArtEnabled }),
+  setPixelArtSize: (pixelArtSize) =>
+    set({ pixelArtSize: Math.max(1, Math.min(32, Math.round(pixelArtSize))) }),
+  setLineBoilEnabled: (lineBoilEnabled) => set({ lineBoilEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),
   setCurrentProjectPath: (currentProjectPath) => set({ currentProjectPath }),
   selectedMeshVertexIndices: [],
