@@ -373,6 +373,26 @@ export const saveTextFile = async (
   return targetPath;
 };
 
+/**
+ * Ask for a save destination without writing anything yet.
+ *
+ * `saveBlobFile` needs the finished blob before it can prompt, which is wrong
+ * for an export whose *contents* are named after the destination — the PNG
+ * sequence names every frame after the archive. Prompting first also spares the
+ * user a dialog that would otherwise appear minutes after they started the
+ * export.
+ *
+ * Returns `null` on the web, where there is no path to choose, and when the
+ * dialog is cancelled.
+ */
+export const pickSaveFilePath = async (
+  defaultPath: string,
+  filters: FileFilter[],
+): Promise<string | null> => {
+  if (!isDesktopApp()) return null;
+  return (await saveDialog({ defaultPath, filters })) ?? null;
+};
+
 export const saveBlobFile = async (
   defaultPath: string,
   blob: Blob,

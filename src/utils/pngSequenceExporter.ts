@@ -10,6 +10,7 @@ import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { sanitizeBaseName } from './exportNaming';
 import { resolveAttachmentAtFrame } from './attachmentUtils';
 import { resolveSlotsAtFrame } from './slotAnimation';
 import type { SlotAttachmentKeyframes } from '../types';
@@ -31,6 +32,14 @@ interface ExportPngSequenceOptions {
   includeBackground?: boolean;
   backgroundImage?: string | null;
   crop?: boolean;
+  /**
+   * Stem for the frame files, normally the archive's own name without its
+   * extension. Frames are named `{baseName}_0000.png`, so a sequence keeps its
+   * identity once the files are dragged out of the folder they extracted into.
+   * Defaults to `frame`, which is what every archive written before this
+   * option existed contains.
+   */
+  baseName?: string;
 }
 
 interface PngSequenceManifest {
@@ -267,7 +276,10 @@ export const exportPngSequence = async ({
   includeBackground = false,
   backgroundImage = null,
   crop = false,
+  baseName = 'frame',
 }: ExportPngSequenceOptions): Promise<Blob> => {
+  const frameStem = sanitizeBaseName(baseName);
+
   const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
     const frames = Object.keys(boneKfs).map(Number);
     return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
@@ -430,7 +442,7 @@ export const exportPngSequence = async ({
       }, 'image/png');
     });
 
-    const frameFile = `frame_${String(frame).padStart(4, '0')}.png`;
+    const frameFile = `${frameStem}_${String(frame).padStart(4, '0')}.png`;
     framesFolder.file(frameFile, pngBlob);
     manifest.frames.push({
       index: frame,

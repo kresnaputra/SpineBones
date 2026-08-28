@@ -10,6 +10,7 @@ import { computeAllWorldTransforms } from '../engine/transforms';
 import { drawSlots, loadImage } from '../engine/imageRenderer';
 import { lerp } from '../engine/math';
 import { applyEasing, normalizeKeyframeData } from './easing';
+import { sanitizeBaseName } from './exportNaming';
 import { resolveAttachmentAtFrame } from './attachmentUtils';
 import { resolveSlotsAtFrame } from './slotAnimation';
 import type { SlotAttachmentKeyframes } from '../types';
@@ -31,6 +32,17 @@ interface ExportSpriteSheetOptions {
   includeBackground?: boolean;
   backgroundImage?: string | null;
   maxFramesPerSheet?: number;
+  /**
+   * Stem for the sheet image, its metadata and the frame keys inside it —
+   * normally the archive's own name without its extension. Defaults to
+   * `spritesheet`, which is what every archive written before this option
+   * existed contains.
+   *
+   * `spritesheets-manifest.json` deliberately keeps its fixed name: it is how a
+   * consumer discovers a multi-sheet export, so it has to be findable without
+   * already knowing what the export was called.
+   */
+  baseName?: string;
 }
 
 interface SpriteSheetFrameData {
@@ -369,7 +381,9 @@ export const exportSpriteSheet = async ({
   includeBackground = false,
   backgroundImage = null,
   maxFramesPerSheet: userMaxFramesPerSheet,
+  baseName = 'spritesheet',
 }: ExportSpriteSheetOptions): Promise<Blob> => {
+  const stem = sanitizeBaseName(baseName, 'spritesheet');
   const lastKeyframe = Object.values(keyframes).reduce((max, boneKfs) => {
     const frames = Object.keys(boneKfs).map(Number);
     return frames.length > 0 ? Math.max(max, Math.max(...frames)) : max;
@@ -453,6 +467,15 @@ export const exportSpriteSheet = async ({
 
   for (const [sheetIndex, range] of sheetRanges.entries()) {
     const sheetFrameCount = range.frameEnd - range.frameStart;
+    // A single sheet keeps the bare stem; only a split export gets an index
+    // suffix, so the common case stays `{name}.png` rather than `{name}-01.png`.
+    // Both the metadata's `meta.image` and the zip entry read from here, so they
+    // cannot disagree — they were previously computed by two separate copies of
+    // this expression.
+    const sheetStem =
+      sheetRanges.length === 1 ? stem : `${stem}-${String(sheetIndex + 1).padStart(2, '0')}`;
+    const imageFileName = `${sheetStem}.png`;
+    const dataFileName = `${sheetStem}.json`;
     const {
       packedWidthLimit,
       estimatedPackedHeight,
@@ -472,7 +495,7 @@ export const exportSpriteSheet = async ({
       meta: {
         app: 'SpineBones',
         version: '1.0',
-        image: sheetRanges.length === 1 ? 'spritesheet.png' : `spritesheet-${String(sheetIndex + 1).padStart(2, '0')}.png`,
+        image: imageFileName,
         format: 'RGBA8888',
         size: { w: 0, h: 0 },
         scale: '1',
@@ -533,7 +556,7 @@ export const exportSpriteSheet = async ({
         trimmed.h,
       );
 
-      const frameName = `frame_${String(frame).padStart(4, '0')}`;
+      const frameName = `${stem}_${String(frame).padStart(4, '0')}`;
       metadata.animations.animation.push(frameName);
       renderedFrames.push({ name: frameName, canvas: trimmedCanvas, trimmed });
     }
@@ -587,15 +610,6 @@ export const exportSpriteSheet = async ({
         resolve(blob);
       }, 'image/png');
     });
-
-    const imageFileName =
-      sheetRanges.length === 1
-        ? 'spritesheet.png'
-        : `spritesheet-${String(sheetIndex + 1).padStart(2, '0')}.png`;
-    const dataFileName =
-      sheetRanges.length === 1
-        ? 'spritesheet.json'
-        : `spritesheet-${String(sheetIndex + 1).padStart(2, '0')}.json`;
 
     zip.file(imageFileName, pngBlob);
     zip.file(dataFileName, JSON.stringify(metadata, null, 2));

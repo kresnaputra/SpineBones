@@ -10,11 +10,17 @@ import { useHistoryStore } from '../../stores/historyStore';
 import { useCameraStore } from '../../stores/cameraStore';
 import { useDeformerStore } from '../../stores/deformerStore';
 import { saveProject, loadProject, getSuggestedProjectFileName } from '../../utils/projectPersistence';
-import { getFileNameFromPath, isDesktopApp, openImageFile, saveBlobFile, saveBlobToPath, stripExtension } from '../../utils/nativeIO';
+import { getFileNameFromPath, isDesktopApp, openImageFile, pickSaveFilePath, saveBlobFile, saveBlobToPath, stripExtension } from '../../utils/nativeIO';
 import { exportVideo } from '../../utils/videoExporter';
 import { exportAudioMix } from '../../utils/audioExporter';
 import { exportSpriteSheet } from '../../utils/spriteSheetExporter';
 import { exportPngSequence } from '../../utils/pngSequenceExporter';
+
+/**
+ * Both archive exports name their contents after the file the user saves to, so
+ * they prompt for the destination up front and share these filters.
+ */
+const ZIP_FILTERS = [{ name: 'ZIP Archive', extensions: ['zip'] }];
 
 const TOOL_ICONS = {
   pose: MousePointer,
@@ -256,6 +262,12 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
+      const targetPath = await pickSaveFilePath(suggestedName, ZIP_FILTERS);
+      if (isDesktopApp() && !targetPath) return;
+
+      const archiveName = targetPath ? getFileNameFromPath(targetPath) : suggestedName;
+
       const blob = await exportSpriteSheet({
         bones: bonesCopy,
         slots: slotState.slots,
@@ -271,15 +283,14 @@ export const Toolbar = () => {
         frameWidth: settings.resolution,
         frameHeight: settings.resolution,
         maxFramesPerSheet: settings.maxFramesPerSheet,
+        baseName: stripExtension(archiveName),
       });
 
-      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-spritesheet.zip`;
-      await saveBlobFile(suggestedName, blob, [
-        {
-          name: 'ZIP Archive',
-          extensions: ['zip'],
-        },
-      ]);
+      if (targetPath) {
+        await saveBlobToPath(targetPath, blob);
+      } else {
+        await saveBlobFile(suggestedName, blob, ZIP_FILTERS);
+      }
     } catch (error) {
       console.error('Sprite sheet export failed:', error);
       alert('Sprite sheet export failed. Check console for details.');
@@ -300,6 +311,11 @@ export const Toolbar = () => {
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
+      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
+      const targetPath = await pickSaveFilePath(suggestedName, ZIP_FILTERS);
+      if (isDesktopApp() && !targetPath) return;
+
+      const archiveName = targetPath ? getFileNameFromPath(targetPath) : suggestedName;
       const blob = await exportPngSequence({
         bones: bonesCopy,
         slots: slotState.slots,
@@ -317,15 +333,14 @@ export const Toolbar = () => {
         backgroundImage: editorState.backgroundImage,
         includeBackground: false,
         crop: true,
+        baseName: stripExtension(archiveName),
       });
 
-      const suggestedName = `${stripExtension(getSuggestedProjectFileName())}-png-sequence.zip`;
-      await saveBlobFile(suggestedName, blob, [
-        {
-          name: 'ZIP Archive',
-          extensions: ['zip'],
-        },
-      ]);
+      if (targetPath) {
+        await saveBlobToPath(targetPath, blob);
+      } else {
+        await saveBlobFile(suggestedName, blob, ZIP_FILTERS);
+      }
     } catch (error) {
       console.error('PNG sequence export failed:', error);
       alert('PNG sequence export failed. Check console for details.');

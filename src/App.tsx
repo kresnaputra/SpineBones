@@ -22,6 +22,7 @@ import {
   loadAudioFileFromPath,
   loadImageFileFromPath,
   saveBlobToPath,
+  stripExtension,
   updateMcpEditorState,
 } from './utils/nativeIO';
 import {
@@ -1435,6 +1436,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       camZoom: cameraState.zoom,
       frameWidth: clampInt(payload.x ?? 1024, 64, 4096),
       frameHeight: clampInt(payload.y ?? 1024, 64, 4096),
+      baseName: stripExtension(getFileNameFromPath(payload.outputPath)),
     });
     await saveBlobToPath(payload.outputPath, blob);
     return { ok: true, outputPath: payload.outputPath };
@@ -1455,6 +1457,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
     frameHeight: clampInt(payload.y ?? 1024, 64, 4096),
     backgroundImage: editorState.backgroundImage,
     includeBackground: Boolean(payload.value),
+    baseName: stripExtension(getFileNameFromPath(payload.outputPath)),
   });
   await saveBlobToPath(payload.outputPath, blob);
   return { ok: true, outputPath: payload.outputPath };

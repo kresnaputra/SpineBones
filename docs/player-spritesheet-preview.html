@@ -215,7 +215,7 @@
             <label for="bundleInput">Pilih File Export</label>
             <input id="bundleInput" type="file" accept=".json,application/json,.png,image/png" multiple />
           </div>
-          <div class="hint">Pilih semua file hasil export sekaligus: untuk single-sheet pilih `spritesheet.json` dan `spritesheet.png`, untuk multi-sheet pilih juga `spritesheets-manifest.json` beserta semua file `spritesheet-xx.json/png`.</div>
+          <div class="hint">Pilih semua file hasil export sekaligus. Sheet dinamai mengikuti nama export, jadi untuk single-sheet pilih pasangan `.json` dan `.png`-nya, dan untuk multi-sheet pilih juga `spritesheets-manifest.json` beserta seluruh pasangan `-01`, `-02`, dan seterusnya.</div>
         </div>
 
         <div class="card stats" id="stats"></div>
@@ -390,9 +390,10 @@
 
         data = {
           frames: {},
-          animations: {
-            animation: Array.from({ length: manifest.totalFrames ?? 0 }, (_, index) => `frame_${String(index).padStart(4, "0")}`),
-          },
+          // Filled from each sheet's own JSON below. Frame names follow the
+          // export name, so they cannot be reconstructed from the frame index
+          // the way this used to assume.
+          animations: { animation: [] },
           meta: {
             app: manifest.app ?? "SpineBones",
             version: manifest.version ?? "1.0",
@@ -415,6 +416,11 @@
 
           const sheetJson = JSON.parse(await jsonFile.text());
           Object.assign(data.frames, sheetJson.frames);
+          // Sheets are listed in frame order and each lists its own frames in
+          // order, so concatenating gives the whole animation.
+          data.animations.animation.push(
+            ...(sheetJson.animations?.animation ?? Object.keys(sheetJson.frames ?? {}).sort()),
+          );
           data.meta.frameSize = sheetJson.meta?.frameSize ?? data.meta.frameSize;
           data.meta.fps = sheetJson.meta?.fps ?? data.meta.fps;
 
