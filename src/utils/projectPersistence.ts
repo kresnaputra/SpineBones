@@ -766,6 +766,7 @@ export const buildProjectData = (): ProjectData => {
       rotation: bone.rotation,
       scaleX: bone.scaleX,
       scaleY: bone.scaleY,
+      order: bone.order,
     };
     return acc;
   }, {});
@@ -787,7 +788,7 @@ export const buildProjectData = (): ProjectData => {
   });
 
   return {
-    version: '1.3',
+    version: '1.4',
     bones: savedBones,
     boneGroups: skeletonState.boneGroups
       .map((group) => ({
@@ -803,7 +804,23 @@ export const buildProjectData = (): ProjectData => {
     setupPose: setupPoseToSave,
     slots: slotState.slots,
     attachments: slotState.attachments,
-    keyframes: normalizedKeyframes,
+    keyframes: Object.fromEntries(
+      Object.entries(normalizedKeyframes).map(([boneId, frames]) => [
+        Number(boneId),
+        Object.fromEntries(
+          Object.entries(frames).map(([frame, keyframe]) => [
+            Number(frame),
+            {
+              ...keyframe,
+              order:
+                keyframe.order ??
+                skeletonState.bones.find((bone) => bone.id === Number(boneId))?.order ??
+                0,
+            },
+          ]),
+        ),
+      ]),
+    ),
     slotAttachmentKeyframes: normalizedSlotAttachmentKeyframes,
     attachmentOpacityKeyframes: normalizedAttachmentOpacityKeyframes,
     meshDeformKeyframes: animationState.meshDeformKeyframes,
@@ -827,9 +844,21 @@ export const applyProjectData = (
   projectData: Partial<ProjectData>,
   sourcePath: string | null,
 ) => {
-  const bones = projectData.bones ?? [];
+  const bones = (projectData.bones ?? []).map((bone, index) => ({
+    ...bone,
+    order: Math.round(bone.order ?? index),
+  }));
   const skins = projectData.skins ?? [{ id: 0, name: 'default', color: '#7c3aed' }];
   const slots = projectData.slots ?? [];
+  const setupPose = Object.fromEntries(
+    Object.entries(projectData.setupPose ?? {}).map(([boneId, pose]) => [
+      Number(boneId),
+      {
+        ...pose,
+        order: pose.order ?? bones.find((bone) => bone.id === Number(boneId))?.order ?? 0,
+      },
+    ]),
+  );
 
   useSkeletonStore.setState({
     bones,
@@ -837,7 +866,7 @@ export const applyProjectData = (
     skins,
     activeSkinId: projectData.activeSkinId ?? skins[0]?.id ?? 0,
     ikChainRootIds: projectData.ikChainRootIds ?? [],
-    setupPose: projectData.setupPose ?? {},
+    setupPose,
     boneIdCounter: Math.max(...bones.map((bone) => bone.id), 0) + 1,
     boneGroupIdCounter: Math.max(...(projectData.boneGroups ?? []).map((group) => group.id), 0) + 1,
     skinIdCounter: Math.max(...skins.map((skin) => skin.id), 0) + 1,
@@ -907,7 +936,20 @@ export const applyProjectData = (
     null;
 
   useAnimationStore.setState({
-    keyframes: projectData.keyframes ?? {},
+    keyframes: Object.fromEntries(
+      Object.entries(projectData.keyframes ?? {}).map(([boneId, frames]) => [
+        Number(boneId),
+        Object.fromEntries(
+          Object.entries(frames).map(([frame, keyframe]) => [
+            Number(frame),
+            {
+              ...keyframe,
+              order: keyframe.order ?? bones.find((bone) => bone.id === Number(boneId))?.order ?? 0,
+            },
+          ]),
+        ),
+      ]),
+    ),
     slotAttachmentKeyframes: projectData.slotAttachmentKeyframes ?? {},
     attachmentOpacityKeyframes: projectData.attachmentOpacityKeyframes ?? {},
     meshDeformKeyframes: projectData.meshDeformKeyframes ?? {},

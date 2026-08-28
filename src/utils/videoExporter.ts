@@ -235,6 +235,7 @@ export const exportVideo = async (
       bone.rotation = lerp(kf1.rotation, kf2.rotation, t);
       bone.scaleX = lerp(kf1.scaleX, kf2.scaleX, t);
       bone.scaleY = lerp(kf1.scaleY, kf2.scaleY, t);
+      bone.order = kf1.order ?? bone.order;
     }
   };
 

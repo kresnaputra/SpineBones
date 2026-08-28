@@ -7,11 +7,11 @@ import { getAttachmentWorldCentre } from './meshSkinning';
  *
  * ## What actually decides depth today
  *
- * Bone **array order** on the outside, slot **array order** on the inside.
- * Neither id decides anything — position does:
+ * Bone **order** on the outside, slot **array order** on the inside.
+ * Neither id decides anything — authored ordering does:
  *
- *   - `skeletonStore.reorderBones` splices the bones array, and that drag-and-drop
- *     in the Bones panel is the only cross-bone depth control there is.
+ *   - `skeletonStore.reorderBones` updates each bone's `order`, and that drag-and-drop
+ *     in the Bones panel remains the primary cross-bone depth control.
  *   - `slotStore.reorderSlots` keeps the slots array sorted by `drawOrder`, so a
  *     slot's `drawOrder` orders it only against other slots on the *same* bone.
  *     `SlotListPanel` lists just the selected bone's slots, so the UI never
@@ -49,6 +49,12 @@ import { getAttachmentWorldCentre } from './meshSkinning';
  * has to be authored, not derived, and that is a separate piece of work.
  */
 export const DEPTH_SPACING = 2;
+
+export const sortBonesByOrder = (bones: Bone[]): Bone[] =>
+  bones
+    .map((bone, index) => ({ bone, index }))
+    .sort((a, b) => (a.bone.order ?? a.index) - (b.bone.order ?? b.index) || a.index - b.index)
+    .map(({ bone }) => bone);
 
 export interface DrawItem {
   bone: Bone;
@@ -96,7 +102,7 @@ export const computeDrawSequence = (
   }
 
   const sequence: DrawItem[] = [];
-  for (const bone of bones) {
+  for (const bone of sortBonesByOrder(bones)) {
     const boneSlots = slotsByBone.get(bone.id);
     if (!boneSlots) continue;
     for (const slot of boneSlots) {

@@ -34,7 +34,7 @@ export const BoneTreePanel = () => {
     renameBoneGroup,
     reorderBones,
   } = useSkeletonStore();
-  const { selectedBoneIds, selectBone, toggleBoneSelection } = useEditorStore();
+  const { mode, selectedBoneIds, selectBone, toggleBoneSelection } = useEditorStore();
   const { captureSnapshot } = useHistoryStore();
   const [draggedBoneIds, setDraggedBoneIds] = useState<number[]>([]);
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
@@ -84,6 +84,26 @@ export const BoneTreePanel = () => {
 
     captureSnapshot();
     reorderBones(fromIndex, toIndex);
+    const reorderedBones = useSkeletonStore.getState().bones;
+    if (mode === "setup") {
+      reorderedBones.forEach((bone) =>
+        useSkeletonStore.getState().updateSetupPoseBone(bone.id, { order: bone.order }),
+      );
+    } else {
+      reorderedBones.forEach((bone) =>
+        useAnimationStore.getState().insertKeyframe(bone.id, {
+          x: bone.x,
+          y: bone.y,
+          rotation: bone.rotation,
+          rotationX: bone.rotationX ?? 0,
+          rotationY: bone.rotationY ?? 0,
+          scaleX: bone.scaleX,
+          scaleY: bone.scaleY,
+          order: bone.order,
+        }),
+      );
+      useAnimationStore.getState().applyKeyframes();
+    }
     setDraggedBoneIds([]);
   };
 
@@ -173,6 +193,7 @@ export const BoneTreePanel = () => {
                 ...sourceSetupPose,
                 x: sourceSetupPose.x + DUPLICATE_OFFSET,
                 y: sourceSetupPose.y + DUPLICATE_OFFSET,
+                order: duplicatedBone.order,
               }
             : {
                 x: duplicatedBone.x,
@@ -180,6 +201,7 @@ export const BoneTreePanel = () => {
                 rotation: duplicatedBone.rotation,
                 scaleX: duplicatedBone.scaleX,
                 scaleY: duplicatedBone.scaleY,
+                order: duplicatedBone.order,
               },
         },
       }));
@@ -216,6 +238,7 @@ export const BoneTreePanel = () => {
               ...keyframe,
               x: keyframe.x + DUPLICATE_OFFSET,
               y: keyframe.y + DUPLICATE_OFFSET,
+              order: duplicatedBone.order,
             },
           ]),
         );

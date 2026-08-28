@@ -72,6 +72,7 @@ type McpEditorCommand = {
   x?: number;
   y?: number;
   rotation?: number;
+  order?: number;
   zoom?: number;
   factor?: number;
   volume?: number;
@@ -89,6 +90,7 @@ type McpEditorCommand = {
     rotationY?: number;
     scaleX?: number;
     scaleY?: number;
+    order?: number;
   }>;
   attachments?: Array<{
     slotId?: number;
@@ -114,6 +116,7 @@ type McpEditorCommand = {
     rotationY?: number;
     scaleX?: number;
     scaleY?: number;
+    order?: number;
     easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
   }>;
   transform?: {
@@ -125,6 +128,7 @@ type McpEditorCommand = {
     rotationY?: number;
     scaleX?: number;
     scaleY?: number;
+    order?: number;
     easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
   };
 };
@@ -192,6 +196,7 @@ const setBoneTransformFromCommand = (payload: McpEditorCommand) => {
     rotationY: transform.rotationY ?? existingBone.rotationY ?? 0,
     scaleX: transform.scaleX ?? existingBone.scaleX,
     scaleY: transform.scaleY ?? existingBone.scaleY,
+    order: transform.order ?? existingBone.order,
   });
 
   if (editor.mode === 'setup') {
@@ -202,6 +207,7 @@ const setBoneTransformFromCommand = (payload: McpEditorCommand) => {
       rotation: transform.rotation ?? existingBone.rotation,
       scaleX: transform.scaleX ?? existingBone.scaleX,
       scaleY: transform.scaleY ?? existingBone.scaleY,
+      order: transform.order ?? existingBone.order,
     });
   }
 
@@ -242,6 +248,7 @@ const setBoneKeyframeFromCommand = (payload: McpEditorCommand) => {
     rotationY: transform.rotationY ?? existingBone.rotationY ?? 0,
     scaleX: transform.scaleX ?? existingBone.scaleX,
     scaleY: transform.scaleY ?? existingBone.scaleY,
+    order: transform.order ?? existingBone.order,
     easing: transform.easing ?? 'linear',
   };
 
@@ -297,6 +304,7 @@ const setMultipleBoneTransformsFromCommand = (payload: McpEditorCommand) => {
       rotation: entry.rotation ?? existingBone.rotation,
       scaleX: entry.scaleX ?? existingBone.scaleX,
       scaleY: entry.scaleY ?? existingBone.scaleY,
+      order: entry.order ?? existingBone.order,
     };
     // Kept separate: `SetupPose` has no tilt, so only the bone receives it.
     const tilt = {
@@ -356,6 +364,7 @@ const setMultipleKeyframesFromCommand = (payload: McpEditorCommand) => {
       rotationY: entry.rotationY ?? existingBone.rotationY ?? 0,
       scaleX: entry.scaleX ?? existingBone.scaleX,
       scaleY: entry.scaleY ?? existingBone.scaleY,
+      order: entry.order ?? existingBone.order,
       easing: entry.easing ?? 'linear',
     });
     written.push({ boneId, frame: targetFrame });
@@ -631,6 +640,7 @@ const addBoneFromCommand = (payload: McpEditorCommand) => {
     rotation: payload.transform?.rotation ?? payload.rotation ?? 0,
     scaleX: payload.transform?.scaleX ?? 1,
     scaleY: payload.transform?.scaleY ?? 1,
+    order: payload.transform?.order ?? payload.order ?? skeleton.bones.length,
     parentId,
     skinId: skeleton.activeSkinId,
     _wx: payload.x ?? 0,
@@ -644,6 +654,7 @@ const addBoneFromCommand = (payload: McpEditorCommand) => {
     rotation: bone.rotation,
     scaleX: bone.scaleX,
     scaleY: bone.scaleY,
+    order: bone.order,
   });
   editor.selectBone(bone.id);
   return { ok: true, bone };
@@ -672,6 +683,23 @@ const reorderBoneFromCommand = (payload: McpEditorCommand) => {
   const fromIndex = skeleton.bones.findIndex((bone) => bone.id === boneId);
   const toIndex = clampInt(typeof payload.value === 'number' ? payload.value : fromIndex, 0, Math.max(0, skeleton.bones.length - 1));
   skeleton.reorderBones(fromIndex, toIndex);
+  const reorderedBones = useSkeletonStore.getState().bones;
+  if (useEditorStore.getState().mode === 'setup') {
+    reorderedBones.forEach((bone) => skeleton.updateSetupPoseBone(bone.id, { order: bone.order }));
+  } else {
+    const animation = useAnimationStore.getState();
+    reorderedBones.forEach((bone) => animation.insertKeyframe(bone.id, {
+      x: bone.x,
+      y: bone.y,
+      rotation: bone.rotation,
+      rotationX: bone.rotationX ?? 0,
+      rotationY: bone.rotationY ?? 0,
+      scaleX: bone.scaleX,
+      scaleY: bone.scaleY,
+      order: bone.order,
+    }));
+    animation.applyKeyframes();
+  }
   return { ok: true, boneId, fromIndex, toIndex };
 };
 
@@ -1473,6 +1501,7 @@ const buildMcpSnapshot = () => {
       rotationY: bone.rotationY ?? 0,
       scaleX: bone.scaleX,
       scaleY: bone.scaleY,
+      order: bone.order,
       worldX: bone._wx,
       worldY: bone._wy,
       worldRotation: bone._wrot,

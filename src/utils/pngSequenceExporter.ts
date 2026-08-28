@@ -127,6 +127,7 @@ const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
     bone.rotation = lerp(from.rotation, to.rotation, t);
     bone.scaleX = lerp(from.scaleX, to.scaleX, t);
     bone.scaleY = lerp(from.scaleY, to.scaleY, t);
+    bone.order = from.order ?? bone.order;
   });
 };
 

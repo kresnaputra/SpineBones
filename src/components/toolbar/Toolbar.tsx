@@ -525,7 +525,7 @@ export const Toolbar = () => {
             const { shiftKeyframes } = useAnimationStore.getState();
 
             // Calculate deltas between old setup pose and current bone positions
-            const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
+            const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number; dOrder: number }> = {};
             let hasDeltas = false;
             if (Object.keys(oldSetupPose).length > 0) {
               currentBones.forEach((bone) => {
@@ -536,8 +536,9 @@ export const Toolbar = () => {
                   const dRot = bone.rotation - old.rotation;
                   const dScaleX = bone.scaleX - old.scaleX;
                   const dScaleY = bone.scaleY - old.scaleY;
-                  if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0) {
-                    deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY };
+                  const dOrder = bone.order - (old.order ?? bone.order);
+                  if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0 || dOrder !== 0) {
+                    deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY, dOrder };
                     hasDeltas = true;
                   }
                 }

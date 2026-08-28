@@ -34,6 +34,7 @@ export const PropertiesPanel = () => {
         rotationY: selectedBone.rotationY ?? 0,
         scaleX: selectedBone.scaleX,
         scaleY: selectedBone.scaleY,
+        order: selectedBone.order,
         [key]: value,
       });
     }
@@ -150,6 +151,16 @@ export const PropertiesPanel = () => {
             step="0.1"
             value={selectedBone.scaleY.toFixed(2)}
             onChange={(e) => handleChange('scaleY', parseFloat(e.target.value))}
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+          />
+        </PropRow>
+
+        <PropRow label="Order">
+          <input
+            type="number"
+            step="1"
+            value={selectedBone.order}
+            onChange={(e) => handleChange('order', Math.round(parseFloat(e.target.value)))}
             className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
           />
         </PropRow>

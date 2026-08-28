@@ -40,17 +40,21 @@ export const getAdjacentKeyframes = (
  * tilt it was given, rather than being reset to flat.
  */
 const getBasePose = (bone: Bone, setupPose: SetupPose): KeyframeData => {
-  const tilt = { rotationX: bone.rotationX ?? 0, rotationY: bone.rotationY ?? 0 };
+  const defaults = {
+    rotationX: bone.rotationX ?? 0,
+    rotationY: bone.rotationY ?? 0,
+    order: setupPose[bone.id]?.order ?? bone.order,
+  };
   const pose = setupPose[bone.id];
   return pose
-    ? { ...pose, ...tilt }
+    ? { ...pose, ...defaults }
     : {
         x: bone.x,
         y: bone.y,
         rotation: bone.rotation,
         scaleX: bone.scaleX,
         scaleY: bone.scaleY,
-        ...tilt,
+        ...defaults,
       };
 };
 
@@ -60,10 +64,11 @@ const getBasePose = (bone: Bone, setupPose: SetupPose): KeyframeData => {
  * Absent means 0, deliberately: once a bone is keyframed, the keyframes define
  * its pose completely — exactly as they already do for x, y and rotation.
  */
-const withTilt = (k: KeyframeData): KeyframeData => ({
+const withDefaults = (k: KeyframeData, fallbackOrder: number): KeyframeData => ({
   ...k,
   rotationX: k.rotationX ?? 0,
   rotationY: k.rotationY ?? 0,
+  order: k.order ?? fallbackOrder,
 });
 
 export const sampleBonePoseAtFrame = (
@@ -94,11 +99,11 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === null && next !== null) {
-    return withTilt(normalizeKeyframeData(boneKeyframes[next]));
+    return withDefaults(normalizeKeyframeData(boneKeyframes[next]), bone.order);
   }
 
   if (prev !== null && next === null) {
-    return withTilt(normalizeKeyframeData(boneKeyframes[prev]));
+    return withDefaults(normalizeKeyframeData(boneKeyframes[prev]), bone.order);
   }
 
   if (prev === null || next === null) {
@@ -106,7 +111,7 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === next) {
-    return withTilt(normalizeKeyframeData(boneKeyframes[prev]));
+    return withDefaults(normalizeKeyframeData(boneKeyframes[prev]), bone.order);
   }
 
   const kp = normalizeKeyframeData(boneKeyframes[prev]);
@@ -122,6 +127,7 @@ export const sampleBonePoseAtFrame = (
     rotationY: lerp(kp.rotationY ?? 0, kn.rotationY ?? 0),
     scaleX: lerp(kp.scaleX, kn.scaleX),
     scaleY: lerp(kp.scaleY, kn.scaleY),
+    order: kp.order ?? setupPose[bone.id]?.order ?? bone.order,
     easing: kp.easing,
   };
 };

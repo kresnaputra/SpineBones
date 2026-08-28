@@ -100,7 +100,7 @@ export const useKeyboardShortcuts = () => {
         if (e.repeat) return;
         if (mode === 'animate') return;
         const { bones: currentBones, setupPose: oldSetupPose } = useSkeletonStore.getState();
-        const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }> = {};
+        const deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number; dOrder: number }> = {};
         let hasDeltas = false;
 
         if (Object.keys(oldSetupPose).length > 0) {
@@ -113,9 +113,10 @@ export const useKeyboardShortcuts = () => {
             const dRot = bone.rotation - old.rotation;
             const dScaleX = bone.scaleX - old.scaleX;
             const dScaleY = bone.scaleY - old.scaleY;
+            const dOrder = bone.order - (old.order ?? bone.order);
 
-            if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0) {
-              deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY };
+            if (dx !== 0 || dy !== 0 || dRot !== 0 || dScaleX !== 0 || dScaleY !== 0 || dOrder !== 0) {
+              deltas[bone.id] = { dx, dy, dRot, dScaleX, dScaleY, dOrder };
               hasDeltas = true;
             }
           });

@@ -11,7 +11,7 @@ interface SkeletonState {
   boneIdCounter: number;
   boneGroupIdCounter: number;
   skinIdCounter: number;
-  addBone: (bone: Omit<Bone, 'id'>) => Bone;
+  addBone: (bone: Omit<Bone, 'id' | 'order'> & { order?: number }) => Bone;
   updateBone: (id: number, updates: Partial<Bone>) => void;
   deleteBone: (id: number) => void;
   reorderBones: (fromIndex: number, toIndex: number) => void;
@@ -44,6 +44,7 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
     const bone: Bone = {
       ...boneData,
       id,
+      order: Math.round(boneData.order ?? get().bones.length),
       _wx: boneData.x,
       _wy: boneData.y,
       _wrot: boneData.rotation,
@@ -78,10 +79,13 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
 
   reorderBones: (fromIndex, toIndex) => {
     set((state) => {
-      const newBones = [...state.bones];
-      const [movedBone] = newBones.splice(fromIndex, 1);
-      newBones.splice(toIndex, 0, movedBone);
-      return { bones: newBones };
+      const reorderedBones = [...state.bones];
+      const [movedBone] = reorderedBones.splice(fromIndex, 1);
+      if (!movedBone) return state;
+      reorderedBones.splice(toIndex, 0, movedBone);
+      return {
+        bones: reorderedBones.map((bone, order) => ({ ...bone, order })),
+      };
     });
   },
 
@@ -168,6 +172,10 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
             state.setupPose[id]?.scaleY ??
             state.bones.find((bone) => bone.id === id)?.scaleY ??
             1,
+          order:
+            state.setupPose[id]?.order ??
+            state.bones.find((bone) => bone.id === id)?.order ??
+            0,
           ...updates,
         },
       },
@@ -183,6 +191,7 @@ export const useSkeletonStore = create<SkeletonState>((set, get) => ({
         rotation: bone.rotation,
         scaleX: bone.scaleX,
         scaleY: bone.scaleY,
+        order: bone.order,
       };
     });
     set({ setupPose });

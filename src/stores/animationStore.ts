@@ -81,7 +81,7 @@ interface AnimationState {
   stop: () => void;
   applyKeyframes: () => void;
   getKeyframesForBone: (boneId: number) => number[];
-  shiftKeyframes: (deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number }>) => void;
+  shiftKeyframes: (deltas: Record<number, { dx: number; dy: number; dRot: number; dScaleX: number; dScaleY: number; dOrder: number }>) => void;
   remapBoneKeyframesForParentChange: (boneId: number, newParentId: number | null) => void;
 }
 
@@ -126,12 +126,16 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   audioOffsetFrames: 0,
 
   insertKeyframe: (boneId, frameData) => {
+    const bone = useSkeletonStore.getState().getBoneById(boneId);
     set((state) => ({
       keyframes: {
         ...state.keyframes,
         [boneId]: {
           ...state.keyframes[boneId],
-          [state.frame]: normalizeKeyframeData(frameData),
+          [state.frame]: normalizeKeyframeData({
+            ...frameData,
+            order: Math.round(frameData.order ?? bone?.order ?? 0),
+          }),
         },
       },
     }));
@@ -584,16 +588,17 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
         // its own, and that means zero — the same rule every other channel
         // follows. Without this the tilt would simply never animate: it would
         // stick at whatever value the bone was last dragged to.
-        const withTilt = (k: KeyframeData): KeyframeData => ({
+        const withDefaults = (k: KeyframeData): KeyframeData => ({
           ...k,
           rotationX: k.rotationX ?? 0,
           rotationY: k.rotationY ?? 0,
+          order: k.order ?? setupPose[bone.id]?.order ?? bone.order,
         });
 
         if (prev === null && next !== null) {
-          return { ...bone, ...withTilt(normalizeKeyframeData(boneKeyframes[next])) };
+          return { ...bone, ...withDefaults(normalizeKeyframeData(boneKeyframes[next])) };
         } else if (prev !== null && next === null) {
-          return { ...bone, ...withTilt(normalizeKeyframeData(boneKeyframes[prev])) };
+          return { ...bone, ...withDefaults(normalizeKeyframeData(boneKeyframes[prev])) };
         } else if (prev !== null && next !== null) {
           const t = prev === next ? 1 : (frame - prev) / (next - prev);
           const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
@@ -609,6 +614,7 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
             rotationY: lerp(kp.rotationY ?? 0, kn.rotationY ?? 0, easedT),
             scaleX: lerp(kp.scaleX, kn.scaleX, easedT),
             scaleY: lerp(kp.scaleY, kn.scaleY, easedT),
+            order: kp.order ?? setupPose[bone.id]?.order ?? bone.order,
           };
         }
 
@@ -636,12 +642,13 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           const f = Number(frameStr);
           const kf = boneFrames[f];
           boneFrames[f] = {
+            ...kf,
             x: kf.x + delta.dx,
             y: kf.y + delta.dy,
             rotation: kf.rotation + delta.dRot,
             scaleX: kf.scaleX + delta.dScaleX,
             scaleY: kf.scaleY + delta.dScaleY,
-            easing: kf.easing,
+            order: (kf.order ?? 0) + delta.dOrder,
           };
         }
         newKeyframes[boneId] = boneFrames;

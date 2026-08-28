@@ -1,4 +1,5 @@
 import type { Slot, Attachment, Bone } from '../types';
+import { sortBonesByOrder } from './drawOrder';
 
 type AttachmentOutlineOptions = {
   strokeStyle?: string;
@@ -231,7 +232,7 @@ export const drawSlots = (
   alpha = 1,
   onImageLoad?: () => void,
 ): void => {
-  bones.forEach((bone) => {
+  sortBonesByOrder(bones).forEach((bone) => {
     const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
 
     boneSlots.forEach((slot) => {
@@ -256,7 +257,7 @@ export const drawSlotOutlines = (
   zoom: number,
   options?: AttachmentOutlineOptions,
 ): void => {
-  bones.forEach((bone) => {
+  sortBonesByOrder(bones).forEach((bone) => {
     const boneSlots = slots.filter((slot) => slot.boneId === bone.id);
 
     boneSlots.forEach((slot) => {

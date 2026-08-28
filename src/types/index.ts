@@ -11,7 +11,7 @@ export interface AudioTrack {
 
 export type SetupPose = Record<
   number,
-  { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
+  { x: number; y: number; rotation: number; scaleX: number; scaleY: number; order?: number }
 >;
 
 export interface Slot {
@@ -98,6 +98,7 @@ export interface Bone {
   rotationY?: number;
   scaleX: number;
   scaleY: number;
+  order: number;
   parentId: number | null;
   skinId: number;
   _wx: number;
@@ -149,6 +150,7 @@ export interface KeyframeData {
   rotationY?: number;
   scaleX: number;
   scaleY: number;
+  order?: number;
   easing?: KeyframeEasing;
 }
 

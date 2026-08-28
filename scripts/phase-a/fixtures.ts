@@ -46,6 +46,7 @@ interface BoneOpts {
   rotationY?: number;
   scaleX?: number;
   scaleY?: number;
+  order?: number;
   /**
    * Override the `_wx/_wy/_wrot` seed. Real bones seed these from their local
    * values, but a bone whose parent was deleted keeps the *world* values it last
@@ -73,6 +74,7 @@ const makeBone = (
     rotation,
     scaleX: opts.scaleX ?? 1,
     scaleY: opts.scaleY ?? 1,
+    order: opts.order ?? id,
     parentId,
     skinId: 0,
     ...(opts.rotationX !== undefined ? { rotationX: opts.rotationX } : {}),
@@ -478,9 +480,9 @@ export const buildFixtures = (): FixtureCase[] => {
   {
     const bones = [
       // Array order 2, 0, 1 — deliberately not id order.
-      makeBone(2, 'arm_front', 0, 41.5, -8.25, { rotation: 14.5 }),
-      makeBone(0, 'torso', null, 9.75, -21.5, { rotation: 7.25 }),
-      makeBone(1, 'arm_back', 0, -37.25, 11.5, { rotation: -19.75 }),
+      makeBone(2, 'arm_front', 0, 41.5, -8.25, { rotation: 14.5, order: 0 }),
+      makeBone(0, 'torso', null, 9.75, -21.5, { rotation: 7.25, order: 1 }),
+      makeBone(1, 'arm_back', 0, -37.25, 11.5, { rotation: -19.75, order: 2 }),
     ];
 
     const slot = (id: number, name: string, boneId: number, attachmentName: string | null, drawOrder: number): Slot => ({
