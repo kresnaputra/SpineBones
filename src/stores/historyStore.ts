@@ -169,9 +169,9 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     selectedBoneId: snapshot.editor.selectedBoneId,
     selectedBoneIds: cloneSnapshot(snapshot.editor.selectedBoneIds),
     selectedSlotId: snapshot.editor.selectedSlotId,
-    pixelArtEnabled: snapshot.editor.pixelArtEnabled ?? true,
+    pixelArtEnabled: snapshot.editor.pixelArtEnabled ?? false,
     pixelArtSize: snapshot.editor.pixelArtSize ?? 4,
-    lineBoilEnabled: snapshot.editor.lineBoilEnabled ?? true,
+    lineBoilEnabled: snapshot.editor.lineBoilEnabled ?? false,
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),

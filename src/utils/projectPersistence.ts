@@ -392,9 +392,9 @@ const renderProjectThumbnail = async (projectData: ProjectData) => {
     projectData.slots,
     projectData.attachments.map((attachment) => ({
       ...attachment,
-      pixelated: projectData.pixelArtEnabled ?? true,
+      pixelated: projectData.pixelArtEnabled ?? false,
       pixelSize: projectData.pixelArtSize ?? 4,
-      lineBoil: projectData.lineBoilEnabled ?? true,
+      lineBoil: projectData.lineBoilEnabled ?? false,
       pixelFrame: 0,
     })),
     bones,
@@ -866,9 +866,9 @@ export const applyProjectData = (
   }));
   const skins = projectData.skins ?? [{ id: 0, name: 'default', color: '#7c3aed' }];
   const slots = projectData.slots ?? [];
-  const pixelArtEnabled = projectData.pixelArtEnabled ?? true;
+  const pixelArtEnabled = projectData.pixelArtEnabled ?? false;
   const pixelArtSize = Math.max(1, Math.min(32, Math.round(projectData.pixelArtSize ?? 4)));
-  const lineBoilEnabled = projectData.lineBoilEnabled ?? true;
+  const lineBoilEnabled = projectData.lineBoilEnabled ?? false;
   const setupPose = Object.fromEntries(
     Object.entries(projectData.setupPose ?? {}).map(([boneId, pose]) => [
       Number(boneId),
@@ -1066,9 +1066,9 @@ export const createNewProject = () => {
     showBoneIndicators: state.showBoneIndicators,
     onionSkinEnabled: state.onionSkinEnabled,
     attachmentDragEnabled: false,
-    pixelArtEnabled: true,
+    pixelArtEnabled: false,
     pixelArtSize: 4,
-    lineBoilEnabled: true,
+    lineBoilEnabled: false,
     backgroundImage: null,
     currentProjectPath: null,
   }));

@@ -375,7 +375,9 @@ export const Toolbar = () => {
   };
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border h-12 flex-shrink-0 panel-padding-left">
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-panel px-4 py-2 panel-padding-left">
+      <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-thin">
+        <div className="flex w-max min-w-full items-center gap-2 pr-2">
       {(Object.keys(TOOL_ICONS) as Array<keyof typeof TOOL_ICONS>).map((t) => {
         const Icon = TOOL_ICONS[t];
         return (
@@ -585,14 +587,19 @@ export const Toolbar = () => {
           />
         </label>
       </div>
+        </div>
+      </div>
 
-      <div className="ml-auto flex items-center gap-1 rounded-lg border border-border bg-panel2 p-1">
+      <div
+        className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-panel2 p-1"
+        style={{ marginRight: 16 }}
+      >
         <button
           onClick={() => {
             restoreSetupPose();
             setMode('setup');
           }}
-          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+          className={`min-w-21 rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
             mode === 'setup'
               ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
               : 'text-text-dim hover:bg-panel hover:text-text'
@@ -634,7 +641,7 @@ export const Toolbar = () => {
             saveSetupPose();
             setMode('animate');
           }}
-          className={`min-w-[84px] rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
+          className={`min-w-21 rounded-md px-5 py-2 text-[11px] font-semibold tracking-wide transition-all ${
             mode === 'animate'
               ? 'bg-accent text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]'
               : 'text-text-dim hover:bg-panel hover:text-text'
