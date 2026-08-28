@@ -1,6 +1,15 @@
 import type { Attachment, Bone, Deformer, DeformerKeyframes, MeshVertex, MeshVertexWeight } from '../types';
 import { applyEasing } from '../utils/easing';
-import { create, fromTranslationRotationZ, transformPoint, type Mat4 } from './mat4';
+import {
+  create,
+  fromRotationX,
+  fromRotationY,
+  fromTranslation,
+  fromTranslationRotationZ,
+  multiply,
+  transformPoint,
+  type Mat4,
+} from './mat4';
 
 /**
  * Pure geometry module shared by the live WebGL preview and the offscreen
@@ -51,6 +60,7 @@ interface AttachmentFrame {
 const SKIN_FRAME: Mat4 = create();
 const QUAD_FRAME: Mat4 = create();
 const POINT_FRAME: Mat4 = create();
+const CENTRE_FRAME: Mat4 = create();
 
 /**
  * Build the world-space transform for an attachment on a single bone.
@@ -60,11 +70,47 @@ const POINT_FRAME: Mat4 = create();
  * evaluate cos(a+b) as cos(a)cos(b) - sin(a)sin(b) and drift from the value the
  * scalar pipeline produces.
  */
-const boneFrame = (attachment: Attachment, bone: Bone, out: Mat4): AttachmentFrame => {
+const boneFrame = (
+  attachment: Attachment,
+  bone: Bone,
+  out: Mat4,
+  depth = 0,
+): AttachmentFrame => {
   const totalScaleX = attachment.scaleX * bone.scaleX;
   const totalScaleY = attachment.scaleY * bone.scaleY;
+  const rotZ = bone._wrot + attachment.rotation;
+  const rotX = bone.rotationX ?? 0;
+  const rotY = bone.rotationY ?? 0;
+
+  let matrix: Mat4;
+  if (bone._wm) {
+    // The rig uses 3D rotation, so the bone's full world orientation — including
+    // everything inherited from its parents — already lives in `_wm`. Only the
+    // attachment's own in-plane spin and the layer depth are left to apply.
+    matrix = multiply(
+      fromTranslation(0, 0, depth),
+      multiply(bone._wm, fromTranslationRotationZ(0, 0, attachment.rotation)),
+      out,
+    );
+  } else if (rotX === 0 && rotY === 0) {
+    // The 2D path, untouched. `boneFrame` runs once per vertex per bone weight,
+    // so a rig that uses no out-of-plane rotation must not pay for three extra
+    // matrix builds and three multiplies on every one of them — and taking this
+    // branch is also what keeps existing projects bit-identical.
+    matrix = fromTranslationRotationZ(bone._wx, bone._wy, rotZ, out);
+    matrix[14] = depth;
+  } else {
+    // A bone tilts but `computeAllWorldTransforms` has not run for this pose yet.
+    // Fall back to its own rotation alone — no inheritance, but never stale.
+    const spin = multiply(
+      multiply(fromRotationY(rotY), fromRotationX(rotX)),
+      fromTranslationRotationZ(0, 0, rotZ),
+    );
+    matrix = multiply(fromTranslation(bone._wx, bone._wy, depth), spin, out);
+  }
+
   return {
-    matrix: fromTranslationRotationZ(bone._wx, bone._wy, bone._wrot + attachment.rotation, out),
+    matrix,
     totalScaleX,
     totalScaleY,
     flipX: totalScaleX < 0 ? -1 : 1,
@@ -100,10 +146,10 @@ const skinVertex = (
     for (const { boneId, weight } of weights) {
       if (weight <= 0) continue;
       const wb = allBones.find((b) => b.id === boneId) ?? bone;
-      const frame = boneFrame(attachment, wb, SKIN_FRAME);
+      const frame = boneFrame(attachment, wb, SKIN_FRAME, depth);
       const lx = attachment.x * frame.flipX + vertex.x * frame.totalScaleX * SPRITE_SCALE;
       const ly = attachment.y * frame.flipY + vertex.y * frame.totalScaleY * SPRITE_SCALE;
-      const [px, py, pz] = toWorld(frame, lx, ly, depth);
+      const [px, py, pz] = toWorld(frame, lx, ly);
       wx += weight * px;
       wy += weight * py;
       wz += weight * pz;
@@ -112,10 +158,10 @@ const skinVertex = (
     if (total > 0) return [wx / total, wy / total, wz / total];
   }
 
-  const frame = boneFrame(attachment, bone, SKIN_FRAME);
+  const frame = boneFrame(attachment, bone, SKIN_FRAME, depth);
   const lx = attachment.x * frame.flipX + vertex.x * frame.totalScaleX * SPRITE_SCALE;
   const ly = attachment.y * frame.flipY + vertex.y * frame.totalScaleY * SPRITE_SCALE;
-  return toWorld(frame, lx, ly, depth);
+  return toWorld(frame, lx, ly);
 };
 
 /** World-space position of one vertex rigidly attached to a single bone (no weights). */
@@ -131,9 +177,25 @@ export const getVertexWorldPos = (
   return [wx, wy];
 };
 
+/**
+ * World-space position of an attachment's pivot, at its layer depth.
+ *
+ * Used as the sort key for painter's ordering — it does not need to be the exact
+ * centroid, only a stable, cheap point that moves with the part. One matrix
+ * build per attachment per frame, against one per *vertex* for real geometry.
+ */
+export const getAttachmentWorldCentre = (
+  attachment: Attachment,
+  bone: Bone,
+  depth: number,
+): [number, number, number] => {
+  const frame = boneFrame(attachment, bone, CENTRE_FRAME, depth);
+  return toWorld(frame, attachment.x, attachment.y);
+};
+
 /** Quad geometry for a plain image attachment (matches Canvas drawAttachment). */
 const quadGeometry = (attachment: Attachment, bone: Bone, depth: number): AttachmentGeometry => {
-  const frame = boneFrame(attachment, bone, QUAD_FRAME);
+  const frame = boneFrame(attachment, bone, QUAD_FRAME, depth);
   const fullW = attachment.width * Math.abs(frame.totalScaleX) * SPRITE_SCALE;
   const fullH = attachment.height * Math.abs(frame.totalScaleY) * SPRITE_SCALE;
 
@@ -175,7 +237,7 @@ const quadGeometry = (attachment: Attachment, bone: Bone, depth: number): Attach
   const positions = new Float32Array(12);
   const uvs = new Float32Array(8);
   corners.forEach(([lx, ly, u, v], i) => {
-    const [px, py, pz] = toWorld(frame, lx, ly, depth);
+    const [px, py, pz] = toWorld(frame, lx, ly);
     positions[i * 3] = px;
     positions[i * 3 + 1] = py;
     positions[i * 3 + 2] = pz;

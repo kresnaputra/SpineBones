@@ -30,12 +30,18 @@ export const PropertiesPanel = () => {
         x: selectedBone.x,
         y: selectedBone.y,
         rotation: selectedBone.rotation,
+        rotationX: selectedBone.rotationX ?? 0,
+        rotationY: selectedBone.rotationY ?? 0,
         scaleX: selectedBone.scaleX,
         scaleY: selectedBone.scaleY,
         [key]: value,
       });
     }
   };
+
+  /** Out-of-plane rotation. Keyframes in animate mode, like every other field. */
+  const handleTilt = (key: 'rotationX' | 'rotationY', value: number) =>
+    handleChange(key, Number.isFinite(value) ? value : 0);
 
   if (!selectedBone) {
     return (
@@ -104,6 +110,26 @@ export const PropertiesPanel = () => {
             type="number"
             value={selectedBone.rotation.toFixed(1)}
             onChange={(e) => handleChange('rotation', parseFloat(e.target.value))}
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+          />
+        </PropRow>
+
+        <PropRow label="Rot Y (3D)">
+          <input
+            type="number"
+            step="5"
+            value={(selectedBone.rotationY ?? 0).toFixed(1)}
+            onChange={(e) => handleTilt('rotationY', parseFloat(e.target.value))}
+            className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
+          />
+        </PropRow>
+
+        <PropRow label="Rot X (3D)">
+          <input
+            type="number"
+            step="5"
+            value={(selectedBone.rotationX ?? 0).toFixed(1)}
+            onChange={(e) => handleTilt('rotationX', parseFloat(e.target.value))}
             className="flex-1 bg-panel2 border border-border rounded px-1.5 py-0.5 text-text text-[11px] focus:outline-none focus:border-accent min-w-0"
           />
         </PropRow>

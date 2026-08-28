@@ -41,6 +41,9 @@ export interface FixtureCase {
 interface BoneOpts {
   length?: number;
   rotation?: number;
+  /** Out-of-plane rotation. Any non-zero value puts the whole rig on the 3D path. */
+  rotationX?: number;
+  rotationY?: number;
   scaleX?: number;
   scaleY?: number;
   /**
@@ -72,6 +75,8 @@ const makeBone = (
     scaleY: opts.scaleY ?? 1,
     parentId,
     skinId: 0,
+    ...(opts.rotationX !== undefined ? { rotationX: opts.rotationX } : {}),
+    ...(opts.rotationY !== undefined ? { rotationY: opts.rotationY } : {}),
     // Matches addBone: world fields start out holding the *local* values.
     _wx: opts.seed ? opts.seed.wx : x,
     _wy: opts.seed ? opts.seed.wy : y,
@@ -550,6 +555,110 @@ export const buildFixtures = (): FixtureCase[] => {
         { boneId: 0, attachment: { ...makeAttachment('a_img', 20, 'image', 40, 40), slotId: 20 } },
         { boneId: 0, attachment: { ...makeAttachment('b_img', 21, 'image', 40, 40), slotId: 21 } },
         { boneId: 0, attachment: { ...makeAttachment('c_img', 22, 'image', 40, 40), slotId: 22 } },
+      ],
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 12. Layer order and horizontal position that DISAGREE.
+  //
+  //   Case 10 cannot detect a broken depth sort: there, world X falls as layer Z
+  //   rises, so both terms of `viewZ = -sin(yaw)*x + cos(yaw)*z` push the same
+  //   way and no rotation can reorder anything. Here the part that is in front
+  //   by layer sits far to the -X side and vice versa, so turning the camera
+  //   genuinely swaps them — which is correct 3D behaviour for two planes at
+  //   different positions, and the thing a depth sort exists to do.
+  // ---------------------------------------------------------------------------
+  {
+    const bones = [
+      makeBone(0, 'root', null, 0, 0, { rotation: 0 }),
+      makeBone(1, 'left_side', 0, -120.5, 4.25, { rotation: 0 }),
+      makeBone(2, 'right_side', 0, 118.75, -3.5, { rotation: 0 }),
+    ];
+
+    const mk = (id: number, boneId: number, attachmentName: string, drawOrder: number) => ({
+      id, name: `s${id}`, boneId, color: '#888888', attachmentName, drawOrder,
+    });
+
+    // Painted first (furthest back at rest) is the one on the RIGHT.
+    const slots = [mk(30, 2, 'right_img', 0), mk(31, 0, 'middle_img', 1), mk(32, 1, 'left_img', 2)];
+
+    cases.push({
+      name: 'draw-order-orbit-swap',
+      expectChange: false,
+      note: 'layer order opposes world X, so orbiting genuinely reorders the sequence',
+      bones,
+      slots,
+      attachments: [
+        { boneId: 2, attachment: { ...makeAttachment('right_img', 30, 'image', 60, 60), slotId: 30 } },
+        { boneId: 0, attachment: { ...makeAttachment('middle_img', 31, 'image', 60, 60), slotId: 31 } },
+        { boneId: 1, attachment: { ...makeAttachment('left_img', 32, 'image', 60, 60), slotId: 32 } },
+      ],
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 13. Tilt inherited down a chain.
+  //
+  //   Only the middle bone tilts. Its ancestors must be untouched and every
+  //   descendant must be carried around with it — that inheritance is the whole
+  //   point of the matrix path, and nothing else in this file exercises it.
+  // ---------------------------------------------------------------------------
+  cases.push({
+    name: 'tilt-inherited',
+    expectChange: false,
+    note: 'rotationY on a middle bone must carry its descendants and leave ancestors alone',
+    bones: [
+      makeBone(0, 'root', null, 6.5, -11.25, { rotation: 8.75 }),
+      makeBone(1, 'spine', 0, 57.25, 4.5, { rotation: -12.5, rotationY: 43.75 }),
+      makeBone(2, 'neck', 1, 44.5, -6.25, { rotation: 17.25 }),
+      makeBone(3, 'head', 2, 38.75, 3.5, { rotation: -21.5 }),
+    ],
+    attachments: [
+      { boneId: 0, attachment: makeAttachment('root_img', 1, 'image', 90, 90, { rotation: 4.25 }) },
+      { boneId: 2, attachment: makeAttachment('neck_img', 1, 'image', 70, 70, { rotation: -6.5 }) },
+      { boneId: 3, attachment: makeAttachment('head_img', 1, 'image', 110, 110, { rotation: 11.75 }) },
+    ],
+  });
+
+  // ---------------------------------------------------------------------------
+  // 14. Both tilt axes at once, over the awkward branches.
+  //
+  //   X and Y together do not commute, so the composition order is load-bearing.
+  //   Combined here with a negative scale (the flip branch) and a weighted mesh
+  //   (the blend branch), since those are the paths most likely to lose a term.
+  // ---------------------------------------------------------------------------
+  {
+    const bones = [
+      makeBone(0, 'root', null, -4.75, 8.5, { rotation: 14.5, rotationX: -18.25, rotationY: 31.5 }),
+      makeBone(1, 'limb', 0, 46.25, -13.75, { rotation: 26.75, scaleX: -1.15, rotationY: -37.5 }),
+    ];
+    const mesh = makeGridMesh(130, 170, 2, 2);
+    const vertexWeights: MeshVertexWeight[][] = mesh.vertices.map((v) => {
+      const t = (v.x + 65) / 130;
+      return [
+        { boneId: 0, weight: 0.55 * (1 - t) },
+        { boneId: 1, weight: 0.8 * t },
+      ];
+    });
+    cases.push({
+      name: 'tilt-both-axes',
+      expectChange: false,
+      note: 'rotationX and rotationY together, with negative scale and a weighted mesh',
+      bones,
+      attachments: [
+        {
+          boneId: 1,
+          attachment: makeAttachment('limb_mesh', 1, 'mesh', 130, 170, {
+            x: 7.25,
+            y: -9.5,
+            rotation: -8.75,
+            scaleX: 1.1,
+            scaleY: 0.9,
+            mesh,
+            vertexWeights,
+          }),
+        },
       ],
     });
   }

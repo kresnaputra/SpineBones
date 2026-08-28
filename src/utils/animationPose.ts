@@ -32,14 +32,39 @@ export const getAdjacentKeyframes = (
   return { previous, next };
 };
 
-const getBasePose = (bone: Bone, setupPose: SetupPose): KeyframeData =>
-  setupPose[bone.id] ?? {
-    x: bone.x,
-    y: bone.y,
-    rotation: bone.rotation,
-    scaleX: bone.scaleX,
-    scaleY: bone.scaleY,
-  };
+/**
+ * The pose a bone falls back to when it has no keyframes.
+ *
+ * `SetupPose` predates 3D rotation and does not carry it, so the tilt always
+ * comes from the bone itself. That means a bone with no keyframes keeps whatever
+ * tilt it was given, rather than being reset to flat.
+ */
+const getBasePose = (bone: Bone, setupPose: SetupPose): KeyframeData => {
+  const tilt = { rotationX: bone.rotationX ?? 0, rotationY: bone.rotationY ?? 0 };
+  const pose = setupPose[bone.id];
+  return pose
+    ? { ...pose, ...tilt }
+    : {
+        x: bone.x,
+        y: bone.y,
+        rotation: bone.rotation,
+        scaleX: bone.scaleX,
+        scaleY: bone.scaleY,
+        ...tilt,
+      };
+};
+
+/**
+ * Fill in tilt on a keyframe written before the fields existed.
+ *
+ * Absent means 0, deliberately: once a bone is keyframed, the keyframes define
+ * its pose completely — exactly as they already do for x, y and rotation.
+ */
+const withTilt = (k: KeyframeData): KeyframeData => ({
+  ...k,
+  rotationX: k.rotationX ?? 0,
+  rotationY: k.rotationY ?? 0,
+});
 
 export const sampleBonePoseAtFrame = (
   bone: Bone,
@@ -69,11 +94,11 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === null && next !== null) {
-    return normalizeKeyframeData(boneKeyframes[next]);
+    return withTilt(normalizeKeyframeData(boneKeyframes[next]));
   }
 
   if (prev !== null && next === null) {
-    return normalizeKeyframeData(boneKeyframes[prev]);
+    return withTilt(normalizeKeyframeData(boneKeyframes[prev]));
   }
 
   if (prev === null || next === null) {
@@ -81,7 +106,7 @@ export const sampleBonePoseAtFrame = (
   }
 
   if (prev === next) {
-    return normalizeKeyframeData(boneKeyframes[prev]);
+    return withTilt(normalizeKeyframeData(boneKeyframes[prev]));
   }
 
   const kp = normalizeKeyframeData(boneKeyframes[prev]);
@@ -93,6 +118,8 @@ export const sampleBonePoseAtFrame = (
     x: lerp(kp.x, kn.x),
     y: lerp(kp.y, kn.y),
     rotation: lerp(kp.rotation, kn.rotation),
+    rotationX: lerp(kp.rotationX ?? 0, kn.rotationX ?? 0),
+    rotationY: lerp(kp.rotationY ?? 0, kn.rotationY ?? 0),
     scaleX: lerp(kp.scaleX, kn.scaleX),
     scaleY: lerp(kp.scaleY, kn.scaleY),
     easing: kp.easing,

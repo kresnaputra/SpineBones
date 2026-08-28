@@ -580,10 +580,20 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           if (f >= frame && next === null) next = f;
         }
 
+        // A keyframe written before out-of-plane rotation existed has no tilt of
+        // its own, and that means zero — the same rule every other channel
+        // follows. Without this the tilt would simply never animate: it would
+        // stick at whatever value the bone was last dragged to.
+        const withTilt = (k: KeyframeData): KeyframeData => ({
+          ...k,
+          rotationX: k.rotationX ?? 0,
+          rotationY: k.rotationY ?? 0,
+        });
+
         if (prev === null && next !== null) {
-          return { ...bone, ...normalizeKeyframeData(boneKeyframes[next]) };
+          return { ...bone, ...withTilt(normalizeKeyframeData(boneKeyframes[next])) };
         } else if (prev !== null && next === null) {
-          return { ...bone, ...normalizeKeyframeData(boneKeyframes[prev]) };
+          return { ...bone, ...withTilt(normalizeKeyframeData(boneKeyframes[prev])) };
         } else if (prev !== null && next !== null) {
           const t = prev === next ? 1 : (frame - prev) / (next - prev);
           const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
@@ -595,6 +605,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
             x: lerp(kp.x, kn.x, easedT),
             y: lerp(kp.y, kn.y, easedT),
             rotation: lerp(kp.rotation, kn.rotation, easedT),
+            rotationX: lerp(kp.rotationX ?? 0, kn.rotationX ?? 0, easedT),
+            rotationY: lerp(kp.rotationY ?? 0, kn.rotationY ?? 0, easedT),
             scaleX: lerp(kp.scaleX, kn.scaleX, easedT),
             scaleY: lerp(kp.scaleY, kn.scaleY, easedT),
           };

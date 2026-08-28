@@ -779,8 +779,11 @@ export const buildProjectData = (): ProjectData => {
 
   // Save bones using the setup pose so package preview and reload match the rig base pose.
   const savedBones = skeletonState.bones.map((bone) => {
+    // Drop the transient world frame — it is recomputed on load from the pose.
+    const rest = { ...bone };
+    delete rest._wm;
     const pose = setupPoseToSave[bone.id];
-    return pose ? { ...bone, ...pose } : bone;
+    return pose ? { ...rest, ...pose } : rest;
   });
 
   return {

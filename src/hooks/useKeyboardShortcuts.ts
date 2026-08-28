@@ -4,6 +4,7 @@ import { useSkeletonStore } from '../stores/skeletonStore';
 import { useAnimationStore } from '../stores/animationStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useSlotStore } from '../stores/slotStore';
+import { useCameraStore } from '../stores/cameraStore';
 import { getIkRootForBone } from '../utils/ik';
 import { createNewProject, loadProject, saveProject } from '../utils/projectPersistence';
 
@@ -146,6 +147,11 @@ export const useKeyboardShortcuts = () => {
             scaleY: bone.scaleY,
           });
         });
+        return;
+      }
+
+      if (key === '0') {
+        useCameraStore.getState().resetOrbit();
         return;
       }
 

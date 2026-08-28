@@ -11,10 +11,11 @@
  *
  * Both modules under test are pure and DOM-free, so this runs headless.
  *
- * Tolerance is exact zero, deliberately. The refactor is designed to be
- * bit-identical: `mat4 * vec4(x, y, 0, 1)` adds only exact-zero terms to the
- * products the current code already computes. Anything non-zero here means a
- * term was reordered or dropped, and that is exactly what we want to catch.
+ * Tolerance is exact zero, deliberately. Both refactors are designed to be
+ * bit-identical at rest: the matrix form adds only exact-zero terms to the
+ * products the legacy code already computed, and the orbit transform is exactly
+ * the identity at yaw 0. Anything non-zero here means a term was reordered or
+ * dropped, and that is exactly what we want to catch.
  *
  * Cases flagged `expectChange` (known latent bugs the rewrite fixes) are
  * reported separately and never fail the run.
@@ -27,8 +28,9 @@ import { fileURLToPath } from 'node:url';
 import { computeAllWorldTransforms, getBoneTip } from '../../src/engine/transforms';
 import type { Attachment, Bone, Slot } from '../../src/types';
 import { getAttachmentGeometry } from '../../src/engine/meshSkinning';
-import { computeDrawSequence } from '../../src/engine/drawOrder';
+import { computeDrawSequence, sortByViewDepth } from '../../src/engine/drawOrder';
 import { computeTransform } from '../../src/engine/webgl/meshRenderer';
+import { multiply, orbitTransform, ortho2D, toFloat32, transformPoint } from '../../src/engine/mat4';
 import { getViewportRect, type ViewportRect } from '../../src/engine/viewport';
 import { buildFixtures, type FixtureCase } from './fixtures';
 import { runMat4SelfChecks } from './mat4-selfcheck';
@@ -49,11 +51,16 @@ interface CameraCase {
   camZoom: number;
   canvasWidth: number;
   canvasHeight: number;
+  /** Orbit, in degrees. Zero cases must stay bit-identical to the legacy formula. */
+  yaw: number;
+  pitch: number;
 }
 
 const buildCameras = (): CameraCase[] => [
   {
     label: 'editor-default',
+    yaw: 0,
+    pitch: 0,
     note: 'live preview, camera at origin, zoom 1',
     viewportRect: getViewportRect(1600, 900),
     camX: 0,
@@ -64,6 +71,8 @@ const buildCameras = (): CameraCase[] => [
   },
   {
     label: 'editor-panned-zoomed',
+    yaw: 0,
+    pitch: 0,
     note: 'live preview, panned off-origin at a fractional zoom',
     viewportRect: getViewportRect(1440, 1010),
     camX: 123.5,
@@ -74,6 +83,8 @@ const buildCameras = (): CameraCase[] => [
   },
   {
     label: 'export-1920x1080',
+    yaw: 0,
+    pitch: 0,
     note: 'offscreen export path — viewportRect is exactly the video frame, so effective zoom === camZoom',
     viewportRect: { x: 0, y: 0, width: 1920, height: 1080 },
     camX: -41.75,
@@ -81,6 +92,20 @@ const buildCameras = (): CameraCase[] => [
     camZoom: 0.8125,
     canvasWidth: 1920,
     canvasHeight: 1080,
+  },
+  {
+    // No legacy baseline exists for a turned camera — this case exists to pin
+    // the orbit maths down now, so B5/B6 cannot alter it without saying so.
+    label: 'orbited-yaw30-pitch15',
+    yaw: 30,
+    pitch: 15,
+    note: 'camera orbited about its pan focus — exercises the general path, not the identity shortcut',
+    viewportRect: getViewportRect(1600, 900),
+    camX: 44.5,
+    camY: -18.75,
+    camZoom: 1.25,
+    canvasWidth: 1600,
+    canvasHeight: 900,
   },
 ];
 
@@ -113,6 +138,8 @@ interface BoneSnapshot {
   wrot: number;
   tipX: number;
   tipY: number;
+  /** Whether the bone carries a world matrix — i.e. which path the rig took. */
+  hasWorldFrame: boolean;
 }
 
 interface CaseSnapshot {
@@ -122,6 +149,12 @@ interface CaseSnapshot {
   attachments: GeometrySnapshot[];
   /** Only on fixtures that carry slots — the order the renderer draws them in. */
   drawSequence?: string[];
+  /**
+   * The same sequence after the view-depth sort, per camera. Every zero-orbit
+   * camera must reproduce `drawSequence` exactly; the orbited camera is where
+   * the sort actually reorders anything.
+   */
+  sortedDrawSequence?: Record<string, string[]>;
 }
 
 interface Snapshot {
@@ -132,74 +165,95 @@ interface Snapshot {
 
 const SCHEMA = 1;
 
-/**
- * Mirror of the vertex shader in `glContext.ts`:
- *   gl_Position = vec4(pos.x * ax + bx, pos.y * ay + by, 0, 1)
- *
- * Once `engine/mat4.ts` exists (Phase A step 1) this also evaluates the matrix
- * form and asserts the two agree exactly, so step 5's shader change is checked
- * without needing a browser.
- */
-type Mat4Module = typeof import('../../src/engine/mat4');
-
-let mat4: Mat4Module | null = null;
-try {
-  mat4 = await import('../../src/engine/mat4');
-} catch {
-  mat4 = null; // Not written yet — expected until step 1 lands.
-}
-
 const mat4Mismatches: string[] = [];
 
+/**
+ * The world->clip matrix the renderer uploads, for one camera.
+ *
+ * This composes exactly what `meshRenderer.render` composes — projection times
+ * orbit, narrowed to float32 — rather than modelling only the projection. The
+ * clip-Z bug that slipped past an earlier version of this harness lived
+ * precisely in the gap between what the renderer computed and what the harness
+ * imitated, so there is no longer a gap to live in.
+ */
+const cameraMatrix = (camera: CameraCase): Float32Array => {
+  const [ax, ay, bx, by] = computeTransform(
+    camera.viewportRect,
+    camera.camX,
+    camera.camY,
+    camera.camZoom,
+    camera.canvasWidth,
+    camera.canvasHeight,
+  );
+  const orbit = orbitTransform(camera.camX, camera.camY, camera.yaw, camera.pitch);
+  return toFloat32(multiply(ortho2D(ax, ay, bx, by), orbit));
+};
+
 const toClip = (
-  transform: [number, number, number, number],
+  camera: CameraCase,
+  mvp: Float32Array,
   x: number,
   y: number,
   z: number,
   where: string,
 ): number[] => {
-  // `uniformMatrix4fv(uMVP, ...)` hands the GPU float32 coefficients, exactly as
-  // the `uniform4f(uTransform, ...)` it replaced did, so quantise them the same
-  // way here. Without this the float64 reference below and a Float32Array-backed
-  // mat4 disagree in the last few bits for reasons that have nothing to do with
-  // the refactor — noise that would drown out real drift.
-  const ax = Math.fround(transform[0]);
-  const ay = Math.fround(transform[1]);
-  const bx = Math.fround(transform[2]);
-  const by = Math.fround(transform[3]);
-  const direct = [x * ax + bx, y * ay + by];
+  const clip = transformPoint(mvp, x, y, z);
 
-  if (mat4) {
-    // Push it through `toFloat32` first: that is the exact path the matrix takes
-    // to `uniformMatrix4fv`, so this compares what the GPU will really receive.
-    const m = mat4.toFloat32(mat4.ortho2D(ax, ay, bx, by));
-    const viaMatrix = mat4.transformPoint(m, x, y, z);
-    if (viaMatrix[0] !== direct[0] || viaMatrix[1] !== direct[1]) {
+  // WebGL discards any vertex outside -w <= z <= w, and w is 1 here. A
+  // projection that let world depth through untouched would silently clip away
+  // every layer past the first.
+  if (Math.abs(clip[2]) > 1) {
+    throw new Error(
+      `${where}: clip z ${clip[2]} is outside [-1, 1] — WebGL would clip this vertex away`,
+    );
+  }
+
+  // At zero orbit the matrix must still reproduce the legacy scalar formula
+  // exactly. With the camera turned there is no legacy value to compare to, so
+  // the recorded numbers are the contract instead.
+  if (camera.yaw === 0 && camera.pitch === 0) {
+    const [ax, ay, bx, by] = computeTransform(
+      camera.viewportRect,
+      camera.camX,
+      camera.camY,
+      camera.camZoom,
+      camera.canvasWidth,
+      camera.canvasHeight,
+    );
+    const direct = [x * Math.fround(ax) + Math.fround(bx), y * Math.fround(ay) + Math.fround(by)];
+    if (clip[0] !== direct[0] || clip[1] !== direct[1]) {
       mat4Mismatches.push(
-        `${where}: direct (${direct[0]}, ${direct[1]}) vs mat4 (${viaMatrix[0]}, ${viaMatrix[1]})`,
+        `${where}: legacy (${direct[0]}, ${direct[1]}) vs matrix (${clip[0]}, ${clip[1]})`,
       );
     }
   }
 
-  return direct;
+  return [clip[0]!, clip[1]!, clip[2]!];
 };
 
-/**
- * The draw sequence, from the function the renderer itself calls.
- *
- * B0 recorded this from a copy of the renderer's nested loop; B1 extracted that
- * loop into `computeDrawSequence` and pointed both the renderer and this harness
- * at it. The golden was recorded against the copy, so it still passing is the
- * proof that the extraction changed nothing.
- */
+const label = (item: { bone: Bone; slot: Slot; attachment: Attachment }): string =>
+  `bone${item.bone.id}/slot${item.slot.id}/${item.attachment.name}`;
+
 const drawSequence = (
   bones: Bone[],
   slots: Slot[],
   attachments: Attachment[],
-): string[] =>
-  computeDrawSequence(bones, slots, attachments).map(
-    (item) => `bone${item.bone.id}/slot${item.slot.id}/${item.attachment.name}`,
-  );
+): string[] => computeDrawSequence(bones, slots, attachments).map(label);
+
+const sortedDrawSequences = (
+  bones: Bone[],
+  slots: Slot[],
+  attachments: Attachment[],
+  cameras: CameraCase[],
+): Record<string, string[]> => {
+  const base = computeDrawSequence(bones, slots, attachments);
+  const out: Record<string, string[]> = {};
+  for (const camera of cameras) {
+    const orbit = orbitTransform(camera.camX, camera.camY, camera.yaw, camera.pitch);
+    out[camera.label] = sortByViewDepth(base, orbit).map(label);
+  }
+  return out;
+};
 
 const snapshotCase = (fixture: FixtureCase, cameras: CameraCase[]): CaseSnapshot => {
   // Mutates in place, exactly as every one of the 22 production call sites does.
@@ -218,14 +272,28 @@ const snapshotCase = (fixture: FixtureCase, cameras: CameraCase[]): CaseSnapshot
         wrot: bone._wrot,
         tipX: tip.x,
         tipY: tip.y,
+        hasWorldFrame: Boolean(bone._wm),
       };
     });
+
+  // Fixtures that carry slots go through the real draw sequence, so their
+  // geometry is built with the layer depth the renderer would actually pass.
+  const depthByAttachment = new Map<string, number>();
+  if (fixture.slots) {
+    for (const item of computeDrawSequence(
+      fixture.bones,
+      fixture.slots,
+      fixture.attachments.map((a) => a.attachment),
+    )) {
+      depthByAttachment.set(item.attachment.name, item.depth);
+    }
+  }
 
   const attachments: GeometrySnapshot[] = fixture.attachments.map(({ attachment, boneId }) => {
     const bone = fixture.bones.find((b) => b.id === boneId);
     if (!bone) throw new Error(`fixture ${fixture.name}: no bone ${boneId}`);
 
-    const geo = getAttachmentGeometry(attachment, bone, fixture.bones);
+    const geo = getAttachmentGeometry(attachment, bone, fixture.bones, depthByAttachment.get(attachment.name) ?? 0);
 
     // UVs stay 2 floats per vertex through Phase A, so they give us the vertex
     // count independently of the position stride we are about to change.
@@ -242,11 +310,6 @@ const snapshotCase = (fixture: FixtureCase, cameras: CameraCase[]): CaseSnapshot
       const x = geo.positions[i * positionStride]!;
       const y = geo.positions[i * positionStride + 1]!;
       const z = positionStride === 3 ? geo.positions[i * positionStride + 2]! : 0;
-      if (z !== 0) {
-        throw new Error(
-          `fixture ${fixture.name}/${attachment.name} vertex ${i}: z must stay 0 in Phase A, got ${z}`,
-        );
-      }
       points.push([x, y, z]);
     }
 
@@ -257,16 +320,9 @@ const snapshotCase = (fixture: FixtureCase, cameras: CameraCase[]): CaseSnapshot
 
     const clip: Record<string, number[][]> = {};
     for (const camera of cameras) {
-      const transform = computeTransform(
-        camera.viewportRect,
-        camera.camX,
-        camera.camY,
-        camera.camZoom,
-        camera.canvasWidth,
-        camera.canvasHeight,
-      );
+      const mvp = cameraMatrix(camera);
       clip[camera.label] = points.map(([x, y, z], i) =>
-        toClip(transform, x!, y!, z!, `${fixture.name}/${attachment.name}@${camera.label}[${i}]`),
+        toClip(camera, mvp, x!, y!, z!, `${fixture.name}/${attachment.name}@${camera.label}[${i}]`),
       );
     }
 
@@ -289,6 +345,12 @@ const snapshotCase = (fixture: FixtureCase, cameras: CameraCase[]): CaseSnapshot
     attachments,
     ...(fixture.slots
       ? {
+          sortedDrawSequence: sortedDrawSequences(
+            fixture.bones,
+            fixture.slots,
+            fixture.attachments.map((a) => a.attachment),
+            cameras,
+          ),
           drawSequence: drawSequence(
             fixture.bones,
             fixture.slots,
@@ -424,7 +486,7 @@ const verify = (golden: Snapshot, current: Snapshot, selfCheckFailures: number):
     console.error(`\n  FAIL  world->clip transform changed (${cameraDiffs.length} diff(s))`);
     cameraDiffs.slice(0, MAX_DIFFS_SHOWN).forEach((d) => console.error(formatDiff(d)));
   } else {
-    console.log('  ok    world->clip transform identical across all 3 camera configs');
+    console.log(`  ok    world->clip transform identical across all ${Object.keys(current.cameras).length} camera configs`);
   }
 
   const names = new Set([...Object.keys(golden.cases), ...Object.keys(current.cases)]);
@@ -474,14 +536,12 @@ const verify = (golden: Snapshot, current: Snapshot, selfCheckFailures: number):
   }
 
   console.log('');
-  if (mat4) {
-    if (mat4Mismatches.length) {
-      console.error(`  FAIL  engine/mat4.ts disagrees with the direct transform (${mat4Mismatches.length} point(s))`);
-      mat4Mismatches.slice(0, MAX_DIFFS_SHOWN).forEach((m) => console.error(`      ${m}`));
-      failed += mat4Mismatches.length;
-    } else {
-      console.log('  ok    engine/mat4.ts ortho2D/transformPoint match the direct transform exactly');
-    }
+  if (mat4Mismatches.length) {
+    console.error(`  FAIL  composed matrix disagrees with the legacy formula (${mat4Mismatches.length} point(s))`);
+    mat4Mismatches.slice(0, MAX_DIFFS_SHOWN).forEach((m) => console.error(`      ${m}`));
+    failed += mat4Mismatches.length;
+  } else {
+    console.log('  ok    projection x orbit reproduces the legacy formula exactly at zero orbit');
   }
 
   if (informational) console.log(`  ${informational} informational diff(s) ignored`);
@@ -516,7 +576,7 @@ const main = async (): Promise<number> => {
     );
     console.log(`Wrote baseline: ${cases} cases, ${points} vertices -> ${GOLDEN_PATH}`);
     if (mat4Mismatches.length) {
-      console.error(`\nWARNING: engine/mat4.ts disagrees with the direct transform at ${mat4Mismatches.length} point(s).`);
+      console.error(`\nWARNING: composed matrix disagrees with the legacy formula at ${mat4Mismatches.length} point(s).`);
       mat4Mismatches.slice(0, MAX_DIFFS_SHOWN).forEach((m) => console.error(`  ${m}`));
       return 1;
     }

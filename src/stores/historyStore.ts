@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useAnimationStore } from './animationStore';
 import { useCameraStore } from './cameraStore';
 import { useDeformerStore } from './deformerStore';
+import type { Bone } from '../types';
 import { useEditorStore } from './editorStore';
 import { usePhysicsStore } from './physicsStore';
 import { useSkeletonStore } from './skeletonStore';
@@ -75,6 +76,19 @@ interface HistoryState {
   markClean: () => void;
 }
 
+/**
+ * Drop the transient world frame before a bone is serialised.
+ *
+ * `_wm` is recomputed from the pose on every render, so persisting it is pure
+ * waste — 16 numbers per bone in every undo step and every saved project.
+ */
+const stripWorldFrame = (bone: Bone): Bone => {
+  if (!bone._wm) return bone;
+  const copy = { ...bone };
+  delete copy._wm;
+  return copy;
+};
+
 const cloneSnapshot = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const createProjectSnapshot = (): ProjectSnapshot => {
@@ -94,7 +108,9 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       selectedSlotId: editor.selectedSlotId,
     },
     skeleton: {
-      bones: skeleton.bones,
+      // `_wm` is a transient render frame, recomputed every pose. Keeping it out
+      // of the snapshot avoids 16 numbers per bone in every undo step.
+      bones: skeleton.bones.map((bone) => stripWorldFrame(bone)),
       boneGroups: skeleton.boneGroups,
       setupPose: skeleton.setupPose,
       skins: skeleton.skins,

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useEffectEvent } from 'react';
-import type { AttachmentOpacityKeyframes, MeshDeformKeyframes } from '../../types';
+import type { AttachmentOpacityKeyframes, Bone, MeshDeformKeyframes } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import { useAnimationStore } from '../../stores/animationStore';
@@ -8,6 +8,8 @@ import { useHistoryStore } from '../../stores/historyStore';
 import { useDeformerStore } from '../../stores/deformerStore';
 import { useSlotStore } from '../../stores/slotStore';
 import { computeAllWorldTransforms } from '../../engine/transforms';
+import { computeDrawSequence } from '../../engine/drawOrder';
+import { orbitPlaneConditioning } from '../../engine/mat4';
 import { drawGrid, drawOriginCross, drawBone, drawBoneRelation, drawGhostBone } from '../../engine/renderer';
 import { drawAttachmentOutline, drawSlotOutlines, hitTestAttachment } from '../../engine/imageRenderer';
 import { createMeshRenderer, type MeshRenderer } from '../../engine/webgl/meshRenderer';
@@ -29,8 +31,9 @@ import {
   getViewportRect,
   getViewportScale,
   getViewportEffectiveZoom,
-  createViewportWorldToScreen,
-  createViewportScreenToWorld,
+  createOrbitWorldToScreen,
+  createOrbitScreenToWorld,
+  MIN_PLANE_CONDITIONING,
 } from '../../engine/viewport';
 import { hitTestBone } from '../../engine/hitTest';
 import { getIkChain, getIkRootForBone, solveTwoBoneIk } from '../../utils/ik';
@@ -123,7 +126,7 @@ export const MainCanvas = () => {
     replaceMeshDeformKeyframesForAttachment,
     clearMeshDeformKeyframesForAttachment,
   } = useAnimationStore();
-  const { x: camX, y: camY, zoom: camZoom, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy } = useCameraStore();
+  const { x: camX, y: camY, zoom: camZoom, yaw, pitch, canvasWidth, canvasHeight, setCanvasSize, pan, zoomBy, orbit } = useCameraStore();
   const { slots, attachments } = useSlotStore();
   const { captureSnapshot } = useHistoryStore();
   const {
@@ -141,8 +144,62 @@ export const MainCanvas = () => {
   const viewportRect = getViewportRect(canvasWidth, canvasHeight);
   const vpScale = getViewportScale(viewportRect);
   const effectiveZoom = getViewportEffectiveZoom(viewportRect, camZoom);
-  const previewWorldToScreen = createViewportWorldToScreen(viewportRect, camX, camY, camZoom);
-  const previewScreenToWorld = createViewportScreenToWorld(viewportRect, camX, camY, camZoom);
+  const previewWorldToScreen = createOrbitWorldToScreen(viewportRect, camX, camY, camZoom, yaw, pitch);
+  // Bones have no depth of their own yet, so every drag resolves against the
+  // z = 0 plane. Returns null only when that plane is edge-on to the camera.
+  /**
+   * The three rotation rings, in world space around a bone.
+   *
+   * Each is a circle in one of the coordinate planes, so projecting them through
+   * `previewWorldToScreen` — which takes a Z — makes them tilt correctly under
+   * camera orbit and under the bone's own out-of-plane rotation. That is what
+   * makes the gizmo readable: the ring you grab is the one facing you.
+   */
+  const GIZMO_RADIUS_PX = 58;
+  const GIZMO_SEGMENTS = 48;
+
+  const gizmoRing = (
+    bone: Bone,
+    axis: 'x' | 'y' | 'z',
+    toScreen: (wx: number, wy: number, wz?: number) => { x: number; y: number },
+    radiusWorld: number,
+  ): Array<{ x: number; y: number }> => {
+    const pts: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= GIZMO_SEGMENTS; i += 1) {
+      const t = (i / GIZMO_SEGMENTS) * Math.PI * 2;
+      const c = Math.cos(t) * radiusWorld;
+      const s2 = Math.sin(t) * radiusWorld;
+      const [dx, dy, dz] =
+        axis === 'z' ? [c, s2, 0] : axis === 'y' ? [c, 0, s2] : [0, c, s2];
+      pts.push(toScreen(bone._wx + dx, bone._wy + dy, dz));
+    }
+    return pts;
+  };
+
+  /** Which ring, if any, the cursor is over. Nearest wins when rings overlap. */
+  const gizmoAxisAt = (
+    sx: number,
+    sy: number,
+    bone: Bone,
+    toScreen: (wx: number, wy: number, wz?: number) => { x: number; y: number },
+    radiusWorld: number,
+  ): 'x' | 'y' | 'z' | null => {
+    let best: 'x' | 'y' | 'z' | null = null;
+    let bestDist = 9;
+    for (const axis of ['z', 'y', 'x'] as const) {
+      for (const pt of gizmoRing(bone, axis, toScreen, radiusWorld)) {
+        const d = Math.hypot(pt.x - sx, pt.y - sy);
+        if (d < bestDist) {
+          bestDist = d;
+          best = axis;
+        }
+      }
+    }
+    return best;
+  };
+
+  const previewScreenToWorld = createOrbitScreenToWorld(viewportRect, camX, camY, camZoom, yaw, pitch);
+  const canEdit = orbitPlaneConditioning(yaw, pitch) >= MIN_PLANE_CONDITIONING;
 
   const isDescendantOfBone = (boneId: number, ancestorId: number) => {
     let current = bones.find((bone) => bone.id === boneId) ?? null;
@@ -249,6 +306,15 @@ export const MainCanvas = () => {
     return Array.from(keyframeIds);
   };
 
+  const [orbitStart, setOrbitStart] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * While the camera is turned, the 2D overlay and every hit-test are wrong:
+   * they project through `previewWorldToScreen`, which knows nothing about the
+   * orbit. Rather than let handles sit in the wrong place and invite edits that
+   * land somewhere else, the canvas goes view-only. Lifting this is B6's job.
+   */
+  const isOrbited = yaw !== 0 || pitch !== 0;
+
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -262,6 +328,8 @@ export const MainCanvas = () => {
       x: number;
       y: number;
       rotation: number;
+      rotationX: number;
+      rotationY: number;
       scaleX: number;
       scaleY: number;
       wx: number;
@@ -269,6 +337,8 @@ export const MainCanvas = () => {
       parentId: number | null;
     }>;
   } | null>(null);
+  /** Which gizmo ring the rotate drag grabbed. 'z' is the original 2D behaviour. */
+  const [rotateAxis, setRotateAxis] = useState<'x' | 'y' | 'z'>('z');
   const [attachmentDragStart, setAttachmentDragStart] = useState<{
     slotId: number;
     attachmentName: string;
@@ -354,6 +424,24 @@ export const MainCanvas = () => {
       : activeAttachment;
 
   const meshAttachment = resolvedActiveAttachment?.type === 'mesh' ? resolvedActiveAttachment : null;
+
+  /**
+   * The layer depth the renderer draws the active attachment at.
+   *
+   * Mesh and warp handles have to be projected at that same depth: at rest it
+   * makes no difference, but once the camera turns, projecting them at z = 0
+   * would slide them off the geometry they belong to.
+   */
+  const activeAttachmentDepth = useMemo(() => {
+    if (!activeAttachment) return 0;
+    const item = computeDrawSequence(bones, resolvedSlots, warpedResolvedAttachments).find(
+      (i) => i.attachment.slotId === activeAttachment.slotId && i.attachment.name === activeAttachment.name,
+    );
+    return item?.depth ?? 0;
+  }, [bones, resolvedSlots, warpedResolvedAttachments, activeAttachment]);
+
+  const activeWorldToScreen = (wx: number, wy: number) =>
+    previewWorldToScreen(wx, wy, activeAttachmentDepth);
 
   const activeDeformer =
     activeAttachment?.deformerId != null
@@ -629,6 +717,8 @@ export const MainCanvas = () => {
         canvasWidth: canvas.width,
         canvasHeight: canvas.height,
         viewportRect,
+        yaw,
+        pitch,
         clip: showViewport ? viewportRect : undefined,
         onTextureReady: handleImageLoad,
       });
@@ -651,7 +741,7 @@ export const MainCanvas = () => {
     // Mesh wireframe + vertex handles (overlay canvas, never affects GL texture)
     if (tool === 'mesh' && meshAttachment?.mesh && activeBone) {
       const screenVerts = getMeshVertexScreenPositions(
-        meshAttachment, activeBone, bones, previewWorldToScreen,
+        meshAttachment, activeBone, bones, activeWorldToScreen,
         meshAttachment.mesh.vertices,
       );
       const edges = meshAttachment.mesh.edges;
@@ -703,7 +793,7 @@ export const MainCanvas = () => {
     if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
       const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
       const screenPts = getMeshVertexScreenPositions(
-        activeAttachment, activeBone, bones, previewWorldToScreen, currentPts,
+        activeAttachment, activeBone, bones, activeWorldToScreen, currentPts,
       );
       const { cols, rows } = activeDeformer.grid;
       const idx = (col: number, row: number) => row * (cols + 1) + col;
@@ -768,7 +858,7 @@ export const MainCanvas = () => {
     if (tool === 'weights' && activeAttachment?.type === 'mesh' && activeAttachment.mesh && activeBone) {
       const verts = activeAttachment.mesh.vertices;
       const screenVerts = getMeshVertexScreenPositions(
-        activeAttachment, activeBone, bones, previewWorldToScreen, verts,
+        activeAttachment, activeBone, bones, activeWorldToScreen, verts,
       );
       ov.save();
       // Draw per-vertex heatmap circles
@@ -871,13 +961,55 @@ export const MainCanvas = () => {
         drawGhostBone(ov, bone, '#db2777', 0.4, previewWorldToScreen);
       });
     }
+    if (tool === 'rotate' && activeBone) {
+      const radiusWorld = GIZMO_RADIUS_PX / effectiveZoom;
+      const rings = [
+        { axis: 'z' as const, colour: '#3b82f6' },
+        { axis: 'y' as const, colour: '#22c55e' },
+        { axis: 'x' as const, colour: '#ef4444' },
+      ];
+      for (const { axis, colour } of rings) {
+        const pts = gizmoRing(activeBone, axis, previewWorldToScreen, radiusWorld);
+        ov.beginPath();
+        pts.forEach((pt, i) => (i === 0 ? ov.moveTo(pt.x, pt.y) : ov.lineTo(pt.x, pt.y)));
+        ov.strokeStyle = colour;
+        ov.lineWidth = isDragging && rotateAxis === axis ? 3 : 1.5;
+        ov.globalAlpha = isDragging && rotateAxis !== axis ? 0.25 : 0.9;
+        ov.stroke();
+      }
+      ov.globalAlpha = 1;
+    }
+
+    if (isOrbited) {
+      ov.fillStyle = 'rgba(0,0,0,0.55)';
+      ov.fillRect(viewportRect.x + 10, viewportRect.y + 10, canEdit ? 250 : 300, 34);
+      ov.fillStyle = '#fbbf24';
+      ov.font = '11px system-ui, sans-serif';
+      ov.fillText(`ORBIT  yaw ${yaw.toFixed(0)}°  pitch ${pitch.toFixed(0)}°`, viewportRect.x + 18, viewportRect.y + 27);
+      ov.fillStyle = canEdit ? 'rgba(255,255,255,0.65)' : '#f87171';
+      ov.fillText(
+        canEdit ? 'press 0 to reset' : 'edge-on — editing unavailable, press 0 to reset',
+        viewportRect.x + 18,
+        viewportRect.y + 39,
+      );
+    }
+
     ov.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedAttachments, warpedResolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, meshAttachment, selectedMeshVertexIndices, hoveredMeshVertexIndex, meshMarquee, activeDeformer, deformers, deformerKeyframes, selectedDeformerCPs, hoveredDeformerCPIndex, deformerMarquee, weightBrushBoneId, weightBrushRadius, weightBrushPos, physicsOffsets]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedAttachments, warpedResolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, meshAttachment, selectedMeshVertexIndices, hoveredMeshVertexIndex, meshMarquee, activeDeformer, deformers, deformerKeyframes, selectedDeformerCPs, hoveredDeformerCPIndex, deformerMarquee, weightBrushBoneId, weightBrushRadius, weightBrushPos, physicsOffsets, yaw, pitch, isOrbited, canEdit, activeWorldToScreen, isDragging, rotateAxis]);
 
   // useEffectEvent ensures this always captures the latest state/props,
   // even when called from a requestAnimationFrame callback.
+  const ORBIT_DEGREES_PER_PIXEL = 0.4;
+
   const processDragAt = useEffectEvent((sx: number, sy: number) => {
+    if (orbitStart) {
+      // Drag right turns the rig's right side away; drag up tips the top back.
+      orbit((sx - orbitStart.x) * ORBIT_DEGREES_PER_PIXEL, (sy - orbitStart.y) * ORBIT_DEGREES_PER_PIXEL);
+      setOrbitStart({ x: sx, y: sy });
+      return;
+    }
+
     if (isPanning && panStart) {
       // Divide by vpScale so that the camera store's zoom-division gives
       // world-unit delta = screenDelta / effectiveZoom (= camZoom * vpScale).
@@ -969,6 +1101,7 @@ export const MainCanvas = () => {
 
     if (ikDragStart) {
       const world = previewScreenToWorld(sx, sy);
+      if (!world) return;
       const solution = solveTwoBoneIk(ikDragStart.rootId, world, bones);
       if (!solution) return;
 
@@ -983,6 +1116,7 @@ export const MainCanvas = () => {
 
     if (isDragging && dragStart) {
       const world = previewScreenToWorld(sx, sy);
+      if (!world) return;
       const transformTargetIds = getTransformTargetIds();
       const anchorBone = bones.find((b) => b.id === dragStart.anchorBoneId);
       if (!anchorBone || transformTargetIds.length === 0) return;
@@ -1015,6 +1149,23 @@ export const MainCanvas = () => {
           updateBone(boneId, {
             x: nextX,
             y: nextY,
+          });
+        });
+      } else if (tool === 'rotate' && rotateAxis !== 'z') {
+        // Out-of-plane rings map drag distance to angle: an in-plane sweep is
+        // meaningless for a ring seen nearly edge-on, which these often are.
+        const DEGREES_PER_PIXEL = 0.5;
+        const delta =
+          rotateAxis === 'y'
+            ? (sx - dragStart.sx) * DEGREES_PER_PIXEL
+            : (sy - dragStart.sy) * DEGREES_PER_PIXEL;
+
+        transformTargetIds.forEach((boneId) => {
+          const initialState = dragStart.bones[boneId];
+          if (!initialState) return;
+          updateBone(boneId, {
+            [rotateAxis === 'y' ? 'rotationY' : 'rotationX']:
+              (rotateAxis === 'y' ? initialState.rotationY : initialState.rotationX) + delta,
           });
         });
       } else if (tool === 'rotate') {
@@ -1076,7 +1227,7 @@ export const MainCanvas = () => {
         const fallbackBoneId = activeBone.id;
         computeAllWorldTransforms(bones);
         const screenVerts = getMeshVertexScreenPositions(
-          activeAttachment, activeBone, bones, previewWorldToScreen, activeAttachment.mesh.vertices,
+          activeAttachment, activeBone, bones, activeWorldToScreen, activeAttachment.mesh.vertices,
         );
         const nextWeights = (activeAttachment.vertexWeights
           ? [...activeAttachment.vertexWeights]
@@ -1101,20 +1252,20 @@ export const MainCanvas = () => {
     }
 
     const isActiveDrag =
-      isDragging || isPanning || attachmentDragStart !== null ||
+      isDragging || isPanning || orbitStart !== null || attachmentDragStart !== null ||
       ikDragStart !== null || meshDragStart !== null || meshMarquee !== null ||
       deformerDragState !== null || deformerMarquee !== null;
 
     if (!isActiveDrag) {
       // Hover cheap path: also update hovered mesh vertex index.
       if (tool === 'mesh' && meshAttachment?.mesh && activeBone) {
-        const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, meshAttachment.mesh.vertices);
+        const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, activeWorldToScreen, meshAttachment.mesh.vertices);
         const hi = screenVerts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 8);
         setHoveredMeshVertexIndex(hi >= 0 ? hi : null);
         setHoveredBoneId(null);
       } else if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
         const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
-        const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+        const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
         const hi = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 8);
         setHoveredDeformerCPIndex(hi >= 0 ? hi : null);
         setHoveredBoneId(null);
@@ -1143,6 +1294,24 @@ export const MainCanvas = () => {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    // Alt-drag or middle-drag orbits. Alt is the one that matters: a MacBook
+    // trackpad has no middle button at all, so middle-drag alone left the whole
+    // feature unreachable on the machine this is developed on. Alt+drag is also
+    // what Maya trained people on. Alt is otherwise unused in this canvas.
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      setOrbitStart({ x: sx, y: sy });
+      return;
+    }
+
+    // Editing works at any angle now, except looking straight along the plane
+    // being edited, where a screen point maps to an unbounded world distance.
+    if (!canEdit) {
+      setIsPanning(true);
+      setPanStart({ x: sx, y: sy });
+      return;
+    }
+
     const hit = hitTestBone({ x: sx, y: sy }, bones, previewWorldToScreen);
 
     // ── Weight paint interactions ──────────────────────────────────────────
@@ -1156,7 +1325,7 @@ export const MainCanvas = () => {
     if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
       if (e.button !== 0) return;
       const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
-      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
       const targetIdx = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
 
       if (targetIdx >= 0) {
@@ -1205,7 +1374,7 @@ export const MainCanvas = () => {
     // ── Mesh tool interactions ────────────────────────────────────────────
     if (tool === 'mesh' && activeSlot && activeBone && activeAttachment?.type === 'mesh' && meshAttachment?.mesh) {
       const displayVerts = meshAttachment.mesh.vertices;
-      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, displayVerts);
+      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, activeWorldToScreen, displayVerts);
       const targetIdx = screenVerts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
       const attachmentKey = getAttachmentKey(activeAttachment);
 
@@ -1310,6 +1479,15 @@ export const MainCanvas = () => {
     }
 
     const world = previewScreenToWorld(sx, sy);
+    if (!world) return;
+
+    // Grabbing a ring picks the axis; anywhere else keeps the original Z drag,
+    // so muscle memory for the 2D rotate tool is untouched.
+    if (tool === 'rotate' && activeBone) {
+      setRotateAxis(
+        gizmoAxisAt(sx, sy, activeBone, previewWorldToScreen, GIZMO_RADIUS_PX / effectiveZoom) ?? 'z',
+      );
+    }
 
     const activeIkRootId = selectedBoneId !== null ? getIkRootForBone(selectedBoneId, bones)?.id ?? null : null;
 
@@ -1433,6 +1611,8 @@ export const MainCanvas = () => {
                 x: bone.x,
                 y: bone.y,
                 rotation: bone.rotation,
+                rotationX: bone.rotationX ?? 0,
+                rotationY: bone.rotationY ?? 0,
                 scaleX: bone.scaleX,
                 scaleY: bone.scaleY,
                 wx: bone._wx,
@@ -1445,6 +1625,8 @@ export const MainCanvas = () => {
             x: number;
             y: number;
             rotation: number;
+            rotationX: number;
+            rotationY: number;
             scaleX: number;
             scaleY: number;
             wx: number;
@@ -1483,6 +1665,7 @@ export const MainCanvas = () => {
 
     setIsPanning(false);
     setPanStart(null);
+    setOrbitStart(null);
 
     if (ikDragStart && mode === 'animate') {
       const affectedBoneIds = [ikDragStart.rootId, ikDragStart.childId];
@@ -1494,6 +1677,8 @@ export const MainCanvas = () => {
           x: bone.x,
           y: bone.y,
           rotation: bone.rotation,
+          rotationX: bone.rotationX ?? 0,
+          rotationY: bone.rotationY ?? 0,
           scaleX: bone.scaleX,
           scaleY: bone.scaleY,
         });
@@ -1509,6 +1694,8 @@ export const MainCanvas = () => {
           x: bone.x,
           y: bone.y,
           rotation: bone.rotation,
+          rotationX: bone.rotationX ?? 0,
+          rotationY: bone.rotationY ?? 0,
           scaleX: bone.scaleX,
           scaleY: bone.scaleY,
         });
@@ -1526,7 +1713,7 @@ export const MainCanvas = () => {
       const my0 = Math.min(meshMarquee.sy, meshMarquee.currentSy);
       const mx1 = Math.max(meshMarquee.sx, meshMarquee.currentSx);
       const my1 = Math.max(meshMarquee.sy, meshMarquee.currentSy);
-      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, previewWorldToScreen, meshAttachment.mesh.vertices);
+      const screenVerts = getMeshVertexScreenPositions(meshAttachment, activeBone, bones, activeWorldToScreen, meshAttachment.mesh.vertices);
       const inside = screenVerts
         .map((p, i) => ({ p, i }))
         .filter(({ p }) => p.x >= mx0 && p.x <= mx1 && p.y >= my0 && p.y <= my1)
@@ -1543,7 +1730,7 @@ export const MainCanvas = () => {
       const mx1 = Math.max(deformerMarquee.sx, deformerMarquee.currentSx);
       const my1 = Math.max(deformerMarquee.sy, deformerMarquee.currentSy);
       const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
-      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, previewWorldToScreen, currentPts);
+      const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
       const inside = screenPts
         .map((p, i) => ({ p, i }))
         .filter(({ p }) => p.x >= mx0 && p.x <= mx1 && p.y >= my0 && p.y <= my1)

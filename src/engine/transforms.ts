@@ -1,4 +1,13 @@
 import type { Bone, Point } from '../types';
+import {
+  create,
+  fromRotationX,
+  fromRotationY,
+  fromTranslation,
+  fromTranslationRotationZ,
+  multiply,
+  type Mat4,
+} from './mat4';
 
 /**
  * Bone world transforms.
@@ -54,6 +63,55 @@ const setChildTransform = (bone: Bone, parent: Bone): void => {
 const RESOLVING = 0;
 const RESOLVED = 1;
 
+/** True once any bone tilts out of the screen plane. */
+const usesOutOfPlaneRotation = (bones: Bone[]): boolean =>
+  bones.some((b) => (b.rotationX ?? 0) !== 0 || (b.rotationY ?? 0) !== 0);
+
+const SCRATCH_LOCAL: Mat4 = create();
+const SCRATCH_SPIN: Mat4 = create();
+
+const writeMatrix = (bone: Bone, m: Mat4): void => {
+  const out = bone._wm ?? (bone._wm = new Array<number>(16));
+  for (let i = 0; i < 16; i += 1) out[i] = m[i]!;
+};
+
+/**
+ * World frame for a bone in a rig that uses 3D rotation.
+ *
+ * Unlike the scalar path this genuinely composes matrices, because three
+ * rotation axes cannot be accumulated as sums — `R(a) * R(b)` is not `R(a + b)`
+ * once the axes differ. That costs bit-parity with the 2D formula, which is why
+ * a rig that uses no out-of-plane rotation never comes down this path.
+ *
+ * `_wx/_wy` are still written, from the matrix translation, because 22 call
+ * sites read them. `_wrot` keeps accumulating the Z component alone: it is the
+ * best single scalar available, and `getBoneTip`, hit-testing and the Canvas-2D
+ * exporters all still depend on it.
+ */
+const setFrame3D = (bone: Bone, parent: Bone | null): void => {
+  const local = multiply(
+    multiply(
+      fromRotationY(bone.rotationY ?? 0, SCRATCH_SPIN),
+      fromRotationX(bone.rotationX ?? 0),
+    ),
+    fromTranslationRotationZ(0, 0, bone.rotation),
+    SCRATCH_LOCAL,
+  );
+
+  const offset = parent
+    ? fromTranslation(bone.x * parent.scaleX, bone.y * parent.scaleY, 0)
+    : fromTranslation(bone.x, bone.y, 0);
+
+  const world = parent?._wm
+    ? multiply(parent._wm, multiply(offset, local))
+    : multiply(offset, local);
+
+  writeMatrix(bone, world);
+  bone._wx = world[12]!;
+  bone._wy = world[13]!;
+  bone._wrot = (parent ? parent._wrot : 0) + bone.rotation;
+};
+
 /**
  * Compute `_wx/_wy/_wrot` for every bone, in place.
  *
@@ -74,6 +132,13 @@ const RESOLVED = 1;
  * safety net against a hang rather than a supported configuration.
  */
 export const computeAllWorldTransforms = (bones: Bone[]): void => {
+  const use3D = usesOutOfPlaneRotation(bones);
+  if (!use3D) {
+    // Drop any frames left over from a rig that used to tilt, so `meshSkinning`
+    // goes back to its 2D fast path instead of reading a stale matrix.
+    for (const bone of bones) if (bone._wm) delete bone._wm;
+  }
+
   const byId = new Map<number, Bone>();
   for (const bone of bones) byId.set(bone.id, bone);
 
@@ -94,8 +159,11 @@ export const computeAllWorldTransforms = (bones: Bone[]): void => {
     // `=== null` matters: bone ids start at 0, so the first bone ever created is
     // a perfectly valid parent whose id is falsy.
     const parent = bone.parentId === null ? undefined : byId.get(bone.parentId);
-    if (parent) {
-      resolve(parent);
+    if (parent) resolve(parent);
+
+    if (use3D) {
+      setFrame3D(bone, parent ?? null);
+    } else if (parent) {
       setChildTransform(bone, parent);
     } else {
       setRootTransform(bone);

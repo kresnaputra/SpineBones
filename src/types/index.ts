@@ -87,7 +87,15 @@ export interface Bone {
   x: number;
   y: number;
   length: number;
+  /** Rotation about Z — the original 2D, in-plane rotation. */
   rotation: number;
+  /**
+   * Rotation about X and Y, tilting the bone's attachment plane out of the
+   * screen. Optional and absent by default: a rig without them takes the exact
+   * scalar path it always did.
+   */
+  rotationX?: number;
+  rotationY?: number;
   scaleX: number;
   scaleY: number;
   parentId: number | null;
@@ -95,6 +103,19 @@ export interface Bone {
   _wx: number;
   _wy: number;
   _wrot: number;
+  /**
+   * World transform as a column-major 4x4, present **only** on rigs that use
+   * out-of-plane rotation. A purely 2D rig leaves this absent and keeps the
+   * exact scalar path it always had.
+   *
+   * Deliberately a plain number array rather than a `Float64Array`: bones are
+   * put through `JSON.parse(JSON.stringify(...))` by every undo snapshot and by
+   * project saving, and a typed array does not survive that — it comes back as
+   * `{"0": …}`. A plain array round-trips harmlessly even if some future code
+   * path serialises a bone without stripping it first. It *is* stripped where
+   * it matters, but the type choice means forgetting is untidy, not corrupting.
+   */
+  _wm?: number[];
 }
 
 export interface Skin {
@@ -119,6 +140,13 @@ export interface KeyframeData {
   x: number;
   y: number;
   rotation: number;
+  /**
+   * Out-of-plane rotation. Optional so every keyframe written before 3D
+   * rotation existed stays valid — absent reads as 0, which is what those poses
+   * meant. No project migration is needed.
+   */
+  rotationX?: number;
+  rotationY?: number;
   scaleX: number;
   scaleY: number;
   easing?: KeyframeEasing;

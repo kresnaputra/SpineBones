@@ -50439,12 +50439,14 @@ var createServer = () => {
       y: number2().optional(),
       length: number2().positive().optional(),
       rotation: number2().optional(),
+      rotation_x: number2().optional(),
+      rotation_y: number2().optional(),
       scale_x: number2().optional(),
       scale_y: number2().optional(),
       parent_bone_id: number2().int().min(0).optional(),
       parent_bone_name: string2().min(1).optional()
     }
-  }, async ({ name, x, y, length, rotation, scale_x, scale_y, parent_bone_id, parent_bone_name }) => {
+  }, async ({ name, x, y, length, rotation, rotation_x: rotation_x2, rotation_y: rotation_y2, scale_x, scale_y, parent_bone_id, parent_bone_name }) => {
     const result = await requestJson("/command", {
       method: "POST",
       body: JSON.stringify({
@@ -50456,6 +50458,8 @@ var createServer = () => {
         rotation,
         transform: {
           rotation,
+          rotationX: rotation_x2,
+          rotationY: rotation_y2,
           scaleX: scale_x,
           scaleY: scale_y
         },
@@ -51011,10 +51015,12 @@ var createServer = () => {
       x: number2().optional(),
       y: number2().optional(),
       rotation: number2().optional(),
+      rotation_x: number2().optional(),
+      rotation_y: number2().optional(),
       scale_x: number2().optional(),
       scale_y: number2().optional()
     }
-  }, async ({ bone_id, bone_name, x, y, rotation, scale_x, scale_y }) => {
+  }, async ({ bone_id, bone_name, x, y, rotation, rotation_x: rotation_x2, rotation_y: rotation_y2, scale_x, scale_y }) => {
     const result = await requestJson("/command", {
       method: "POST",
       body: JSON.stringify({
@@ -51025,6 +51031,8 @@ var createServer = () => {
           x,
           y,
           rotation,
+          rotationX: rotation_x2,
+          rotationY: rotation_y2,
           scaleX: scale_x,
           scaleY: scale_y
         }
@@ -51041,6 +51049,8 @@ var createServer = () => {
         x: number2().optional(),
         y: number2().optional(),
         rotation: number2().optional(),
+        rotation_x: number2().optional(),
+        rotation_y: number2().optional(),
         scale_x: number2().optional(),
         scale_y: number2().optional()
       })).min(1)
@@ -51056,6 +51066,8 @@ var createServer = () => {
           x: entry.x,
           y: entry.y,
           rotation: entry.rotation,
+          rotationX: entry.rotation_x,
+          rotationY: entry.rotation_y,
           scaleX: entry.scale_x,
           scaleY: entry.scale_y
         }))
@@ -51072,6 +51084,8 @@ var createServer = () => {
       x: number2().optional(),
       y: number2().optional(),
       rotation: number2().optional(),
+      rotation_x: number2().optional(),
+      rotation_y: number2().optional(),
       scale_x: number2().optional(),
       scale_y: number2().optional(),
       easing: _enum(["linear", "easeIn", "easeOut", "easeInOut"]).optional()
@@ -51088,6 +51102,8 @@ var createServer = () => {
           x,
           y,
           rotation,
+          rotationX: rotation_x,
+          rotationY: rotation_y,
           scaleX: scale_x,
           scaleY: scale_y,
           easing
@@ -51106,6 +51122,8 @@ var createServer = () => {
         x: number2().optional(),
         y: number2().optional(),
         rotation: number2().optional(),
+        rotation_x: number2().optional(),
+        rotation_y: number2().optional(),
         scale_x: number2().optional(),
         scale_y: number2().optional(),
         easing: _enum(["linear", "easeIn", "easeOut", "easeInOut"]).optional()
@@ -51123,6 +51141,8 @@ var createServer = () => {
           x: entry.x,
           y: entry.y,
           rotation: entry.rotation,
+          rotationX: entry.rotation_x,
+          rotationY: entry.rotation_y,
           scaleX: entry.scale_x,
           scaleY: entry.scale_y,
           easing: entry.easing
@@ -51140,6 +51160,8 @@ var createServer = () => {
       x: number2().optional(),
       y: number2().optional(),
       rotation: number2().optional(),
+      rotation_x: number2().optional(),
+      rotation_y: number2().optional(),
       scale_x: number2().optional(),
       scale_y: number2().optional(),
       easing: _enum(["linear", "easeIn", "easeOut", "easeInOut"]).optional()
@@ -51156,6 +51178,8 @@ var createServer = () => {
           x,
           y,
           rotation,
+          rotationX: rotation_x,
+          rotationY: rotation_y,
           scaleX: scale_x,
           scaleY: scale_y,
           easing

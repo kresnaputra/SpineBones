@@ -85,6 +85,8 @@ type McpEditorCommand = {
     x?: number;
     y?: number;
     rotation?: number;
+    rotationX?: number;
+    rotationY?: number;
     scaleX?: number;
     scaleY?: number;
   }>;
@@ -108,6 +110,8 @@ type McpEditorCommand = {
     x?: number;
     y?: number;
     rotation?: number;
+    rotationX?: number;
+    rotationY?: number;
     scaleX?: number;
     scaleY?: number;
     easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
@@ -116,6 +120,9 @@ type McpEditorCommand = {
     x?: number;
     y?: number;
     rotation?: number;
+    /** Out-of-plane rotation. Omitted leaves the bone's current tilt alone. */
+    rotationX?: number;
+    rotationY?: number;
     scaleX?: number;
     scaleY?: number;
     easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
@@ -181,11 +188,14 @@ const setBoneTransformFromCommand = (payload: McpEditorCommand) => {
     x: transform.x ?? existingBone.x,
     y: transform.y ?? existingBone.y,
     rotation: transform.rotation ?? existingBone.rotation,
+    rotationX: transform.rotationX ?? existingBone.rotationX ?? 0,
+    rotationY: transform.rotationY ?? existingBone.rotationY ?? 0,
     scaleX: transform.scaleX ?? existingBone.scaleX,
     scaleY: transform.scaleY ?? existingBone.scaleY,
   });
 
   if (editor.mode === 'setup') {
+    // SetupPose carries only the 2D transform; tilt lives on the bone.
     skeleton.updateSetupPoseBone(boneId, {
       x: transform.x ?? existingBone.x,
       y: transform.y ?? existingBone.y,
@@ -228,6 +238,8 @@ const setBoneKeyframeFromCommand = (payload: McpEditorCommand) => {
     x: transform.x ?? existingBone.x,
     y: transform.y ?? existingBone.y,
     rotation: transform.rotation ?? existingBone.rotation,
+    rotationX: transform.rotationX ?? existingBone.rotationX ?? 0,
+    rotationY: transform.rotationY ?? existingBone.rotationY ?? 0,
     scaleX: transform.scaleX ?? existingBone.scaleX,
     scaleY: transform.scaleY ?? existingBone.scaleY,
     easing: transform.easing ?? 'linear',
@@ -286,8 +298,13 @@ const setMultipleBoneTransformsFromCommand = (payload: McpEditorCommand) => {
       scaleX: entry.scaleX ?? existingBone.scaleX,
       scaleY: entry.scaleY ?? existingBone.scaleY,
     };
+    // Kept separate: `SetupPose` has no tilt, so only the bone receives it.
+    const tilt = {
+      rotationX: entry.rotationX ?? existingBone.rotationX ?? 0,
+      rotationY: entry.rotationY ?? existingBone.rotationY ?? 0,
+    };
 
-    skeleton.updateBone(boneId, nextPose);
+    skeleton.updateBone(boneId, { ...nextPose, ...tilt });
     if (editor.mode === 'setup') {
       skeleton.updateSetupPoseBone(boneId, nextPose);
     }
@@ -335,6 +352,8 @@ const setMultipleKeyframesFromCommand = (payload: McpEditorCommand) => {
       x: entry.x ?? existingBone.x,
       y: entry.y ?? existingBone.y,
       rotation: entry.rotation ?? existingBone.rotation,
+      rotationX: entry.rotationX ?? existingBone.rotationX ?? 0,
+      rotationY: entry.rotationY ?? existingBone.rotationY ?? 0,
       scaleX: entry.scaleX ?? existingBone.scaleX,
       scaleY: entry.scaleY ?? existingBone.scaleY,
       easing: entry.easing ?? 'linear',
@@ -618,6 +637,7 @@ const addBoneFromCommand = (payload: McpEditorCommand) => {
     _wy: payload.y ?? 0,
     _wrot: payload.transform?.rotation ?? payload.rotation ?? 0,
   });
+  // SetupPose carries only the 2D transform; tilt lives on the bone itself.
   skeleton.updateSetupPoseBone(bone.id, {
     x: bone.x,
     y: bone.y,
@@ -830,6 +850,8 @@ const setIkTargetFromCommand = (payload: McpEditorCommand) => {
         x: bone.x,
         y: bone.y,
         rotation: bone.rotation,
+        rotationX: bone.rotationX ?? 0,
+        rotationY: bone.rotationY ?? 0,
         scaleX: bone.scaleX,
         scaleY: bone.scaleY,
       });
@@ -1447,6 +1469,8 @@ const buildMcpSnapshot = () => {
       x: bone.x,
       y: bone.y,
       rotation: bone.rotation,
+      rotationX: bone.rotationX ?? 0,
+      rotationY: bone.rotationY ?? 0,
       scaleX: bone.scaleX,
       scaleY: bone.scaleY,
       worldX: bone._wx,

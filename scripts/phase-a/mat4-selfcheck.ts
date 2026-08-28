@@ -114,6 +114,239 @@ export const runMat4SelfChecks = async (): Promise<SelfCheckResult | null> => {
     );
   }
 
+  // --- the identity contract Phase B rests on -------------------------------
+  // `ortho2D * orbitTransform(..., 0, 0)` must reproduce `ortho2D` bit for bit,
+  // or every existing project shifts the moment the orbit camera is wired in.
+  {
+    check('fromRotationY(0) is exactly identity', maxAbsDiff(m.fromRotationY(0), IDENTITY) === 0);
+    check('fromRotationX(0) is exactly identity', maxAbsDiff(m.fromRotationX(0), IDENTITY) === 0);
+
+    let worst = 0;
+    for (const [fx, fy] of [[0, 0], [123.5, -87.25], [-41.75, 62.5]] as const) {
+      worst = Math.max(worst, maxAbsDiff(m.orbitTransform(fx, fy, 0, 0), IDENTITY));
+    }
+    check('orbitTransform(focus, 0, 0) is exactly identity for any focus', worst === 0, `max delta ${worst}`);
+
+    let worstProj = 0;
+    for (const [ax, ay, bx, by] of [
+      [0.0011, -0.0019, 0.37, -0.21],
+      [0.0025, -0.0044, -0.13, 0.58],
+    ] as const) {
+      const plain = m.ortho2D(ax, ay, bx, by);
+      const composed = m.multiply(m.ortho2D(ax, ay, bx, by), m.orbitTransform(123.5, -87.25, 0, 0));
+      worstProj = Math.max(worstProj, maxAbsDiff(plain, composed));
+    }
+    check('ortho2D * orbitTransform(0, 0) === ortho2D exactly', worstProj === 0, `max delta ${worstProj}`);
+
+    // And it must actually do something once the camera turns.
+    const turned = m.orbitTransform(0, 0, 30, 0);
+    check('orbitTransform(yaw 30) is not the identity', maxAbsDiff(turned, IDENTITY) > 0.1);
+
+    // Rotating about the focus must leave the focus itself where it is.
+    const [px, py] = m.transformPoint(m.orbitTransform(123.5, -87.25, 37.5, 12.25), 123.5, -87.25, 0);
+    check(
+      'orbitTransform leaves its focus point fixed',
+      Math.abs(px! - 123.5) < 1e-9 && Math.abs(py! - -87.25) < 1e-9,
+      `moved to (${px}, ${py})`,
+    );
+  }
+
+  // --- the overlay must land exactly where it used to at rest ---------------
+  // `createOrbitWorldToScreen` feeds 28 call sites: bones, handles, outlines,
+  // mesh wireframes, hit-testing. If it drifts even sub-pixel at yaw 0, every
+  // one of them stops agreeing with the sprites the GPU drew.
+  {
+    const { createOrbitWorldToScreen, createViewportWorldToScreen, getViewportRect } =
+      await import('../../src/engine/viewport');
+
+    const rect = getViewportRect(1600, 900);
+    let worstRest = 0;
+    let movedWhenTurned = 0;
+
+    for (const [camX, camY, zoom] of [[0, 0, 1], [123.5, -87.25, 2.375], [-41.75, 62.5, 0.8125]] as const) {
+      const flat = createViewportWorldToScreen(rect, camX, camY, zoom);
+      const rest = createOrbitWorldToScreen(rect, camX, camY, zoom, 0, 0);
+      const turned = createOrbitWorldToScreen(rect, camX, camY, zoom, 30, 15);
+
+      for (const [wx, wy] of [[0, 0], [147.25, -83.5], [-61.75, 209.25]] as const) {
+        const a = flat(wx, wy);
+        const b = rest(wx, wy);
+        worstRest = Math.max(worstRest, Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+
+        const c = turned(wx, wy);
+        movedWhenTurned = Math.max(movedWhenTurned, Math.abs(a.x - c.x) + Math.abs(a.y - c.y));
+      }
+    }
+
+    check(
+      'createOrbitWorldToScreen at yaw 0 matches the 2D projection exactly',
+      worstRest === 0,
+      `max delta ${worstRest}`,
+    );
+    check('createOrbitWorldToScreen actually moves points once turned', movedWhenTurned > 1);
+
+    // A point on the orbit axis must not move, however far the camera swings.
+    const pinned = createOrbitWorldToScreen(rect, 44.5, -18.75, 1, 65, -40);
+    const flatPinned = createViewportWorldToScreen(rect, 44.5, -18.75, 1);
+    const a = flatPinned(44.5, -18.75);
+    const b = pinned(44.5, -18.75);
+    check(
+      'the orbit focus itself stays put on screen',
+      Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9,
+      `moved by (${a.x - b.x}, ${a.y - b.y})`,
+    );
+  }
+
+  // --- screen <-> world must round-trip under an orbited camera --------------
+  {
+    const { createOrbitScreenToWorld, createOrbitWorldToScreen, createViewportScreenToWorld, getViewportRect } =
+      await import('../../src/engine/viewport');
+
+    // orbit * inverse must be the identity, not merely close.
+    let worstInv = 0;
+    for (const [yaw, pitch] of [[0, 0], [30, 15], [-72.5, -40.25], [155, 80]] as const) {
+      const round = m.multiply(m.orbitTransform(44.5, -18.75, yaw, pitch), m.orbitTransformInverse(44.5, -18.75, yaw, pitch));
+      worstInv = Math.max(worstInv, maxAbsDiff(round, IDENTITY));
+    }
+    check('orbitTransform * orbitTransformInverse is the identity', worstInv < 1e-12, `max delta ${worstInv}`);
+
+    const rect = getViewportRect(1600, 900);
+
+    // At rest the inverse must be the untouched 2D one.
+    let worstRest = 0;
+    const flatInv = createViewportScreenToWorld(rect, 123.5, -87.25, 2.375);
+    const restInv = createOrbitScreenToWorld(rect, 123.5, -87.25, 2.375, 0, 0);
+    for (const [sx, sy] of [[0, 0], [811.5, 447.25], [1599, 12.75]] as const) {
+      const a = flatInv(sx, sy);
+      const b = restInv(sx, sy)!;
+      worstRest = Math.max(worstRest, Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    }
+    check('createOrbitScreenToWorld at yaw 0 matches the 2D inverse exactly', worstRest === 0, `max delta ${worstRest}`);
+
+    // World -> screen -> world must return the point, on whichever plane it sits.
+    let worstTrip = 0;
+    for (const [yaw, pitch] of [[30, 15], [-72.5, -40.25], [65, 85]] as const) {
+      const fwd = createOrbitWorldToScreen(rect, 44.5, -18.75, 1.25, yaw, pitch);
+      const inv = createOrbitScreenToWorld(rect, 44.5, -18.75, 1.25, yaw, pitch);
+      for (const planeZ of [0, 6, -4]) {
+        for (const [wx, wy] of [[0, 0], [147.25, -83.5], [-61.75, 209.25]] as const) {
+          const screen = fwd(wx, wy, planeZ);
+          const back = inv(screen.x, screen.y, planeZ)!;
+          worstTrip = Math.max(worstTrip, Math.abs(back.x - wx), Math.abs(back.y - wy));
+        }
+      }
+    }
+    check('world -> screen -> world returns the point on its plane', worstTrip < 1e-8, `max drift ${worstTrip}`);
+
+    // Edge-on must refuse rather than guess.
+    check(
+      'unprojection refuses when the plane is edge-on',
+      createOrbitScreenToWorld(rect, 0, 0, 1, 90, 0)(800, 450) === null,
+    );
+    check(
+      'unprojection still works at the pitch clamp',
+      createOrbitScreenToWorld(rect, 0, 0, 1, 0, 85)(800, 450) !== null,
+    );
+  }
+
+  // --- the 3D path: when it engages, and what it guarantees ------------------
+  {
+    const mkBone = (id: number, parentId: number | null, x: number, tilt?: number): Bone => ({
+      id, name: `b${id}`, x, y: 0, length: 50, rotation: 0, scaleX: 1, scaleY: 1,
+      parentId, skinId: 0, _wx: 0, _wy: 0, _wrot: 0,
+      ...(tilt !== undefined ? { rotationY: tilt } : {}),
+    });
+
+    // A rig with no tilt must stay on the scalar path — that is what keeps every
+    // existing project bit-identical.
+    const flat = [mkBone(0, null, 0), mkBone(1, 0, 60)];
+    computeAllWorldTransforms(flat);
+    check('a flat rig carries no world matrix', flat.every((b) => !b._wm));
+
+    const tilted = [mkBone(0, null, 0, 50), mkBone(1, 0, 60)];
+    computeAllWorldTransforms(tilted);
+    check('a tilted rig carries a world matrix on every bone', tilted.every((b) => !!b._wm));
+    check(
+      'the world matrix is a plain array of 16 numbers, not a typed array',
+      tilted.every((b) => Array.isArray(b._wm) && b._wm.length === 16 && b._wm.every(Number.isFinite)),
+    );
+
+    // Bones are put through JSON by undo snapshots and by project saving. A
+    // typed array would come back as an object; a plain array must survive.
+    const revived = JSON.parse(JSON.stringify(tilted[0])) as Bone;
+    check(
+      'a bone survives a JSON round-trip with its matrix intact',
+      Array.isArray(revived._wm) && maxAbsDiff(revived._wm, tilted[0]!._wm!) === 0,
+    );
+
+    // Clearing the tilt must drop the frame again, or meshSkinning keeps reading
+    // a stale matrix instead of returning to its 2D fast path.
+    const cleared = tilted.map((b) => ({ ...b, rotationY: 0 }));
+    computeAllWorldTransforms(cleared);
+    check('clearing the tilt drops the world matrix', cleared.every((b) => !b._wm));
+
+    // Inheritance: only descendants move.
+    const chain = [mkBone(0, null, 0), mkBone(1, 0, 60, 50), mkBone(2, 1, 60), mkBone(3, 2, 60)];
+    const before = [mkBone(0, null, 0), mkBone(1, 0, 60), mkBone(2, 1, 60), mkBone(3, 2, 60)];
+    computeAllWorldTransforms(chain);
+    computeAllWorldTransforms(before);
+    check(
+      'tilting a middle bone leaves its ancestor exactly where it was',
+      chain[0]!._wx === before[0]!._wx && chain[0]!._wy === before[0]!._wy,
+    );
+    check(
+      'tilting a middle bone carries every descendant with it',
+      chain.slice(2).every((b, i) => Math.abs(b._wx - before[i + 2]!._wx) > 1),
+      `moved by ${chain.slice(2).map((b, i) => (b._wx - before[i + 2]!._wx).toFixed(2)).join(', ')}`,
+    );
+
+    // A descendant two levels down must land exactly where composing the frames
+    // by hand puts it — the arithmetic, not just "it moved".
+    const expectedX = 60 + 60 * Math.cos((50 * Math.PI) / 180);
+    check(
+      'the inherited position matches the closed form',
+      Math.abs(chain[2]!._wx - expectedX) < 1e-9,
+      `${chain[2]!._wx} vs ${expectedX}`,
+    );
+  }
+
+  // --- tilt is keyframed and interpolated like any other channel -------------
+  {
+    const { sampleBonePoseAtFrame } = await import('../../src/utils/animationPose');
+    const bone: Bone = {
+      id: 7, name: 'b', x: 0, y: 0, length: 50, rotation: 0, scaleX: 1, scaleY: 1,
+      parentId: null, skinId: 0, _wx: 0, _wy: 0, _wrot: 0, rotationY: 99,
+    };
+    const keys = {
+      7: {
+        0: { x: 0, y: 0, rotation: 0, rotationY: 0, scaleX: 1, scaleY: 1 },
+        10: { x: 0, y: 0, rotation: 0, rotationY: 60, scaleX: 1, scaleY: 1 },
+      },
+    };
+    check(
+      'tilt interpolates between keyframes',
+      sampleBonePoseAtFrame(bone, keys, {}, 5).rotationY === 30,
+    );
+
+    // Keyframes written before the field existed mean zero, exactly as they do
+    // for every other channel — but must not disturb the channels they do have.
+    const legacy = {
+      7: {
+        0: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+        10: { x: 0, y: 0, rotation: 30, scaleX: 1, scaleY: 1 },
+      },
+    };
+    const sampled = sampleBonePoseAtFrame(bone, legacy, {}, 5);
+    check('a legacy keyframe reads as zero tilt', sampled.rotationY === 0);
+    check('a legacy keyframe still interpolates its own channels', sampled.rotation === 15);
+
+    // With no keyframes at all the bone keeps whatever tilt it was given.
+    check(
+      'an unkeyframed bone keeps its tilt',
+      sampleBonePoseAtFrame(bone, {}, {}, 5).rotationY === 99,
+    );
+  }
+
   // --- accessors -----------------------------------------------------------
   check(
     'getTranslation reads the translation column',
@@ -176,6 +409,11 @@ export const runMat4SelfChecks = async (): Promise<SelfCheckResult | null> => {
         frames.set(bone.id, f);
         return f;
       };
+
+      // A rig that tilts has no meaningful scalar answer to compare against —
+      // the scalar path cannot represent 3D rotation at all, so a difference
+      // there measures nothing. Only 2D rigs are informative here.
+      if (fixture.bones.some((b) => (b.rotationX ?? 0) !== 0 || (b.rotationY ?? 0) !== 0)) continue;
 
       for (const bone of fixture.bones) {
         // Skip the case whose scalar path is itself known-wrong today.

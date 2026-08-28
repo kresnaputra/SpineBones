@@ -2,8 +2,8 @@ import type { Attachment, Bone, Slot } from '../../types';
 import type { ViewportRect } from '../viewport';
 import { getViewportEffectiveZoom } from '../viewport';
 import { getAttachmentGeometry } from '../meshSkinning';
-import { computeDrawSequence } from '../drawOrder';
-import { create, ortho2D, toFloat32, type Mat4 } from '../mat4';
+import { computeDrawSequence, sortByViewDepth } from '../drawOrder';
+import { create, multiply, orbitTransform, ortho2D, toFloat32, type Mat4 } from '../mat4';
 import { createProgram, TextureCache, type GLProgram } from './glContext';
 
 /**
@@ -33,6 +33,9 @@ export interface SceneInput {
   canvasWidth: number;
   canvasHeight: number;
   viewportRect: ViewportRect;
+  /** Camera orbit in degrees around the pan focus. Both 0 renders exactly as before. */
+  yaw?: number;
+  pitch?: number;
   /** Optional clip rect in canvas pixels (top-left origin); used for the viewport mask. */
   clip?: { x: number; y: number; width: number; height: number };
   /** Called when a texture finishes loading so the caller can re-render. */
@@ -80,6 +83,7 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
 
   // Reused per frame: the world->clip matrix and its float32 upload buffer.
   const mvp: Mat4 = create();
+  const orbit: Mat4 = create();
   const mvpUpload = new Float32Array(16);
 
   gl.enable(gl.BLEND);
@@ -91,19 +95,21 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
     bone: Bone,
     allBones: Bone[],
     alpha: number,
+    depth: number,
     onReady?: () => void,
   ) => {
     if (!attachment.imageData) return;
     const tex = textures.get(attachment.imageData, onReady);
     if (!tex) return; // still loading
 
-    const geo = getAttachmentGeometry(attachment, bone, allBones);
+    const geo = getAttachmentGeometry(attachment, bone, allBones, depth);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, geo.positions, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(glProgram.attribs.aPos);
     // 3 floats per position, matching `vec3 aPos` and the stride `meshSkinning`
-    // writes. Z is always 0 today; depth sorting is a later phase's problem.
+    // writes. Z carries the layer depth; the orthographic projection ignores it
+    // until the camera can orbit, so writing it changes nothing on screen yet.
     gl.vertexAttribPointer(glProgram.attribs.aPos, 3, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
@@ -153,17 +159,25 @@ export const createMeshRenderer = (gl: WebGLRenderingContext): MeshRenderer => {
     // formula, and `exportRenderer` is numerically calibrated against it.
     // Wrapping it in a matrix adds only exact-zero terms, so the pixels do not
     // move — see `scripts/phase-a/verify-transform-parity.ts`.
+    // Orbit first, then project. At yaw 0 / pitch 0 the orbit is exactly the
+    // identity and this collapses to the projection alone, bit for bit.
+    orbitTransform(scene.camX, scene.camY, scene.yaw ?? 0, scene.pitch ?? 0, orbit);
+    multiply(ortho2D(ax, ay, bx, by), orbit, mvp);
     gl.uniformMatrix4fv(
       glProgram.uniforms.uMVP,
       false, // WebGL 1 permits no other value
-      toFloat32(ortho2D(ax, ay, bx, by, mvp), mvpUpload),
+      toFloat32(mvp, mvpUpload),
     );
 
     for (const pass of scene.passes) {
       // Each pass has its own bone array (onion-skin ghosts are separate poses),
       // so the sequence is resolved per pass.
-      for (const item of computeDrawSequence(pass.bones, scene.slots, scene.attachments)) {
-        drawAttachment(item.attachment, item.bone, pass.bones, pass.alpha, scene.onTextureReady);
+      const sequence = sortByViewDepth(
+        computeDrawSequence(pass.bones, scene.slots, scene.attachments),
+        orbit,
+      );
+      for (const item of sequence) {
+        drawAttachment(item.attachment, item.bone, pass.bones, pass.alpha, item.depth, scene.onTextureReady);
       }
     }
   };
