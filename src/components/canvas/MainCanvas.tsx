@@ -102,6 +102,7 @@ export const MainCanvas = () => {
     showBoneIndicators,
     showViewport,
     onionSkinEnabled,
+    inBetweenEnabled,
     attachmentDragEnabled,
     backgroundImage,
     selectedMeshVertexIndices,
@@ -370,9 +371,10 @@ export const MainCanvas = () => {
         frame,
         activeOpacityKeyframes,
         activeMeshDeformKeyframes,
+        inBetweenEnabled,
       )
     ),
-    [attachments, frame, activeOpacityKeyframes, activeMeshDeformKeyframes],
+    [attachments, frame, activeOpacityKeyframes, activeMeshDeformKeyframes, inBetweenEnabled],
   );
 
   // Warp-deformed attachments fed to the GL renderer (mesh tool overlay uses un-warped).
@@ -383,10 +385,12 @@ export const MainCanvas = () => {
       if (att.deformerId == null) return att;
       const def = deformers.find((d) => d.id === att.deformerId);
       if (!def) return att;
-      const pts = isAnimating ? resolveDeformerAtFrame(def, frame, deformerKeyframes) : def.rest;
+      const pts = isAnimating
+        ? resolveDeformerAtFrame(def, frame, deformerKeyframes, inBetweenEnabled)
+        : def.rest;
       return applyWarpToAttachment(att, def, pts);
     }),
-    [resolvedAttachments, deformers, deformerKeyframes, frame, isAnimating],
+    [resolvedAttachments, deformers, deformerKeyframes, frame, isAnimating, inBetweenEnabled],
   );
 
   const resolvedSlots = useMemo(
@@ -420,6 +424,7 @@ export const MainCanvas = () => {
           frame,
           activeOpacityKeyframes,
           activeMeshDeformKeyframes,
+          inBetweenEnabled,
         )
       : activeAttachment;
 
@@ -791,7 +796,12 @@ export const MainCanvas = () => {
 
     // Warp deformer control-point overlay
     if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
-      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const currentPts = resolveDeformerAtFrame(
+        activeDeformer,
+        frame,
+        deformerKeyframes,
+        inBetweenEnabled,
+      );
       const screenPts = getMeshVertexScreenPositions(
         activeAttachment, activeBone, bones, activeWorldToScreen, currentPts,
       );
@@ -1008,7 +1018,7 @@ export const MainCanvas = () => {
 
     ov.restore();
 
-  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedAttachments, warpedResolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, meshAttachment, selectedMeshVertexIndices, hoveredMeshVertexIndex, meshMarquee, activeDeformer, deformers, deformerKeyframes, selectedDeformerCPs, hoveredDeformerCPIndex, deformerMarquee, weightBrushBoneId, weightBrushRadius, weightBrushPos, physicsOffsets, yaw, pitch, isOrbited, canEdit, activeWorldToScreen, isDragging, rotateAxis]);
+  }, [bones, skins, selectedBoneId, selectedBoneIds, hoveredBoneId, camX, camY, camZoom, tool, mode, keyframes, frame, duration, setupPose, slots, resolvedSlots, resolvedAttachments, warpedResolvedAttachments, showBoneIndicators, showViewport, onionSkinEnabled, inBetweenEnabled, attachmentDragEnabled, backgroundImage, backgroundLoaded, imageLoadTrigger, resizeTick, ikChainRootIds, activeSlot, activeBone, activeAttachment, resolvedActiveAttachment, canvasWidth, canvasHeight, effectiveZoom, previewWorldToScreen, meshAttachment, selectedMeshVertexIndices, hoveredMeshVertexIndex, meshMarquee, activeDeformer, deformers, deformerKeyframes, selectedDeformerCPs, hoveredDeformerCPIndex, deformerMarquee, weightBrushBoneId, weightBrushRadius, weightBrushPos, physicsOffsets, yaw, pitch, isOrbited, canEdit, activeWorldToScreen, isDragging, rotateAxis]);
 
   // useEffectEvent ensures this always captures the latest state/props,
   // even when called from a requestAnimationFrame callback.
@@ -1284,7 +1294,12 @@ export const MainCanvas = () => {
         setHoveredMeshVertexIndex(hi >= 0 ? hi : null);
         setHoveredBoneId(null);
       } else if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
-        const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+        const currentPts = resolveDeformerAtFrame(
+          activeDeformer,
+          frame,
+          deformerKeyframes,
+          inBetweenEnabled,
+        );
         const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
         const hi = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 8);
         setHoveredDeformerCPIndex(hi >= 0 ? hi : null);
@@ -1344,7 +1359,12 @@ export const MainCanvas = () => {
     // ── Warp tool interactions ─────────────────────────────────────────────
     if (tool === 'warp' && activeDeformer && activeBone && activeAttachment) {
       if (e.button !== 0) return;
-      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const currentPts = resolveDeformerAtFrame(
+        activeDeformer,
+        frame,
+        deformerKeyframes,
+        inBetweenEnabled,
+      );
       const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
       const targetIdx = screenPts.findIndex((p) => Math.hypot(p.x - sx, p.y - sy) <= 10);
 
@@ -1749,7 +1769,12 @@ export const MainCanvas = () => {
       const my0 = Math.min(deformerMarquee.sy, deformerMarquee.currentSy);
       const mx1 = Math.max(deformerMarquee.sx, deformerMarquee.currentSx);
       const my1 = Math.max(deformerMarquee.sy, deformerMarquee.currentSy);
-      const currentPts = resolveDeformerAtFrame(activeDeformer, frame, deformerKeyframes);
+      const currentPts = resolveDeformerAtFrame(
+        activeDeformer,
+        frame,
+        deformerKeyframes,
+        inBetweenEnabled,
+      );
       const screenPts = getMeshVertexScreenPositions(activeAttachment, activeBone, bones, activeWorldToScreen, currentPts);
       const inside = screenPts
         .map((p, i) => ({ p, i }))

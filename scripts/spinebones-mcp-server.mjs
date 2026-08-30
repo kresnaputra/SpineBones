@@ -56,7 +56,7 @@ const findBoneFromState = (state, boneId, boneName) => {
 const createServer = () => {
   const server = new McpServer({
     name: 'spinebones-editor',
-    version: '0.1.3',
+    version: '0.1.4',
   });
 
   server.registerTool(
@@ -2042,6 +2042,26 @@ const createServer = () => {
         }),
       });
       return asTextResult('Onion skin state updated in SpineBones', result);
+    },
+  );
+
+  server.registerTool(
+    'spinebones_set_in_between',
+    {
+      description: 'Enable smooth in-between interpolation or disable it for stepped keyframe holds.',
+      inputSchema: {
+        enabled: z.boolean(),
+      },
+    },
+    async ({ enabled }) => {
+      const result = await requestJson('/command', {
+        method: 'POST',
+        body: JSON.stringify({
+          commandType: 'set_in_between',
+          value: enabled,
+        }),
+      });
+      return asTextResult('In-between interpolation state updated in SpineBones', result);
     },
   );
 

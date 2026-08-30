@@ -12,6 +12,7 @@ import type {
 import { useSkeletonStore } from './skeletonStore';
 import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
+import { useEditorStore } from './editorStore';
 
 // Sorted-frame-number cache keyed by a bone's keyframes object identity, which is
 // only replaced when that bone's keyframes actually change (see insertKeyframe etc.
@@ -601,7 +602,9 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
           return { ...bone, ...withDefaults(normalizeKeyframeData(boneKeyframes[prev])) };
         } else if (prev !== null && next !== null) {
           const t = prev === next ? 1 : (frame - prev) / (next - prev);
-          const easedT = applyEasing(boneKeyframes[prev]?.easing, t);
+          const easedT = useEditorStore.getState().inBetweenEnabled
+            ? applyEasing(boneKeyframes[prev]?.easing, t)
+            : 0;
           const kp = normalizeKeyframeData(boneKeyframes[prev]);
           const kn = normalizeKeyframeData(boneKeyframes[next]);
           const lerp = (a: number, b: number, ratio: number) => a + (b - a) * ratio;

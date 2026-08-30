@@ -13,6 +13,7 @@ This README is written as a practical user guide so someone new to the project c
 - Switch attachments per frame for sprite-style animation
 - Edit attachment offset, rotation, scale, and opacity
 - Animate attachment opacity with smooth fade interpolation and timeline easing
+- Toggle automatic in-between interpolation on or off for smooth or stepped animation
 - Convert attachments into editable mesh attachments
 - Deform mesh attachments on the canvas and animate mesh deformation per frame
 - Preview a centered 16:9 video viewport in the editor
@@ -116,6 +117,7 @@ The top toolbar contains:
 - `Clear` to remove all animation keyframes from the timeline
 - `Loop` to mirror the existing animation range into a continuation
 - `1st Key` to copy the first keyframe state to the current frame
+- `In-between` to switch between interpolated motion and stepped keyframe holds
 - save/load/export actions
 - background image controls
 - `SETUP` and `ANIMATE` mode buttons

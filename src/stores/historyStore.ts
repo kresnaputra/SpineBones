@@ -19,6 +19,7 @@ interface ProjectSnapshot {
     pixelArtEnabled: ReturnType<typeof useEditorStore.getState>['pixelArtEnabled'];
     pixelArtSize: ReturnType<typeof useEditorStore.getState>['pixelArtSize'];
     lineBoilEnabled: ReturnType<typeof useEditorStore.getState>['lineBoilEnabled'];
+    inBetweenEnabled: ReturnType<typeof useEditorStore.getState>['inBetweenEnabled'];
   };
   skeleton: {
     bones: ReturnType<typeof useSkeletonStore.getState>['bones'];
@@ -112,6 +113,7 @@ const createProjectSnapshot = (): ProjectSnapshot => {
       pixelArtEnabled: editor.pixelArtEnabled,
       pixelArtSize: editor.pixelArtSize,
       lineBoilEnabled: editor.lineBoilEnabled,
+      inBetweenEnabled: editor.inBetweenEnabled,
     },
     skeleton: {
       // `_wm` is a transient render frame, recomputed every pose. Keeping it out
@@ -172,6 +174,7 @@ const applyProjectSnapshot = (snapshot: ProjectSnapshot) => {
     pixelArtEnabled: snapshot.editor.pixelArtEnabled ?? false,
     pixelArtSize: snapshot.editor.pixelArtSize ?? 4,
     lineBoilEnabled: snapshot.editor.lineBoilEnabled ?? false,
+    inBetweenEnabled: snapshot.editor.inBetweenEnabled ?? true,
   });
   useSkeletonStore.setState({
     bones: cloneSnapshot(snapshot.skeleton.bones),

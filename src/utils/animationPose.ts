@@ -76,6 +76,7 @@ export const sampleBonePoseAtFrame = (
   keyframes: Keyframes,
   setupPose: SetupPose,
   frame: number,
+  inBetweenEnabled = true,
 ): KeyframeData => {
   const boneKeyframes = keyframes[bone.id];
   if (!boneKeyframes) {
@@ -116,7 +117,9 @@ export const sampleBonePoseAtFrame = (
 
   const kp = normalizeKeyframeData(boneKeyframes[prev]);
   const kn = normalizeKeyframeData(boneKeyframes[next]);
-  const t = applyEasing(kp.easing, (frame - prev) / (next - prev));
+  const t = inBetweenEnabled
+    ? applyEasing(kp.easing, (frame - prev) / (next - prev))
+    : 0;
   const lerp = (a: number, b: number) => a + (b - a) * t;
 
   return {
@@ -137,9 +140,10 @@ export const sampleBonesAtFrame = (
   keyframes: Keyframes,
   setupPose: SetupPose,
   frame: number,
+  inBetweenEnabled = true,
 ): Bone[] => {
   const sampledBones = bones.map((bone) => {
-    const pose = sampleBonePoseAtFrame(bone, keyframes, setupPose, frame);
+    const pose = sampleBonePoseAtFrame(bone, keyframes, setupPose, frame, inBetweenEnabled);
     return {
       ...bone,
       ...pose,

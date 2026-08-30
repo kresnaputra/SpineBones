@@ -32,6 +32,7 @@ interface ExportSpriteSheetOptions {
   includeBackground?: boolean;
   backgroundImage?: string | null;
   maxFramesPerSheet?: number;
+  inBetweenEnabled?: boolean;
   /**
    * Stem for the sheet image, its metadata and the frame keys inside it —
    * normally the archive's own name without its extension. Defaults to
@@ -211,6 +212,7 @@ const getAutoFitTransform = ({
   camX,
   camY,
   camZoom,
+  inBetweenEnabled,
 }: {
   bones: Bone[];
   slots: Slot[];
@@ -223,6 +225,7 @@ const getAutoFitTransform = ({
   camX: number;
   camY: number;
   camZoom: number;
+  inBetweenEnabled: boolean;
 }) => {
   const baseWorldToScreen = (x: number, y: number) => ({
     x: frameWidth / 2 + (x - camX) * camZoom,
@@ -236,7 +239,7 @@ const getAutoFitTransform = ({
 
   for (let frame = 0; frame < totalFrames; frame += 1) {
     const bonesCopy = JSON.parse(JSON.stringify(bones)) as Bone[];
-    applyFramePose(bonesCopy, keyframes, frame);
+    applyFramePose(bonesCopy, keyframes, frame, inBetweenEnabled);
     computeAllWorldTransforms(bonesCopy);
     let frameHasContent = false;
 
@@ -255,6 +258,8 @@ const getAutoFitTransform = ({
         baseAttachment,
         frame,
         attachmentOpacityKeyframes,
+        {},
+        inBetweenEnabled,
       );
 
       const bounds = getAttachmentBounds(attachment, bone, baseWorldToScreen, camZoom);
@@ -319,7 +324,12 @@ const getTrimmedBounds = (ctx: CanvasRenderingContext2D, width: number, height: 
   };
 };
 
-const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
+const applyFramePose = (
+  bones: Bone[],
+  keyframes: Keyframes,
+  frame: number,
+  inBetweenEnabled: boolean,
+) => {
   bones.forEach((bone) => {
     const boneKeyframes = keyframes[bone.id];
     if (!boneKeyframes) return;
@@ -350,10 +360,12 @@ const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
 
     const from = normalizeKeyframeData(boneKeyframes[prevFrame]);
     const to = normalizeKeyframeData(boneKeyframes[nextFrame]);
-    const t = applyEasing(
-      from.easing,
-      (frame - prevFrame) / (nextFrame - prevFrame),
-    );
+    const t = inBetweenEnabled
+      ? applyEasing(
+          from.easing,
+          (frame - prevFrame) / (nextFrame - prevFrame),
+        )
+      : 0;
 
     bone.x = lerp(from.x, to.x, t);
     bone.y = lerp(from.y, to.y, t);
@@ -381,6 +393,7 @@ export const exportSpriteSheet = async ({
   includeBackground = false,
   backgroundImage = null,
   maxFramesPerSheet: userMaxFramesPerSheet,
+  inBetweenEnabled = true,
   baseName = 'spritesheet',
 }: ExportSpriteSheetOptions): Promise<Blob> => {
   const stem = sanitizeBaseName(baseName, 'spritesheet');
@@ -445,6 +458,7 @@ export const exportSpriteSheet = async ({
         camX,
         camY,
         camZoom,
+        inBetweenEnabled,
       });
 
   const worldToScreen = (x: number, y: number) => {
@@ -528,13 +542,15 @@ export const exportSpriteSheet = async ({
         frameCtx.drawImage(loadedBackgroundImage, x, y, w, h);
       }
 
-      applyFramePose(bonesCopy, keyframes, frame);
+      applyFramePose(bonesCopy, keyframes, frame, inBetweenEnabled);
       computeAllWorldTransforms(bonesCopy);
       const resolvedAttachments = attachments.map((attachment) =>
         resolveAttachmentAtFrame(
           attachment,
           frame,
           attachmentOpacityKeyframes,
+          {},
+          inBetweenEnabled,
         ),
       );
       drawSlots(frameCtx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);

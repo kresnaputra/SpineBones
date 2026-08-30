@@ -18,6 +18,7 @@ interface EditorState {
   pixelArtEnabled: boolean;
   pixelArtSize: number;
   lineBoilEnabled: boolean;
+  inBetweenEnabled: boolean;
   backgroundImage: string | null;
   currentProjectPath: string | null;
   setTool: (tool: Tool) => void;
@@ -37,6 +38,7 @@ interface EditorState {
   setPixelArtEnabled: (enabled: boolean) => void;
   setPixelArtSize: (size: number) => void;
   setLineBoilEnabled: (enabled: boolean) => void;
+  setInBetweenEnabled: (enabled: boolean) => void;
   setBackgroundImage: (imageData: string | null) => void;
   setCurrentProjectPath: (path: string | null) => void;
   selectedMeshVertexIndices: number[];
@@ -66,6 +68,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   pixelArtEnabled: false,
   pixelArtSize: 4,
   lineBoilEnabled: false,
+  inBetweenEnabled: true,
   backgroundImage: null,
   currentProjectPath: null,
   setTool: (tool) => set({ tool }),
@@ -113,6 +116,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setPixelArtSize: (pixelArtSize) =>
     set({ pixelArtSize: Math.max(1, Math.min(32, Math.round(pixelArtSize))) }),
   setLineBoilEnabled: (lineBoilEnabled) => set({ lineBoilEnabled }),
+  setInBetweenEnabled: (inBetweenEnabled) => set({ inBetweenEnabled }),
   setBackgroundImage: (imageData) => set({ backgroundImage: imageData }),
   setCurrentProjectPath: (currentProjectPath) => set({ currentProjectPath }),
   selectedMeshVertexIndices: [],

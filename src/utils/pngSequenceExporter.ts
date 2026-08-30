@@ -32,6 +32,7 @@ interface ExportPngSequenceOptions {
   includeBackground?: boolean;
   backgroundImage?: string | null;
   crop?: boolean;
+  inBetweenEnabled?: boolean;
   /**
    * Stem for the frame files, normally the archive's own name without its
    * extension. Frames are named `{baseName}_0000.png`, so a sequence keeps its
@@ -100,7 +101,12 @@ const getTrimmedBounds = (ctx: CanvasRenderingContext2D, width: number, height: 
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, empty: false };
 };
 
-const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
+const applyFramePose = (
+  bones: Bone[],
+  keyframes: Keyframes,
+  frame: number,
+  inBetweenEnabled: boolean,
+) => {
   bones.forEach((bone) => {
     const boneKeyframes = keyframes[bone.id];
     if (!boneKeyframes) return;
@@ -129,7 +135,9 @@ const applyFramePose = (bones: Bone[], keyframes: Keyframes, frame: number) => {
 
     const from = normalizeKeyframeData(boneKeyframes[prevFrame]);
     const to = normalizeKeyframeData(boneKeyframes[nextFrame]);
-    const t = applyEasing(from.easing, (frame - prevFrame) / (nextFrame - prevFrame));
+    const t = inBetweenEnabled
+      ? applyEasing(from.easing, (frame - prevFrame) / (nextFrame - prevFrame))
+      : 0;
 
     bone.x = lerp(from.x, to.x, t);
     bone.y = lerp(from.y, to.y, t);
@@ -187,6 +195,7 @@ const getAutoFitTransform = ({
   camX,
   camY,
   camZoom,
+  inBetweenEnabled,
 }: {
   bones: Bone[];
   slots: Slot[];
@@ -199,6 +208,7 @@ const getAutoFitTransform = ({
   camX: number;
   camY: number;
   camZoom: number;
+  inBetweenEnabled: boolean;
 }) => {
   const baseWorldToScreen = (x: number, y: number) => ({
     x: frameWidth / 2 + (x - camX) * camZoom,
@@ -212,7 +222,7 @@ const getAutoFitTransform = ({
 
   for (let frame = 0; frame < totalFrames; frame += 1) {
     const bonesCopy = JSON.parse(JSON.stringify(bones)) as Bone[];
-    applyFramePose(bonesCopy, keyframes, frame);
+    applyFramePose(bonesCopy, keyframes, frame, inBetweenEnabled);
     computeAllWorldTransforms(bonesCopy);
 
     slots.forEach((slot) => {
@@ -230,6 +240,8 @@ const getAutoFitTransform = ({
         baseAttachment,
         frame,
         attachmentOpacityKeyframes,
+        {},
+        inBetweenEnabled,
       );
 
       const bounds = getAttachmentBounds(attachment, bone, baseWorldToScreen, camZoom);
@@ -276,6 +288,7 @@ export const exportPngSequence = async ({
   includeBackground = false,
   backgroundImage = null,
   crop = false,
+  inBetweenEnabled = true,
   baseName = 'frame',
 }: ExportPngSequenceOptions): Promise<Blob> => {
   const frameStem = sanitizeBaseName(baseName);
@@ -323,6 +336,7 @@ export const exportPngSequence = async ({
         camX,
         camY,
         camZoom,
+        inBetweenEnabled,
       });
 
   const worldToScreen = (x: number, y: number) => {
@@ -346,13 +360,15 @@ export const exportPngSequence = async ({
     for (let frame = 0; frame < totalFrames; frame += 1) {
       const bonesCopy = JSON.parse(JSON.stringify(bones)) as Bone[];
       ctx.clearRect(0, 0, frameWidth, frameHeight);
-      applyFramePose(bonesCopy, keyframes, frame);
+      applyFramePose(bonesCopy, keyframes, frame, inBetweenEnabled);
       computeAllWorldTransforms(bonesCopy);
       const resolvedAttachments = attachments.map((attachment) =>
         resolveAttachmentAtFrame(
           attachment,
           frame,
           attachmentOpacityKeyframes,
+          {},
+          inBetweenEnabled,
         ),
       );
       drawSlots(ctx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);
@@ -413,13 +429,15 @@ export const exportPngSequence = async ({
       ctx.drawImage(loadedBackgroundImage, x, y, w, h);
     }
 
-    applyFramePose(bonesCopy, keyframes, frame);
+    applyFramePose(bonesCopy, keyframes, frame, inBetweenEnabled);
     computeAllWorldTransforms(bonesCopy);
     const resolvedAttachments = attachments.map((attachment) =>
       resolveAttachmentAtFrame(
         attachment,
         frame,
         attachmentOpacityKeyframes,
+        {},
+        inBetweenEnabled,
       ),
     );
     drawSlots(ctx, resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes), resolvedAttachments, bonesCopy, worldToScreen, exportZoom);

@@ -847,6 +847,7 @@ export const buildProjectData = (): ProjectData => {
     pixelArtEnabled: editorState.pixelArtEnabled,
     pixelArtSize: editorState.pixelArtSize,
     lineBoilEnabled: editorState.lineBoilEnabled,
+    inBetweenEnabled: editorState.inBetweenEnabled,
     audioTracks: animationState.audioTracks,
     activeAudioTrackId: animationState.activeAudioTrackId,
     audioData: animationState.audioData,
@@ -869,6 +870,7 @@ export const applyProjectData = (
   const pixelArtEnabled = projectData.pixelArtEnabled ?? false;
   const pixelArtSize = Math.max(1, Math.min(32, Math.round(projectData.pixelArtSize ?? 4)));
   const lineBoilEnabled = projectData.lineBoilEnabled ?? false;
+  const inBetweenEnabled = projectData.inBetweenEnabled ?? true;
   const setupPose = Object.fromEntries(
     Object.entries(projectData.setupPose ?? {}).map(([boneId, pose]) => [
       Number(boneId),
@@ -1005,6 +1007,7 @@ export const applyProjectData = (
     pixelArtEnabled,
     pixelArtSize,
     lineBoilEnabled,
+    inBetweenEnabled,
     currentProjectPath: sourcePath,
     selectedBoneId: null,
     selectedBoneIds: [],
@@ -1069,6 +1072,7 @@ export const createNewProject = () => {
     pixelArtEnabled: false,
     pixelArtSize: 4,
     lineBoilEnabled: false,
+    inBetweenEnabled: true,
     backgroundImage: null,
     currentProjectPath: null,
   }));

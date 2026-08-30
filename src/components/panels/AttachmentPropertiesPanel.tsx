@@ -5,7 +5,14 @@ import { getAttachmentKey, resolveAttachmentAtFrame } from '../../utils/attachme
 import { normalizeKeyframeEasing } from '../../utils/easing';
 
 export const AttachmentPropertiesPanel = () => {
-  const { selectedBoneId, selectedSlotId, attachmentDragEnabled, setAttachmentDragEnabled, mode } = useEditorStore();
+  const {
+    selectedBoneId,
+    selectedSlotId,
+    attachmentDragEnabled,
+    setAttachmentDragEnabled,
+    mode,
+    inBetweenEnabled,
+  } = useEditorStore();
   const {
     frame,
     keyframes,
@@ -61,6 +68,8 @@ export const AttachmentPropertiesPanel = () => {
     attachment,
     frame,
     mode === 'animate' ? attachmentOpacityKeyframes : {},
+    {},
+    inBetweenEnabled,
   );
 
   const handleUpdate = (field: string, value: number) => {

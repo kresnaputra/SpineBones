@@ -59,6 +59,7 @@ export const resolveAttachmentOpacityAtFrame = (
   attachment: Attachment,
   frame: number,
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes,
+  inBetweenEnabled = true,
 ) => {
   const baseOpacity = attachment.opacity ?? 1;
   const attachmentKeyframes = attachmentOpacityKeyframes[getAttachmentKey(attachment)];
@@ -88,10 +89,12 @@ export const resolveAttachmentOpacityAtFrame = (
       return attachmentKeyframes[prev]?.opacity ?? baseOpacity;
     }
 
-    const t = applyEasing(
-      attachmentKeyframes[prev]?.easing,
-      (frame - prev) / (next - prev),
-    );
+    const t = inBetweenEnabled
+      ? applyEasing(
+          attachmentKeyframes[prev]?.easing,
+          (frame - prev) / (next - prev),
+        )
+      : 0;
     return lerp(
       attachmentKeyframes[prev]?.opacity ?? baseOpacity,
       attachmentKeyframes[next]?.opacity ?? baseOpacity,
@@ -107,18 +110,30 @@ export const resolveAttachmentAtFrame = (
   frame: number,
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes = {},
   meshDeformKeyframes: MeshDeformKeyframes = {},
+  inBetweenEnabled = true,
 ): Attachment => {
   const key = getAttachmentKey(attachment);
   const resolvedMesh =
     attachment.type === 'mesh' && attachment.mesh
       ? {
           ...attachment.mesh,
-          vertices: resolveMeshVerticesAtFrame(attachment, frame, meshDeformKeyframes, key),
+          vertices: resolveMeshVerticesAtFrame(
+            attachment,
+            frame,
+            meshDeformKeyframes,
+            key,
+            inBetweenEnabled,
+          ),
         }
       : attachment.mesh;
   return {
     ...attachment,
-    opacity: resolveAttachmentOpacityAtFrame(attachment, frame, attachmentOpacityKeyframes),
+    opacity: resolveAttachmentOpacityAtFrame(
+      attachment,
+      frame,
+      attachmentOpacityKeyframes,
+      inBetweenEnabled,
+    ),
     pixelFrame: frame,
     mesh: resolvedMesh,
   };

@@ -249,6 +249,7 @@ export interface ProjectData {
   pixelArtEnabled?: boolean;
   pixelArtSize?: number;
   lineBoilEnabled?: boolean;
+  inBetweenEnabled?: boolean;
   audioTracks?: AudioTrack[];
   activeAudioTrackId?: number | null;
   audioData?: string | null;

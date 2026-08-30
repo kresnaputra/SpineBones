@@ -165,6 +165,7 @@ export const resolveMeshVerticesAtFrame = (
   frame: number,
   meshDeformKeyframes: MeshDeformKeyframes,
   attachmentKey: string,
+  inBetweenEnabled = true,
 ): MeshVertex[] => {
   const restVerts = attachment.mesh?.vertices;
   if (!restVerts?.length) return [];
@@ -190,6 +191,7 @@ export const resolveMeshVerticesAtFrame = (
         y: attachmentKFs[next]?.vertices[i]?.y ?? v.y,
       }));
     }
+    if (!inBetweenEnabled) return restVerts;
     const t = applyEasing(attachmentKFs[next]?.easing, frame / next);
     return restVerts.map((v, i) => {
       const to = attachmentKFs[next]?.vertices[i];
@@ -213,7 +215,9 @@ export const resolveMeshVerticesAtFrame = (
         y: attachmentKFs[prev]?.vertices[i]?.y ?? v.y,
       }));
     }
-    const t = applyEasing(attachmentKFs[prev]?.easing, (frame - prev) / (next - prev));
+    const t = inBetweenEnabled
+      ? applyEasing(attachmentKFs[prev]?.easing, (frame - prev) / (next - prev))
+      : 0;
     return restVerts.map((v, i) => {
       const from = attachmentKFs[prev]?.vertices[i];
       const to = attachmentKFs[next]?.vertices[i];

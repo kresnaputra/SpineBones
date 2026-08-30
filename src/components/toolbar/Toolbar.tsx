@@ -83,9 +83,11 @@ export const Toolbar = () => {
     pixelArtEnabled,
     pixelArtSize,
     lineBoilEnabled,
+    inBetweenEnabled,
     setPixelArtEnabled,
     setPixelArtSize,
     setLineBoilEnabled,
+    setInBetweenEnabled,
     setBackgroundImage,
     setShowProjectBrowser,
   } = useEditorStore();
@@ -132,6 +134,14 @@ export const Toolbar = () => {
         pixelSize: nextSize,
       })),
     }));
+  };
+
+  const handleInBetweenToggle = () => {
+    captureSnapshot();
+    setInBetweenEnabled(!inBetweenEnabled);
+    if (mode === 'animate') {
+      useAnimationStore.getState().applyKeyframes();
+    }
   };
 
   const handleMirror = (axis: 'horizontal' | 'vertical') => {
@@ -212,6 +222,7 @@ export const Toolbar = () => {
         animationState.meshDeformKeyframes,
         deformerState.deformerKeyframes,
         deformerState.deformers,
+        editorState.inBetweenEnabled,
       );
       const exportBaseName = `${stripExtension(getSuggestedProjectFileName())}-animation`;
       const suggestedName = `${exportBaseName}.${extension}`;
@@ -259,6 +270,7 @@ export const Toolbar = () => {
       const animationState = useAnimationStore.getState();
       const slotState = useSlotStore.getState();
       const cameraState = useCameraStore.getState();
+      const editorState = useEditorStore.getState();
 
       const bonesCopy = JSON.parse(JSON.stringify(skeletonState.bones));
 
@@ -283,6 +295,7 @@ export const Toolbar = () => {
         frameWidth: settings.resolution,
         frameHeight: settings.resolution,
         maxFramesPerSheet: settings.maxFramesPerSheet,
+        inBetweenEnabled: editorState.inBetweenEnabled,
         baseName: stripExtension(archiveName),
       });
 
@@ -333,6 +346,7 @@ export const Toolbar = () => {
         backgroundImage: editorState.backgroundImage,
         includeBackground: false,
         crop: true,
+        inBetweenEnabled: editorState.inBetweenEnabled,
         baseName: stripExtension(archiveName),
       });
 
@@ -550,6 +564,19 @@ export const Toolbar = () => {
       >
         <Eye size={14} />
         Onion
+      </button>
+
+      <button
+        onClick={handleInBetweenToggle}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded border transition-all text-[11px] ${
+          inBetweenEnabled
+            ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-600/25'
+            : 'border-transparent bg-transparent text-text-dim hover:bg-panel2 hover:text-text hover:border-border'
+        }`}
+        title="Toggle automatic in-between interpolation"
+      >
+        <ArrowLeftRight size={14} />
+        In-between
       </button>
 
       <button

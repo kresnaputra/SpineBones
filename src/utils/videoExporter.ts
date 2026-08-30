@@ -137,6 +137,7 @@ export const exportVideo = async (
   meshDeformKeyframes: MeshDeformKeyframes = {},
   deformerKeyframes: DeformerKeyframes = {},
   deformers: Deformer[] = [],
+  inBetweenEnabled = true,
 ): Promise<VideoExportResult> => {
   // H.264 requires even dimensions; keep every codec on the same canvas size.
   const videoWidth = Math.max(2, Math.round(width / 2) * 2);
@@ -225,10 +226,12 @@ export const exportVideo = async (
     } else {
       const kf1 = normalizeKeyframeData(boneKeyframes[prevFrame]);
       const kf2 = normalizeKeyframeData(boneKeyframes[nextFrame]);
-      const t = applyEasing(
-        kf1.easing,
-        (frame - prevFrame) / (nextFrame - prevFrame),
-      );
+      const t = inBetweenEnabled
+        ? applyEasing(
+            kf1.easing,
+            (frame - prevFrame) / (nextFrame - prevFrame),
+          )
+        : 0;
 
       bone.x = lerp(kf1.x, kf2.x, t);
       bone.y = lerp(kf1.y, kf2.y, t);
@@ -264,6 +267,7 @@ export const exportVideo = async (
         frame,
         attachmentOpacityKeyframes,
         meshDeformKeyframes,
+        inBetweenEnabled,
       ),
     );
     // Warp deformers are applied before bone skinning, mirroring MainCanvas.
@@ -274,7 +278,7 @@ export const exportVideo = async (
       return applyWarpToAttachment(
         attachment,
         deformer,
-        resolveDeformerAtFrame(deformer, frame, deformerKeyframes),
+        resolveDeformerAtFrame(deformer, frame, deformerKeyframes, inBetweenEnabled),
       );
     });
     const resolvedSlots = resolveSlotsAtFrame(slots, frame, slotAttachmentKeyframes);

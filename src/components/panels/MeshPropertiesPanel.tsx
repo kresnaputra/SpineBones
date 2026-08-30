@@ -34,6 +34,7 @@ export const MeshPropertiesPanel = () => {
     selectedSlotId,
     selectedMeshVertexIndices,
     setSelectedMeshVertexIndices,
+    inBetweenEnabled,
   } = useEditorStore();
 
   const {
@@ -79,6 +80,7 @@ export const MeshPropertiesPanel = () => {
     frame,
     mode === 'animate' ? attachmentOpacityKeyframes : {},
     mode === 'animate' ? meshDeformKeyframes : {},
+    inBetweenEnabled,
   );
   const workingVertices = resolvedAttachment.mesh?.vertices ?? attachment.mesh.vertices;
 

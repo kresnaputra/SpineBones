@@ -313,6 +313,7 @@ export const resolveDeformerAtFrame = (
   deformer: Deformer,
   frame: number,
   keyframes: DeformerKeyframes,
+  inBetweenEnabled = true,
 ): { x: number; y: number }[] => {
   const kfs = keyframes[deformer.id];
   if (!kfs) return deformer.rest;
@@ -323,6 +324,7 @@ export const resolveDeformerAtFrame = (
   if (!before.length) {
     const f1 = after[0]!;
     if (f1 === 0) return kfs[f1]!.points;
+    if (!inBetweenEnabled) return deformer.rest;
     const t = applyEasing(kfs[f1]?.easing, frame / f1);
     const p1 = kfs[f1]!.points;
     return deformer.rest.map((p, i) => ({
@@ -334,7 +336,9 @@ export const resolveDeformerAtFrame = (
   const f0 = before[before.length - 1]!;
   const f1 = after[0]!;
   if (f0 === frame) return kfs[f0]!.points;
-  const t = applyEasing(kfs[f0]?.easing, (frame - f0) / (f1 - f0));
+  const t = inBetweenEnabled
+    ? applyEasing(kfs[f0]?.easing, (frame - f0) / (f1 - f0))
+    : 0;
   const p0 = kfs[f0]!.points;
   const p1 = kfs[f1]!.points;
   return p0.map((p, i) => ({

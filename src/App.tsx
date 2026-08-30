@@ -1279,6 +1279,12 @@ const setViewFlagsFromCommand = (payload: McpEditorCommand) => {
   if (payload.commandType === 'set_onion_skin') {
     editor.setOnionSkinEnabled(Boolean(payload.value));
   }
+  if (payload.commandType === 'set_in_between') {
+    editor.setInBetweenEnabled(Boolean(payload.value));
+    if (editor.mode === 'animate') {
+      useAnimationStore.getState().applyKeyframes();
+    }
+  }
   if (payload.commandType === 'set_bone_indicators') {
     editor.setShowBoneIndicators(Boolean(payload.value));
   }
@@ -1304,6 +1310,7 @@ const setViewFlagsFromCommand = (payload: McpEditorCommand) => {
   return {
     ok: true,
     onionSkinEnabled: useEditorStore.getState().onionSkinEnabled,
+    inBetweenEnabled: useEditorStore.getState().inBetweenEnabled,
     showBoneIndicators: useEditorStore.getState().showBoneIndicators,
     attachmentDragEnabled: useEditorStore.getState().attachmentDragEnabled,
     pixelArtEnabled: useEditorStore.getState().pixelArtEnabled,
@@ -1401,6 +1408,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       animationState.meshDeformKeyframes,
       deformerState.deformerKeyframes,
       deformerState.deformers,
+      editorState.inBetweenEnabled,
     );
     // The runtime picks the container it can actually encode, so keep the written
     // file's extension honest rather than trusting the requested one.
@@ -1436,6 +1444,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
       camZoom: cameraState.zoom,
       frameWidth: clampInt(payload.x ?? 1024, 64, 4096),
       frameHeight: clampInt(payload.y ?? 1024, 64, 4096),
+      inBetweenEnabled: editorState.inBetweenEnabled,
       baseName: stripExtension(getFileNameFromPath(payload.outputPath)),
     });
     await saveBlobToPath(payload.outputPath, blob);
@@ -1457,6 +1466,7 @@ const exportFromCommand = async (payload: McpEditorCommand) => {
     frameHeight: clampInt(payload.y ?? 1024, 64, 4096),
     backgroundImage: editorState.backgroundImage,
     includeBackground: Boolean(payload.value),
+    inBetweenEnabled: editorState.inBetweenEnabled,
     baseName: stripExtension(getFileNameFromPath(payload.outputPath)),
   });
   await saveBlobToPath(payload.outputPath, blob);
@@ -1506,6 +1516,7 @@ const buildMcpSnapshot = () => {
     playbackRangeEnd: editor.playbackRangeEnd,
     showBoneIndicators: editor.showBoneIndicators,
     onionSkinEnabled: editor.onionSkinEnabled,
+    inBetweenEnabled: editor.inBetweenEnabled,
     attachmentDragEnabled: editor.attachmentDragEnabled,
     pixelArtEnabled: editor.pixelArtEnabled,
     pixelArtSize: editor.pixelArtSize,
@@ -2031,6 +2042,7 @@ function App() {
 
       if (
         payload.commandType === 'set_onion_skin' ||
+        payload.commandType === 'set_in_between' ||
         payload.commandType === 'set_bone_indicators' ||
         payload.commandType === 'toggle_attachment_drag' ||
         payload.commandType === 'set_pixel_art'
