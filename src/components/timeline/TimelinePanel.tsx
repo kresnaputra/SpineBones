@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState, useEffectEvent } from "react";
 import { unstable_batchedUpdates } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
-import type { KeyframeEasing } from "../../types";
+import type { KeyframeData, KeyframeEasing, MeshVertex } from "../../types";
 import {
   Play,
   Pause,
@@ -111,6 +111,43 @@ const isSameTimelineMarker = (a: TimelineMarker, b: TimelineMarker) =>
   a.frame === b.frame &&
   (a.slotId ?? null) === (b.slotId ?? null);
 
+/**
+ * Clipboard for right-click copy/paste. A bone keyframe carries along the
+ * sprite swap, opacity, and mesh deform keys that shared its source frame —
+ * the same bundle `handleCopyFirstKeyframe` treats as "the keyframe" — so
+ * pasting reproduces the full pose rather than just the transform.
+ *
+ * The clipboard is always an array: copying a single dot yields a one-item
+ * array, and copying while a multi-selection is active (see
+ * `selectedKeyframes`) captures every selected marker. Each item keeps its own
+ * `sourceFrame` so a paste can preserve the selection's relative spacing —
+ * the whole group shifts by one offset, computed from the earliest frame in
+ * the copy to wherever the paste lands.
+ */
+type CopiedBoneKeyframe = {
+  kind: "bone";
+  boneId: number;
+  sourceFrame: number;
+  bone: KeyframeData;
+  sprites: Array<{ slotId: number; attachmentName: string | null }>;
+  opacities: Array<{ attachmentKey: string; opacity: number; easing?: KeyframeEasing }>;
+  meshes: Array<{
+    attachmentKey: string;
+    vertices: Array<Pick<MeshVertex, "x" | "y">>;
+    easing?: KeyframeEasing;
+  }>;
+};
+
+type CopiedSpriteKeyframe = {
+  kind: "sprite";
+  boneId: number;
+  slotId: number;
+  sourceFrame: number;
+  attachmentName: string | null;
+};
+
+type CopiedKeyframeItem = CopiedBoneKeyframe | CopiedSpriteKeyframe;
+
 const getAudioSourceKey = (dataUrl: string) =>
   `${dataUrl.length}:${dataUrl.slice(0, 48)}:${dataUrl.slice(-48)}`;
 
@@ -131,14 +168,29 @@ export const TimelinePanel = () => {
   >([]);
   const [selectedKeyframes, setSelectedKeyframes] = useState<TimelineMarker[]>([]);
   const [hoveredKeyframe, setHoveredKeyframe] = useState<TimelineMarker | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    kind: "bone" | "sprite";
-    boneId: number;
-    frame: number;
-    slotId?: number;
-  } | null>(null);
+  const [copiedKeyframes, setCopiedKeyframes] = useState<CopiedKeyframeItem[]>([]);
+  const [contextMenu, setContextMenu] = useState<
+    | {
+        /** Right-clicked an existing dot: offers copy (of the whole selection,
+         * if the dot is part of one) and delete. */
+        mode: "keyframe";
+        x: number;
+        y: number;
+        kind: "bone" | "sprite";
+        boneId: number;
+        frame: number;
+        slotId?: number;
+      }
+    | {
+        /** Right-clicked empty space with something on the clipboard: offers
+         * to paste it anchored at the cursor's frame. */
+        mode: "paste";
+        x: number;
+        y: number;
+        frame: number;
+      }
+    | null
+  >(null);
   const [resizeTick, setResizeTick] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
@@ -1136,16 +1188,32 @@ export const TimelinePanel = () => {
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
+        mode: "keyframe",
         kind: keyframeHit.kind,
         boneId: keyframeHit.boneId,
         frame: keyframeHit.frame,
         slotId: keyframeHit.slotId,
       });
+      return;
+    }
+
+    // Nothing under the cursor: offer to paste, as long as the click still
+    // lands on a bone row. Each clipboard item already knows its own bone, so
+    // — unlike the single-item version of this feature — the row clicked only
+    // supplies the target frame, not the target bone.
+    const boneAtCursor = getBoneAtPosition(sy);
+    if (copiedKeyframes.length > 0 && boneAtCursor) {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        mode: "paste",
+        frame: getFrameFromX(sx, rect.width),
+      });
     }
   };
 
   const handleDeleteFromContextMenu = () => {
-    if (contextMenu) {
+    if (contextMenu && contextMenu.mode === "keyframe") {
       if (contextMenu.kind === "bone") {
         deleteKeyframe(contextMenu.boneId, contextMenu.frame);
         deleteAttachmentOpacityKeysAtFrame(contextMenu.boneId, contextMenu.frame);
@@ -1158,8 +1226,173 @@ export const TimelinePanel = () => {
     }
   };
 
+  /** Snapshot everything tied to one marker's source frame, in clipboard form. */
+  const captureKeyframeItem = (marker: TimelineMarker): CopiedKeyframeItem | null => {
+    if (marker.kind === "sprite") {
+      if (typeof marker.slotId !== "number") return null;
+      const attachmentName =
+        slotAttachmentKeyframes[marker.slotId]?.[marker.frame]?.attachmentName ?? null;
+      return {
+        kind: "sprite",
+        boneId: marker.boneId,
+        slotId: marker.slotId,
+        sourceFrame: marker.frame,
+        attachmentName,
+      };
+    }
+
+    const boneKeyframe = keyframes[marker.boneId]?.[marker.frame];
+    if (!boneKeyframe) return null;
+
+    const sprites: CopiedBoneKeyframe["sprites"] = [];
+    const opacities: CopiedBoneKeyframe["opacities"] = [];
+    const meshes: CopiedBoneKeyframe["meshes"] = [];
+
+    slots
+      .filter((slot) => slot.boneId === marker.boneId)
+      .forEach((slot) => {
+        const spriteKeyframe = slotAttachmentKeyframes[slot.id]?.[marker.frame];
+        if (spriteKeyframe) {
+          sprites.push({ slotId: slot.id, attachmentName: spriteKeyframe.attachmentName });
+        }
+
+        if (!slot.attachmentName) return;
+        const attachmentKey = getAttachmentKey({ slotId: slot.id, name: slot.attachmentName });
+
+        const opacityKeyframe = attachmentOpacityKeyframes[attachmentKey]?.[marker.frame];
+        if (opacityKeyframe) {
+          opacities.push({
+            attachmentKey,
+            opacity: opacityKeyframe.opacity,
+            easing: opacityKeyframe.easing,
+          });
+        }
+
+        const meshKeyframe = meshDeformKeyframes[attachmentKey]?.[marker.frame];
+        if (meshKeyframe) {
+          meshes.push({ attachmentKey, vertices: meshKeyframe.vertices, easing: meshKeyframe.easing });
+        }
+      });
+
+    return {
+      kind: "bone",
+      boneId: marker.boneId,
+      sourceFrame: marker.frame,
+      bone: { ...boneKeyframe },
+      sprites,
+      opacities,
+      meshes,
+    };
+  };
+
+  const handleCopyKeyframe = () => {
+    if (!contextMenu || contextMenu.mode !== "keyframe") return;
+    const clicked: TimelineMarker = {
+      kind: contextMenu.kind,
+      boneId: contextMenu.boneId,
+      frame: contextMenu.frame,
+      slotId: contextMenu.slotId,
+    };
+
+    // Right-clicking a dot that is part of the active multi-selection copies
+    // the whole selection; right-clicking any other dot copies just that one,
+    // the way most apps treat a right-click on an unselected item.
+    const isPartOfSelection = selectedKeyframes.some((marker) =>
+      isSameTimelineMarker(marker, clicked),
+    );
+    const markersToCopy = isPartOfSelection ? selectedKeyframes : [clicked];
+
+    const items = markersToCopy
+      .map(captureKeyframeItem)
+      .filter((item): item is CopiedKeyframeItem => item !== null);
+
+    setCopiedKeyframes(items);
+    setContextMenu(null);
+  };
+
+  const handlePasteKeyframe = () => {
+    if (!contextMenu || contextMenu.mode !== "paste" || copiedKeyframes.length === 0) return;
+
+    // The group moves as one: every item shifts by the same offset, measured
+    // from the earliest source frame in the copy to the frame under the
+    // cursor. Pasting a single item is the offset===target-source case, so
+    // this subsumes the old single-keyframe paste exactly.
+    const anchorFrame = Math.min(...copiedKeyframes.map((item) => item.sourceFrame));
+    const pasteFrame = contextMenu.frame;
+    const offset = pasteFrame - anchorFrame;
+
+    captureSnapshot();
+
+    copiedKeyframes.forEach((item) => {
+      const targetFrame = Math.min(duration, Math.max(0, item.sourceFrame + offset));
+
+      if (item.kind === "sprite") {
+        useAnimationStore
+          .getState()
+          .setSlotAttachmentKeyframeAtFrame(item.slotId, targetFrame, item.attachmentName);
+        return;
+      }
+
+      // `insertKeyframe` writes at the current playhead frame rather than an
+      // explicit one, so the playhead moves to each target first — the same
+      // trick `handleLoopKeyframes` uses for the identical reason.
+      setFrame(targetFrame);
+      insertKeyframe(item.boneId, { ...item.bone });
+
+      item.sprites.forEach(({ slotId, attachmentName }) => {
+        useAnimationStore
+          .getState()
+          .setSlotAttachmentKeyframeAtFrame(slotId, targetFrame, attachmentName);
+      });
+      item.opacities.forEach(({ attachmentKey, opacity, easing }) => {
+        setAttachmentOpacityKeyframeAtFrame(attachmentKey, targetFrame, opacity);
+        updateAttachmentOpacityKeyframeEasing(
+          attachmentKey,
+          targetFrame,
+          normalizeKeyframeEasing(easing),
+        );
+      });
+      item.meshes.forEach(({ attachmentKey, vertices, easing }) => {
+        setMeshDeformKeyframeAtFrame(attachmentKey, targetFrame, vertices);
+        updateMeshDeformKeyframeEasing(
+          attachmentKey,
+          targetFrame,
+          normalizeKeyframeEasing(easing),
+        );
+      });
+    });
+
+    if (mode === "animate") applyKeyframes();
+    setFrame(pasteFrame);
+    setContextMenu(null);
+  };
+
   const contextMenuLabel =
-    contextMenu?.kind === "sprite" ? "Delete Sprite Key" : "Delete Keyframe";
+    contextMenu?.mode === "keyframe" && contextMenu.kind === "sprite"
+      ? "Delete Sprite Key"
+      : "Delete Keyframe";
+  const contextMenuTargetsSelection =
+    contextMenu?.mode === "keyframe" &&
+    selectedKeyframes.length > 1 &&
+    selectedKeyframes.some((marker) =>
+      isSameTimelineMarker(marker, {
+        kind: contextMenu.kind,
+        boneId: contextMenu.boneId,
+        frame: contextMenu.frame,
+        slotId: contextMenu.slotId,
+      }),
+    );
+  const copyMenuLabel = contextMenuTargetsSelection
+    ? `Copy ${selectedKeyframes.length} Keyframes`
+    : contextMenu?.mode === "keyframe" && contextMenu.kind === "sprite"
+      ? "Copy Sprite Key"
+      : "Copy Keyframe";
+  const pasteMenuLabel =
+    copiedKeyframes.length > 1
+      ? `Paste ${copiedKeyframes.length} Keyframes`
+      : copiedKeyframes[0]?.kind === "sprite"
+        ? "Paste Sprite Key"
+        : "Paste Keyframe";
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2001,12 +2234,29 @@ export const TimelinePanel = () => {
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={handleDeleteFromContextMenu}
-              className="w-full px-4 py-1.5 text-left text-[11px] text-text hover:bg-accent hover:text-white transition-colors"
-            >
-              {contextMenuLabel}
-            </button>
+            {contextMenu.mode === "keyframe" ? (
+              <>
+                <button
+                  onClick={handleCopyKeyframe}
+                  className="w-full px-4 py-1.5 text-left text-[11px] text-text hover:bg-accent hover:text-white transition-colors"
+                >
+                  {copyMenuLabel}
+                </button>
+                <button
+                  onClick={handleDeleteFromContextMenu}
+                  className="w-full px-4 py-1.5 text-left text-[11px] text-text hover:bg-accent hover:text-white transition-colors"
+                >
+                  {contextMenuLabel}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handlePasteKeyframe}
+                className="w-full px-4 py-1.5 text-left text-[11px] text-text hover:bg-accent hover:text-white transition-colors"
+              >
+                {pasteMenuLabel}
+              </button>
+            )}
           </div>
         )}
       </div>
