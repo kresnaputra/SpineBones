@@ -1,4 +1,5 @@
-import { useEvaluationLogStore, type EvaluationLogEntry } from '../stores/evaluationLogStore';
+import { useEvaluationLogStore } from '../stores/evaluationLogStore';
+import { summarizeEvaluationLogs } from '../thesis/evaluation/evaluationSummary';
 import { saveTextFile } from './nativeIO';
 
 const JSON_FILTERS = [
@@ -8,13 +9,6 @@ const JSON_FILTERS = [
   },
 ];
 
-const getAverageAgreement = (entries: EvaluationLogEntry[]) => {
-  if (entries.length === 0) return 0;
-
-  const total = entries.reduce((sum, entry) => sum + entry.validation.percentage, 0);
-  return Math.round((total / entries.length) * 100) / 100;
-};
-
 const getTimestampSlug = () => new Date().toISOString().replace(/[:.]/g, '-');
 
 export const createEvaluationLogExportData = () => {
@@ -22,15 +16,10 @@ export const createEvaluationLogExportData = () => {
 
   return {
     format: 'spinebones-rag-evaluation-log',
-    version: '1.0',
+    version: '2.0',
+    methodology: 'Tesis §3.14.7 / Tabel 31: enam komponen integritas. Synthesis dilaporkan terpisah dengan acuan output synthesis. Kegagalan pipeline dikecualikan dari agregat integritas.',
     exportedAt: new Date().toISOString(),
-    summary: {
-      total: entries.length,
-      valid: entries.filter((entry) => entry.status === 'valid').length,
-      invalid: entries.filter((entry) => entry.status === 'invalid').length,
-      failed: entries.filter((entry) => entry.status === 'failed').length,
-      averageJsonAgreement: getAverageAgreement(entries),
-    },
+    summary: summarizeEvaluationLogs(entries),
     entries,
   };
 };

@@ -10,6 +10,7 @@ export interface EvaluationCheck {
   expected: string | number | boolean | null;
   actual: string | number | boolean | null;
   passed: boolean;
+  details?: string;
 }
 
 export interface EvaluationLogEntry {
@@ -48,9 +49,16 @@ export interface EvaluationLogEntry {
     error: string | null;
   };
   validation: {
+    basis: 'dataset' | 'synthesized_output' | 'not_evaluated';
+    scope: string;
+    tolerance: number;
+    missingKeyframes: number;
+    unexpectedKeyframes: number;
+    excludedSourceKeyframes: number;
+    discrepancies: Array<{ bone: string; frame: number; property: string; expected: string | number | null; actual: string | number | null }>;
     matchedComponents: number;
     totalComponents: number;
-    percentage: number;
+    percentage: number | null;
     checks: EvaluationCheck[];
   };
   visualReview: VisualReviewStatus;
@@ -60,6 +68,7 @@ interface EvaluationLogState {
   entries: EvaluationLogEntry[];
   addEntry: (entry: EvaluationLogEntry) => void;
   clearEntries: () => void;
+  setVisualReview: (id: string, review: VisualReviewStatus) => void;
 }
 
 export const useEvaluationLogStore = create<EvaluationLogState>((set) => ({
@@ -69,4 +78,7 @@ export const useEvaluationLogStore = create<EvaluationLogState>((set) => ({
       entries: [entry, ...state.entries],
     })),
   clearEntries: () => set({ entries: [] }),
+  setVisualReview: (id, visualReview) => set((state) => ({
+    entries: state.entries.map((entry) => entry.id === id ? { ...entry, visualReview } : entry),
+  })),
 }));

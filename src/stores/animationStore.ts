@@ -12,6 +12,7 @@ import { applyEasing, normalizeKeyframeData } from '../utils/easing';
 import { sampleBonesAtFrame } from '../utils/animationPose';
 
 interface AnimationState {
+  appliedRagMetadata: { animationId: string; category: string } | null;
   keyframes: Keyframes;
   meshDeformKeyframes: MeshDeformKeyframes;
   attachmentOpacityKeyframes: AttachmentOpacityKeyframes;
@@ -81,6 +82,7 @@ const toLocalPose = (worldBone: Bone, parentBone: Bone | null, sourcePose: Keyfr
 };
 
 export const useAnimationStore = create<AnimationState>((set, get) => ({
+  appliedRagMetadata: null,
   keyframes: {},
   meshDeformKeyframes: {},
   attachmentOpacityKeyframes: {},

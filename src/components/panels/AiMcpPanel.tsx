@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Activity, Bot, Copy, FileJson, Square, Play, Settings2, Trash2, X } from 'lucide-react';
 import { useEvaluationLogStore } from '../../stores/evaluationLogStore';
 import { exportEvaluationLogs } from '../../utils/evaluationLogExporter';
+import { EvaluationResults } from './EvaluationResults';
 import {
   getMcpBridgeInfo,
   getMcpServerStatus,
@@ -22,7 +23,6 @@ export const AiMcpPanel = () => {
   const [showCodexConfig, setShowCodexConfig] = useState(false);
   const evaluationLogs = useEvaluationLogStore((state) => state.entries);
   const clearEvaluationLogs = useEvaluationLogStore((state) => state.clearEntries);
-  const latestEvaluationLog = evaluationLogs[0] ?? null;
   const codexConfigSummary = useMemo(() => {
     return [
       'Transport: Streamable HTTP',
@@ -250,19 +250,7 @@ export const AiMcpPanel = () => {
             </div>
           </div>
 
-          {latestEvaluationLog ? (
-            <div className="mt-2 rounded border border-border/70 bg-panel px-2 py-2 text-[10px] leading-5 text-text-dim">
-              <div className="truncate text-text">{latestEvaluationLog.prompt}</div>
-              <div>
-                {latestEvaluationLog.status.toUpperCase()} | JSON{' '}
-                {latestEvaluationLog.validation.percentage}%
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2 rounded border border-border/70 bg-panel px-2 py-2 text-[10px] leading-5 text-text-dim">
-              No evaluation logs.
-            </div>
-          )}
+          <EvaluationResults />
 
           <div className="mt-2 flex gap-2">
             <button

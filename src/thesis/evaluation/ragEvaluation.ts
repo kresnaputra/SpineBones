@@ -2,10 +2,8 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import type { EvaluationCheck, EvaluationLogEntry } from '../../stores/evaluationLogStore';
 import type { RagPipelineResult } from '../ragPipeline';
-import type { FlatKeyframeEntry } from '../rag/adaptation/keyframeAdapter';
-import type { KeyframeData } from '../../types';
-
-const EPSILON = 0.0001;
+import { flattenDatasetKeyframes } from '../rag/adaptation/keyframeAdapter';
+import { compareKeyframes, INTEGRITY_TOLERANCE } from './compareKeyframes';
 
 const createLogId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -15,56 +13,8 @@ const createLogId = () => {
   return `eval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const nearlyEqual = (a: number, b: number) => Math.abs(a - b) <= EPSILON;
-
-const keyframeMatches = (actual: KeyframeData | undefined, expected: FlatKeyframeEntry) => {
-  if (!actual) return false;
-
-  return (
-    nearlyEqual(actual.x, expected.x) &&
-    nearlyEqual(actual.y, expected.y) &&
-    nearlyEqual(actual.rotation, expected.rotation) &&
-    nearlyEqual(actual.scaleX, expected.scaleX) &&
-    nearlyEqual(actual.scaleY, expected.scaleY) &&
-    (actual.easing ?? 'linear') === expected.easing
-  );
-};
-
 const countDatasetKeyframes = (result: RagPipelineResult) =>
   result.item.animation.keyframes.reduce((total, track) => total + track.frames.length, 0);
-
-const countAppliedKeyframes = (flatKeyframes: FlatKeyframeEntry[]) => {
-  const { bones } = useSkeletonStore.getState();
-  const { keyframes } = useAnimationStore.getState();
-  let appliedKeyframeCount = 0;
-  let matchingKeyframeCount = 0;
-
-  for (const expected of flatKeyframes) {
-    const bone = bones.find((item) => item.name.toLowerCase() === expected.boneName.toLowerCase());
-    const actual = bone ? keyframes[bone.id]?.[expected.frame] : undefined;
-    if (actual) {
-      appliedKeyframeCount += 1;
-    }
-    if (keyframeMatches(actual, expected)) {
-      matchingKeyframeCount += 1;
-    }
-  }
-
-  return { appliedKeyframeCount, matchingKeyframeCount };
-};
-
-const countRequiredBonesMapped = (result: RagPipelineResult) => {
-  let mappedCount = 0;
-
-  for (const semanticBone of result.item.requiredBones) {
-    const sourceBoneName = result.item.boneMapping[semanticBone] ?? semanticBone;
-    if (result.mappedBones[sourceBoneName]) {
-      mappedCount += 1;
-    }
-  }
-
-  return mappedCount;
-};
 
 const summarizeChecks = (checks: EvaluationCheck[]) => {
   const matchedComponents = checks.filter((check) => check.passed).length;
@@ -85,48 +35,45 @@ export const buildRagEvaluationLogEntry = (
 ): EvaluationLogEntry => {
   const animation = useAnimationStore.getState();
   const mappedBoneCount = Object.keys(result.mappedBones).length;
-  const requiredBonesMapped = countRequiredBonesMapped(result);
-  const { appliedKeyframeCount, matchingKeyframeCount } = countAppliedKeyframes(result.flatKeyframes);
-  // Compare against what the pipeline actually intended to apply (post-timeScale when
-  // synthesized), not the raw dataset item's original duration/fps.
-  const expectedDuration = result.appliedDuration;
-  const expectedFps = result.appliedFps;
+  const sourceKeyframes = flattenDatasetKeyframes(result.item.animation, result.mappedBones);
+  const isDataset = result.outputMode === 'raw_copy';
+  const expected = isDataset ? sourceKeyframes : result.flatKeyframes;
+  const endFrame = Math.max(result.item.animation.duration, result.appliedDuration);
+  const comparison = compareKeyframes(expected, useSkeletonStore.getState().bones, animation.keyframes, endFrame);
+  const { appliedKeyframeCount, matchingKeyframeCount } = comparison;
+  const expectedDuration = isDataset ? result.item.animation.duration : result.appliedDuration;
+  const expectedFps = isDataset ? result.item.animation.fps : result.appliedFps;
 
   const checks: EvaluationCheck[] = [
     {
       key: 'animation_id',
       label: 'ID animasi',
       expected: result.item.id,
-      actual: result.item.id,
-      passed: true,
+      actual: animation.appliedRagMetadata?.animationId ?? null,
+      passed: animation.appliedRagMetadata?.animationId === result.item.id,
     },
     {
       key: 'category',
       label: 'Kategori animasi',
       expected: result.item.category,
-      actual: result.item.category,
-      passed: result.item.category.trim().length > 0,
+      actual: animation.appliedRagMetadata?.category ?? null,
+      passed: animation.appliedRagMetadata?.category === result.item.category,
     },
     {
-      key: 'required_bones',
-      label: 'Required bones',
-      expected: result.item.requiredBones.length,
-      actual: requiredBonesMapped,
-      passed: requiredBonesMapped === result.item.requiredBones.length,
+      key: 'keyframe_count',
+      label: 'Jumlah keyframe',
+      expected: expected.length,
+      actual: appliedKeyframeCount,
+      passed: expected.length > 0 && appliedKeyframeCount === expected.length && comparison.missingKeyframes === 0 && comparison.unexpectedKeyframes === 0 && comparison.duplicateDestinations === 0,
+      details: `Hilang: ${comparison.missingKeyframes}; tambahan: ${comparison.unexpectedKeyframes}; tujuan duplikat: ${comparison.duplicateDestinations}.`,
     },
     {
-      key: 'bone_mapping',
-      label: 'Bone mapping',
-      expected: Math.max(1, result.item.requiredBones.length),
-      actual: mappedBoneCount,
-      passed: mappedBoneCount >= Math.max(1, result.item.requiredBones.length),
-    },
-    {
-      key: 'keyframes',
-      label: 'Keyframe',
-      expected: result.flatKeyframes.length,
+      key: 'keyframe_transforms',
+      label: 'Transformasi keyframe',
+      expected: expected.length,
       actual: matchingKeyframeCount,
-      passed: result.flatKeyframes.length > 0 && matchingKeyframeCount === result.flatKeyframes.length,
+      passed: expected.length > 0 && matchingKeyframeCount === expected.length && comparison.duplicateDestinations === 0,
+      details: `Jumlah keyframe dengan x, y, rotasi, skala, dan easing sesuai. Toleransi numerik: ${INTEGRITY_TOLERANCE}; easing harus identik.`,
     },
     {
       key: 'duration',
@@ -145,6 +92,13 @@ export const buildRagEvaluationLogEntry = (
   ];
 
   const validation = {
+    basis: isDataset ? 'dataset' as const : 'synthesized_output' as const,
+    scope: `Bone keyframes pada seluruh track, frame 0–${endFrame}. Metadata dibaca dari state hasil penerapan.`,
+    tolerance: INTEGRITY_TOLERANCE,
+    missingKeyframes: comparison.missingKeyframes,
+    unexpectedKeyframes: comparison.unexpectedKeyframes,
+    excludedSourceKeyframes: countDatasetKeyframes(result) - sourceKeyframes.length,
+    discrepancies: comparison.discrepancies,
     ...summarizeChecks(checks),
     checks,
   };
@@ -175,7 +129,7 @@ export const buildRagEvaluationLogEntry = (
     },
     mcp: {
       status: 'completed',
-      selectedAnimationId: result.item.id,
+      selectedAnimationId: animation.appliedRagMetadata?.animationId ?? null,
       mappedBoneCount,
       mappedBones: result.mappedBones,
       appliedKeyframeCount,
@@ -195,15 +149,9 @@ export const buildFailedRagEvaluationLogEntry = (options: {
   completedAt: string;
   error: string;
 }): EvaluationLogEntry => {
-  const checks: EvaluationCheck[] = [
-    {
-      key: 'rag_pipeline',
-      label: 'Pipeline RAG',
-      expected: true,
-      actual: false,
-      passed: false,
-    },
-  ];
+  // A pipeline failure has no completed output to compare; it is not a seventh
+  // integrity component and must not enter the six-component aggregate.
+  const checks: EvaluationCheck[] = [];
 
   return {
     id: createLogId(),
@@ -241,7 +189,15 @@ export const buildFailedRagEvaluationLogEntry = (options: {
       error: options.error,
     },
     validation: {
+      basis: 'not_evaluated',
+      scope: 'Pipeline gagal; integritas keluaran belum dapat dievaluasi.',
+      tolerance: INTEGRITY_TOLERANCE,
+      missingKeyframes: 0,
+      unexpectedKeyframes: 0,
+      excludedSourceKeyframes: 0,
+      discrepancies: [],
       ...summarizeChecks(checks),
+      percentage: null,
       checks,
     },
     visualReview: 'not_reviewed',

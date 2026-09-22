@@ -142,7 +142,8 @@ type McpRagCommandSnapshot = {
   mappedBones?: Record<string, string>;
   keyframeCount?: number;
   evaluationLogId?: string;
-  jsonAgreement?: number;
+  jsonAgreement?: number | null;
+  integrityBasis?: 'dataset' | 'synthesized_output' | 'not_evaluated';
   validationStatus?: 'valid' | 'invalid' | 'failed';
   error?: string;
   outputMode?: RagOutputMode;
@@ -1949,6 +1950,7 @@ function App() {
             keyframeCount: result.keyframeCount,
             evaluationLogId: evaluationLog.id,
             jsonAgreement: evaluationLog.validation.percentage,
+            integrityBasis: evaluationLog.validation.basis,
             validationStatus: evaluationLog.status,
             outputMode: result.outputMode,
             appliedDuration: result.appliedDuration,
@@ -1977,6 +1979,7 @@ function App() {
             completedAt,
             evaluationLogId: evaluationLog.id,
             jsonAgreement: evaluationLog.validation.percentage,
+            integrityBasis: evaluationLog.validation.basis,
             validationStatus: evaluationLog.status,
             error: errorMessage,
           };

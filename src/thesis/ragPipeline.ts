@@ -221,6 +221,7 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
 // Apply a pipeline result to the active editor timeline.
 // Switches to animate mode, clears the target frame range, sets duration/fps, writes keyframes.
 export const applyRagAnimation = (result: RagPipelineResult): void => {
+  useAnimationStore.setState({ appliedRagMetadata: null });
   const animation = useAnimationStore.getState();
   const editor = useEditorStore.getState();
   const skeleton = useSkeletonStore.getState();
@@ -263,4 +264,9 @@ export const applyRagAnimation = (result: RagPipelineResult): void => {
 
   animation.setFrame(originalFrame);
   animation.applyKeyframes();
+  // Execution metadata is committed only after application completes. The evaluator
+  // reads this editor state rather than treating input metadata as observed output.
+  useAnimationStore.setState({
+    appliedRagMetadata: { animationId: result.item.id, category: result.item.category },
+  });
 };
