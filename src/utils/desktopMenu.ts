@@ -13,6 +13,7 @@ type DesktopMenuHandlers = {
   onExportAnimationJson: () => void | Promise<void>;
   onToggleBoneIndicators: () => void | Promise<void>;
   onOpenHelp: () => void | Promise<void>;
+  onOpenEvaluationReport: () => void | Promise<void>;
 };
 
 let menuSetupPromise: Promise<void> | null = null;
@@ -139,8 +140,18 @@ export const ensureDesktopMenu = async (handlers: DesktopMenuHandlers) => {
       ],
     });
 
+    const evaluationMenu = await Submenu.new({
+      text: 'Evaluation',
+      items: [await MenuItem.new({
+        id: 'evaluation-report',
+        text: 'Evaluation Report…',
+        accelerator: 'CmdOrCtrl+Shift+E',
+        action: () => void handlers.onOpenEvaluationReport(),
+      })],
+    });
+
     const appMenu = await Menu.new({
-      items: [fileMenu, editMenu, viewMenu, windowMenu, helpMenu],
+      items: [fileMenu, editMenu, viewMenu, evaluationMenu, windowMenu, helpMenu],
     });
 
     await appMenu.setAsAppMenu();

@@ -93,6 +93,7 @@ export const synthesizeKeyframes = (
       lastEmittedFrame = newFrame;
 
       flatKeyframes.push({
+        sourceBoneId: track.boneId,
         boneName: targetBoneName,
         frame: newFrame,
         x: newX,

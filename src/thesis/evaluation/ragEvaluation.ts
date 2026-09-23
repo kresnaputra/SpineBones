@@ -2,7 +2,7 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import type { EvaluationCheck, EvaluationLogEntry } from '../../stores/evaluationLogStore';
 import type { RagPipelineResult } from '../ragPipeline';
-import { flattenDatasetKeyframes } from '../rag/adaptation/keyframeAdapter';
+import { flattenDatasetKeyframes, bindKeyframeTargets, resolveKeyframeTarget } from '../rag/adaptation/keyframeAdapter';
 import { compareKeyframes, INTEGRITY_TOLERANCE } from './compareKeyframes';
 
 const createLogId = () => {
@@ -34,8 +34,9 @@ export const buildRagEvaluationLogEntry = (
   },
 ): EvaluationLogEntry => {
   const animation = useAnimationStore.getState();
-  const mappedBoneCount = Object.keys(result.mappedBones).length;
-  const sourceKeyframes = flattenDatasetKeyframes(result.item.animation, result.mappedBones);
+  const bones = useSkeletonStore.getState().bones;
+  const mappedBoneCount = new Set(result.flatKeyframes.map((entry) => resolveKeyframeTarget(entry, bones)?.id).filter((id) => id !== undefined)).size;
+  const sourceKeyframes = bindKeyframeTargets(flattenDatasetKeyframes(result.item.animation, result.mappedBones), result.item.animation, bones);
   const isDataset = result.outputMode === 'raw_copy';
   const expected = isDataset ? sourceKeyframes : result.flatKeyframes;
   const endFrame = Math.max(result.item.animation.duration, result.appliedDuration);

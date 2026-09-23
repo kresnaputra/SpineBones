@@ -1,4 +1,5 @@
 import type { FlatKeyframeEntry } from '../rag/adaptation/keyframeAdapter';
+import { resolveKeyframeTarget } from '../rag/adaptation/keyframeAdapter';
 import type { Keyframes } from '../../types';
 import type { EvaluationLogEntry } from '../../stores/evaluationLogStore';
 
@@ -18,9 +19,8 @@ export const compareKeyframes = (
   let matchingKeyframeCount = 0;
   let duplicateDestinations = 0;
   for (const entry of expected) {
-    const targets = bones.filter((bone) => bone.name.toLowerCase() === entry.boneName.toLowerCase());
-    const bone = targets.length === 1 ? targets[0] : undefined;
-    const key = `${bone?.id}:${entry.frame}`;
+    const bone = resolveKeyframeTarget(entry, bones);
+    const key = bone ? `${bone.id}:${entry.frame}` : `unresolved:${entry.sourceBoneId ?? entry.boneName}:${entry.frame}`;
     if (expectedKeys.has(key)) duplicateDestinations += 1;
     expectedKeys.add(key);
     const observed = bone && entry.frame >= 0 && entry.frame <= endFrame

@@ -5,7 +5,7 @@ import { loadRagDatasetFromItems } from './rag/retrieval/loader';
 import { buildRagQueryContext } from './rag/retrieval/queryBuilder';
 import { retrieveTopAnimations } from './rag/retrieval/retriever';
 import { buildSemanticBoneMap } from './rag/adaptation/boneMapper';
-import { flattenDatasetKeyframes } from './rag/adaptation/keyframeAdapter';
+import { flattenDatasetKeyframes, bindKeyframeTargets, resolveKeyframeTarget } from './rag/adaptation/keyframeAdapter';
 import { clampDuration, clampFps } from './rag/shared/clamps';
 import { combineModifiers, detectRawCopyIntent, parseMotionModifiers } from './rag/synthesis/promptIntent';
 import { analyzeMotionPattern } from './rag/synthesis/motionAnalyzer';
@@ -160,7 +160,7 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
   const { item, score, reasons, mappedBones } = selected;
 
   if (detectRawCopyIntent(prompt)) {
-    const flatKeyframes = flattenDatasetKeyframes(item.animation, mappedBones);
+    const flatKeyframes = bindKeyframeTargets(flattenDatasetKeyframes(item.animation, mappedBones), item.animation, activeBones);
     if (flatKeyframes.length === 0) {
       throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
     }
@@ -189,7 +189,7 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
     pattern: analyzeMotionPattern(candidateItem),
   }));
   const selectedMember =
-    ensembleMembers.find((member) => member.item.id === item.id) ?? { item, pattern: analyzeMotionPattern(item) };
+    ensembleMembers.find((member) => member.item === item) ?? { item, pattern: analyzeMotionPattern(item) };
   const motionPattern = selectedMember.pattern;
 
   const baselineModifiers = deriveBaselineModifiers(selectedMember, ensembleMembers);
@@ -207,7 +207,7 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
     reasons,
     mappedBones,
     keyframeCount: synthesis.generatedKeyframeCount,
-    flatKeyframes: synthesis.flatKeyframes,
+    flatKeyframes: bindKeyframeTargets(synthesis.flatKeyframes, item.animation, activeBones),
     outputMode: 'synthesized',
     appliedDuration: synthesis.appliedDuration,
     appliedFps: synthesis.appliedFps,
@@ -225,6 +225,20 @@ export const applyRagAnimation = (result: RagPipelineResult): void => {
   const animation = useAnimationStore.getState();
   const editor = useEditorStore.getState();
   const skeleton = useSkeletonStore.getState();
+
+  // Resolve every destination before clearing the timeline. Ambiguous mappings
+  // must fail explicitly rather than overwrite another bone's track.
+  const targets = result.flatKeyframes.map((kf) => {
+    const bone = resolveKeyframeTarget(kf, skeleton.bones);
+    if (!bone) throw new Error(`Cannot uniquely map bone "${kf.boneName}" (source ID ${kf.sourceBoneId ?? 'unknown'})`);
+    return bone;
+  });
+  const destinations = new Set<string>();
+  result.flatKeyframes.forEach((kf, index) => {
+    const key = `${targets[index]!.id}:${kf.frame}`;
+    if (destinations.has(key)) throw new Error(`Duplicate keyframe destination: ${key}`);
+    destinations.add(key);
+  });
 
   editor.setMode('animate');
 
@@ -245,11 +259,8 @@ export const applyRagAnimation = (result: RagPipelineResult): void => {
 
   const originalFrame = animation.frame;
 
-  for (const kf of result.flatKeyframes) {
-    const bone = skeleton.bones.find(
-      (b) => b.name.toLowerCase() === kf.boneName.toLowerCase(),
-    );
-    if (!bone) continue;
+  for (const [index, kf] of result.flatKeyframes.entries()) {
+    const bone = targets[index]!;
 
     animation.setFrame(kf.frame);
     animation.insertKeyframe(bone.id, {

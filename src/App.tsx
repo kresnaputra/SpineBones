@@ -10,6 +10,7 @@ import { useCameraStore } from './stores/cameraStore';
 import { useHistoryStore } from './stores/historyStore';
 import { useEvaluationLogStore } from './stores/evaluationLogStore';
 import { ensureDesktopMenu } from './utils/desktopMenu';
+import { openEvaluationWindow } from './utils/evaluationWindow';
 import { computeAllWorldTransforms } from './engine/transforms';
 import { getIkChain, solveTwoBoneIk } from './utils/ik';
 import {
@@ -1426,6 +1427,9 @@ function App() {
       onOpenHelp: () => {
         setShowHelpDialog(true);
       },
+      onOpenEvaluationReport: () => {
+        void openEvaluationWindow().catch((error) => console.error('Unable to open evaluation window:', error));
+      },
     });
   }, [setShowHelpDialog, setShowProjectBrowser]);
 
@@ -1945,7 +1949,7 @@ function App() {
             itemId: result.item.id,
             score: result.score,
             reasons: result.reasons,
-            mappedBoneCount: Object.keys(result.mappedBones).length,
+            mappedBoneCount: evaluationLog.mcp.mappedBoneCount,
             mappedBones: result.mappedBones,
             keyframeCount: result.keyframeCount,
             evaluationLogId: evaluationLog.id,
