@@ -1,29 +1,21 @@
 import { clampDuration, clampFps } from '../shared/clamps';
-import type { SemanticBoneMap } from '../adaptation/boneMapper';
+import { blendEnsembleMotion } from './motionBlender';
+import { sampleCurveAtPhase } from './motionCurve';
+import { buildProceduralProfile, deriveEasing, selectKeyPhases } from './proceduralLayer';
+import type { BlendCandidate } from './motionBlender';
+import type { ItemMotionField, MotionSample } from './motionCurve';
+import type { SynthesizedCurve } from './novelty';
+import type { BoneBindingMap, RigBoneRef } from '../adaptation/boneMapper';
 import type { FlatKeyframeEntry } from '../adaptation/keyframeAdapter';
 import type { RagAnimationDatasetItem, RagKeyframeEasing } from '../types/ragTypes';
 import type { MotionModifiers, MotionPattern, MotionPhase, SynthesisResult } from './types';
 
 const SMOOTHING_EASING_THRESHOLD = 1.15;
 
-// Finds the source-track frame index nearest to `frame` within the reference pattern's frame
-// list. Used only when a bone track's own frame array diverges from the shared reference
-// timeline (should not happen given current dataset authoring, but keeps synthesis safe).
-const nearestPatternIndex = (frame: number, patternFrames: number[]): number => {
-  let bestIndex = 0;
-  let bestDistance = Infinity;
-  for (let i = 0; i < patternFrames.length; i++) {
-    const distance = Math.abs(patternFrames[i]! - frame);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = i;
-    }
-  }
-  return bestIndex;
-};
-
-const findPhase = (patternIndex: number, phases: MotionPhase[]): MotionPhase =>
-  phases.find((phase) => patternIndex >= phase.startFrameIndex && patternIndex <= phase.endFrameIndex) ?? phases[0]!;
+// Resolution of the working curve each bone is synthesized on before re-keying. Independent of
+// both the source clip's key count and the output's — the curve is continuous, and keys are
+// chosen from it afterwards.
+const WORKING_SAMPLES = 65;
 
 const resolveAxisScale = (axis: MotionPhase['yAxis'], modifiers: MotionModifiers): number =>
   axis === 'none' ? 1 : modifiers[axis];
@@ -33,83 +25,156 @@ const resolveRotationScale = (phase: MotionPhase, modifiers: MotionModifiers): n
   return product / modifiers.smoothness;
 };
 
-export const synthesizeKeyframes = (
-  item: RagAnimationDatasetItem,
-  semanticBoneMap: SemanticBoneMap,
-  pattern: MotionPattern,
-  modifiers: MotionModifiers,
-): SynthesisResult => {
-  const patternFrames = pattern.frames;
-  const frameToPatternIndex = new Map<number, number>(patternFrames.map((frame, index) => [frame, index]));
-  const lastPatternIndex = Math.max(0, patternFrames.length - 1);
-  let warnedDivergence = false;
+// MotionPattern phases are spans of *frame indices* into the source clip's key list. Synthesis
+// works in normalized phase, so each span is converted to a half-open phase range and the spans
+// are made contiguous — the analyzer anchors some phases to a single key (an apex, a contact),
+// which would otherwise leave the time between anchors unrouted.
+const buildPhaseRouting = (pattern: MotionPattern, duration: number): ((phase: number) => MotionPhase) => {
+  const fallback = pattern.phases[0]!;
+  if (pattern.phases.length === 0 || pattern.frames.length === 0 || duration <= 0) return () => fallback;
+
+  const starts = pattern.phases.map((phase) => (pattern.frames[phase.startFrameIndex] ?? 0) / duration);
+  return (phase: number): MotionPhase => {
+    for (let i = pattern.phases.length - 1; i >= 0; i--) {
+      if (phase >= starts[i]!) return pattern.phases[i]!;
+    }
+    return fallback;
+  };
+};
+
+export interface SynthesisInput {
+  item: RagAnimationDatasetItem;
+  bindings: BoneBindingMap;
+  pattern: MotionPattern;
+  modifiers: MotionModifiers;
+  selectedField: ItemMotionField;
+  selectedScore: number;
+  candidates: BlendCandidate[];
+  targetBones: RigBoneRef[];
+}
+
+// Generate an animation from a retrieved clip and the ensemble retrieved alongside it.
+//
+// The pipeline is: blend the ensemble's motion onto a shared phase axis → delay each bone by its
+// own hierarchy-derived lag → scale per motion phase by the active modifiers → re-key where the
+// resulting curve actually bends. Only the last step produces keyframes, so the output's key
+// times come from the synthesized motion rather than from the source clip's authoring.
+export const synthesizeKeyframes = (input: SynthesisInput): SynthesisResult => {
+  const { item, bindings, pattern, modifiers, selectedField, selectedScore, candidates, targetBones } = input;
 
   const appliedDurationUnclamped = Math.round(item.animation.duration * modifiers.timeScale);
   const appliedDuration = clampDuration(appliedDurationUnclamped);
   const appliedFps = clampFps(item.animation.fps);
+  const cyclic = item.loop === true;
   const forceSmoothEasing = modifiers.smoothness >= SMOOTHING_EASING_THRESHOLD;
 
+  const blended = blendEnsembleMotion(selectedField, selectedScore, item.category, candidates);
+
+  // Only bound tracks take part. Destinations were already decided by bone id when the bindings
+  // were built, so the procedural layer can read hierarchy depth straight from the rig bone this
+  // curve is actually going to drive.
+  const targetBoneByCurveIndex = new Map<number, RigBoneRef>();
+  selectedField.curves.forEach((curve, index) => {
+    const binding = bindings.get(curve.boneId);
+    if (!binding) return;
+    const bone = targetBones.find((candidate) => candidate.id === binding.targetBoneId);
+    if (!bone) return;
+    targetBoneByCurveIndex.set(index, bone);
+  });
+
+  const ensembleFields = [selectedField, ...candidates.map((candidate) => candidate.field)];
+  const profile = buildProceduralProfile(
+    selectedField,
+    ensembleFields,
+    targetBoneByCurveIndex,
+    targetBones,
+    modifiers.weightScale,
+  );
+
+  const routePhase = buildPhaseRouting(pattern, item.animation.duration);
   const flatKeyframes: FlatKeyframeEntry[] = [];
+  const synthesizedCurves: SynthesizedCurve[] = [];
 
-  for (const track of item.animation.keyframes) {
-    const targetBoneName = semanticBoneMap[track.boneName];
-    if (!targetBoneName) continue;
+  selectedField.curves.forEach((curve, index) => {
+    const targetBone = targetBoneByCurveIndex.get(index);
+    if (!targetBone) return;
 
-    const sortedFrames = [...track.frames].sort((a, b) => a.frame - b.frame);
-    if (sortedFrames.length === 0) continue;
+    const source = blended.curves.get(index) ?? curve.samples;
+    const lag = profile.lagByCurveIndex.get(index) ?? 0;
+    const amplitude = profile.amplitudeByCurveIndex.get(index) ?? 1;
 
-    const rest = sortedFrames[0]!;
+    // Read the blended curve back through this bone's own delay, then scale it by whatever the
+    // motion phase at that point routes to. Sampling the delayed curve is what makes frame 0 stop
+    // being pinned to the source's rest pose: at a non-zero lag the cycle no longer starts there.
+    const sampleFinal = (phase: number): MotionSample => {
+      const delayed = sampleCurveAtPhase(source, phase - lag, cyclic);
+      const motionPhase = routePhase(Math.max(0, Math.min(1, phase)));
+      const yScale = resolveAxisScale(motionPhase.yAxis, modifiers) * amplitude;
+      const xScale = resolveAxisScale(motionPhase.xAxis, modifiers) * amplitude;
+      const scaleScale = resolveAxisScale(motionPhase.scaleAxis, modifiers);
+      const rotationScale = resolveRotationScale(motionPhase, modifiers) * amplitude;
+
+      return {
+        dx: delayed.dx * xScale,
+        dy: delayed.dy * yScale,
+        drot: delayed.drot * rotationScale,
+        dsx: delayed.dsx * scaleScale,
+        dsy: delayed.dsy * scaleScale,
+      };
+    };
+
+    const working: MotionSample[] = [];
+    for (let i = 0; i < WORKING_SAMPLES; i++) working.push(sampleFinal(i / (WORKING_SAMPLES - 1)));
+    synthesizedCurves.push({ semantic: curve.semantic, samples: working });
+
+    const keyPhases = selectKeyPhases(working, cyclic, appliedDuration);
+    const rest = curve.rest;
     let lastEmittedFrame = -1;
 
-    for (const kf of sortedFrames) {
-      let patternIndex = frameToPatternIndex.get(kf.frame);
-      if (patternIndex === undefined) {
-        if (!warnedDivergence) {
-          console.warn(
-            `synthesizeKeyframes: track "${track.boneName}" frame ${kf.frame} not found in reference pattern for "${item.id}" — falling back to nearest-frame phase lookup`,
-          );
-          warnedDivergence = true;
-        }
-        patternIndex = nearestPatternIndex(kf.frame, patternFrames);
-      }
-      patternIndex = Math.max(0, Math.min(lastPatternIndex, patternIndex));
+    keyPhases.forEach((phase, keyIndex) => {
+      let frame = Math.round(phase * appliedDuration);
+      if (frame <= lastEmittedFrame) frame = lastEmittedFrame + 1;
+      frame = Math.max(0, Math.min(appliedDuration, frame));
+      // A bumped frame can collide with the clip's end; drop the key rather than stack two
+      // keyframes on one frame, which the editor would treat as a duplicate destination.
+      if (frame <= lastEmittedFrame) return;
+      lastEmittedFrame = frame;
 
-      const phase = findPhase(patternIndex, pattern.phases);
-      const yScale = resolveAxisScale(phase.yAxis, modifiers);
-      const xScale = resolveAxisScale(phase.xAxis, modifiers);
-      const scaleScale = resolveAxisScale(phase.scaleAxis, modifiers);
-      const rotationScale = resolveRotationScale(phase, modifiers);
-
-      const newX = rest.x + (kf.x - rest.x) * xScale;
-      const newY = rest.y + (kf.y - rest.y) * yScale;
-      const newRotation = rest.rotation + (kf.rotation - rest.rotation) * rotationScale;
-      const newScaleX = rest.scaleX + (kf.scaleX - rest.scaleX) * scaleScale;
-      const newScaleY = rest.scaleY + (kf.scaleY - rest.scaleY) * scaleScale;
-      const easing: RagKeyframeEasing = forceSmoothEasing ? 'easeInOut' : kf.easing;
-
-      let newFrame = Math.round(kf.frame * modifiers.timeScale);
-      if (newFrame <= lastEmittedFrame) newFrame = lastEmittedFrame + 1;
-      newFrame = Math.max(0, Math.min(appliedDurationUnclamped, newFrame));
-      lastEmittedFrame = newFrame;
+      const sample = sampleFinal(phase);
+      const easing: RagKeyframeEasing = forceSmoothEasing
+        ? 'easeInOut'
+        : deriveEasing(working, keyPhases, keyIndex, cyclic, sampleFinal);
 
       flatKeyframes.push({
-        sourceBoneId: track.boneId,
-        boneName: targetBoneName,
-        frame: newFrame,
-        x: newX,
-        y: newY,
-        rotation: newRotation,
-        scaleX: newScaleX,
-        scaleY: newScaleY,
+        sourceBoneId: curve.boneId,
+        targetBoneId: targetBone.id,
+        boneName: targetBone.name,
+        frame,
+        x: rest.x + sample.dx,
+        y: rest.y + sample.dy,
+        rotation: rest.rotation + sample.drot,
+        scaleX: rest.scaleX + sample.dsx,
+        scaleY: rest.scaleY + sample.dsy,
         easing,
       });
-    }
-  }
+    });
+  });
 
   return {
     flatKeyframes,
     appliedDuration,
     appliedFps,
     generatedKeyframeCount: flatKeyframes.length,
+    synthesizedCurves,
+    blend: {
+      contributions: blended.contributions,
+      blendStrength: blended.blendStrength,
+      blendedBoneCount: blended.blendedBoneCount,
+    },
+    procedural: {
+      maxOverlapPhase: profile.maxOverlapPhase,
+      gaitCorrection: profile.gaitCorrection,
+      asymmetryRatio: profile.asymmetryRatio,
+    },
   };
 };

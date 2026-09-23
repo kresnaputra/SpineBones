@@ -2,7 +2,7 @@ import { useAnimationStore } from '../../stores/animationStore';
 import { useSkeletonStore } from '../../stores/skeletonStore';
 import type { EvaluationCheck, EvaluationLogEntry } from '../../stores/evaluationLogStore';
 import type { RagPipelineResult } from '../ragPipeline';
-import { flattenDatasetKeyframes, bindKeyframeTargets, resolveKeyframeTarget } from '../rag/adaptation/keyframeAdapter';
+import { flattenDatasetKeyframes, resolveKeyframeTarget } from '../rag/adaptation/keyframeAdapter';
 import { compareKeyframes, INTEGRITY_TOLERANCE } from './compareKeyframes';
 
 const createLogId = () => {
@@ -36,7 +36,7 @@ export const buildRagEvaluationLogEntry = (
   const animation = useAnimationStore.getState();
   const bones = useSkeletonStore.getState().bones;
   const mappedBoneCount = new Set(result.flatKeyframes.map((entry) => resolveKeyframeTarget(entry, bones)?.id).filter((id) => id !== undefined)).size;
-  const sourceKeyframes = bindKeyframeTargets(flattenDatasetKeyframes(result.item.animation, result.mappedBones), result.item.animation, bones);
+  const sourceKeyframes = flattenDatasetKeyframes(result.item.animation, result.bindings);
   const isDataset = result.outputMode === 'raw_copy';
   const expected = isDataset ? sourceKeyframes : result.flatKeyframes;
   const endFrame = Math.max(result.item.animation.duration, result.appliedDuration);
@@ -94,7 +94,12 @@ export const buildRagEvaluationLogEntry = (
 
   const validation = {
     basis: isDataset ? 'dataset' as const : 'synthesized_output' as const,
-    scope: `Bone keyframes pada seluruh track, frame 0–${endFrame}. Metadata dibaca dari state hasil penerapan.`,
+    scope: isDataset
+      ? `Bone keyframes pada seluruh track, frame 0–${endFrame}, dibandingkan terhadap dataset. Metadata dibaca dari state hasil penerapan.`
+      // In synthesized mode the reference is the synthesizer's own output, so this percentage
+      // measures transport fidelity (did the editor receive what was generated), not novelty.
+      // Kebaruan terhadap dataset dilaporkan terpisah di rag.novelty.
+      : `Bone keyframes pada seluruh track, frame 0–${endFrame}, dibandingkan terhadap keluaran sintesis (uji integritas penerapan, bukan uji kebaruan — lihat rag.novelty). Metadata dibaca dari state hasil penerapan.`,
     tolerance: INTEGRITY_TOLERANCE,
     missingKeyframes: comparison.missingKeyframes,
     unexpectedKeyframes: comparison.unexpectedKeyframes,
@@ -127,6 +132,9 @@ export const buildRagEvaluationLogEntry = (
       retrievedCandidates: result.retrievedCandidates,
       rejectedCandidates: result.rejectedCandidates,
       generatedKeyframeCount: result.outputMode === 'synthesized' ? result.keyframeCount : null,
+      novelty: result.novelty,
+      blend: result.blend,
+      procedural: result.procedural,
     },
     mcp: {
       status: 'completed',
@@ -177,6 +185,9 @@ export const buildFailedRagEvaluationLogEntry = (options: {
       retrievedCandidates: [],
       rejectedCandidates: [],
       generatedKeyframeCount: null,
+      novelty: null,
+      blend: null,
+      procedural: null,
     },
     mcp: {
       status: 'failed',

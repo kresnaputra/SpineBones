@@ -1,18 +1,21 @@
 import type { RagAnimationDatasetItem } from '../types/ragTypes';
 import { NEUTRAL_MODIFIERS } from './types';
+import type { ItemMotionField } from './motionCurve';
 import type { MotionModifiers, MotionPattern } from './types';
 
 export interface EnsembleMember {
   item: RagAnimationDatasetItem;
   pattern: MotionPattern;
+  field: ItemMotionField;
 }
 
 // Tighter than promptIntent's AXIS_CLAMP — this is a data-derived nudge, not an explicit user
 // request, so it should read as natural variation rather than a dramatic transformation.
-const BASELINE_CLAMP: Record<'heightScale' | 'timeScale' | 'weightScale', [number, number]> = {
+const BASELINE_CLAMP: Record<'heightScale' | 'timeScale' | 'weightScale' | 'exaggeration', [number, number]> = {
   heightScale: [0.9, 1.15],
   timeScale: [0.9, 1.15],
   weightScale: [0.9, 1.15],
+  exaggeration: [0.9, 1.15],
 };
 
 const clamp = (value: number, [min, max]: [number, number]) => Math.max(min, Math.min(max, value));
@@ -25,6 +28,15 @@ const mean = (values: number[]): number => values.reduce((sum, v) => sum + v, 0)
 const impactRatio = (pattern: MotionPattern): number | null => {
   if (pattern.amplitude <= 0 || pattern.extrema.length === 0) return null;
   return mean(pattern.extrema.map((e) => e.prominence)) / pattern.amplitude;
+};
+
+// Mean rotational travel across a clip's bones. `exaggeration` is the axis every motion phase
+// routes rotation through, and limb animation is overwhelmingly rotational — leaving it at a
+// fixed 1 meant the dominant channel of a walk or run was never varied at all, whatever the
+// other modifiers did.
+const rotationEnergy = (field: ItemMotionField): number | null => {
+  const energies = field.curves.map((curve) => curve.energy.rotation).filter((value) => value > 0);
+  return energies.length === 0 ? null : mean(energies);
 };
 
 // Derives a small baseline variation from comparing the selected candidate against the other
@@ -52,6 +64,12 @@ export const deriveBaselineModifiers = (selected: EnsembleMember, allMembers: En
   const selectedImpact = impactRatio(selected.pattern);
   if (impacts.length >= 2 && selectedImpact !== null) {
     baseline.weightScale = clamp(selectedImpact / mean(impacts), BASELINE_CLAMP.weightScale);
+  }
+
+  const rotations = allMembers.map((m) => rotationEnergy(m.field)).filter((r): r is number => r !== null);
+  const selectedRotation = rotationEnergy(selected.field);
+  if (rotations.length >= 2 && selectedRotation !== null) {
+    baseline.exaggeration = clamp(selectedRotation / mean(rotations), BASELINE_CLAMP.exaggeration);
   }
 
   return baseline;

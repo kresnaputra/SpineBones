@@ -161,7 +161,6 @@ const getRequiredBonesForCategory = (category: string) => {
 };
 
 const buildUsage = (
-  category: string,
   tags: string[],
   requiredBones: string[],
   motionFeatures: { speed: string; energy: string; mood: string; cycle: boolean },
@@ -316,7 +315,7 @@ export const createAnimationRagDatasetExportData = () => {
   const requiredBones = getRequiredBonesForCategory(category).filter((bone) =>
     semanticBones.includes(bone),
   );
-  const usage = buildUsage(category, tags, requiredBones, motionFeatures);
+  const usage = buildUsage(tags, requiredBones, motionFeatures);
 
   return {
     datasetFormat: 'spinebones-rag-animation',

@@ -1,4 +1,6 @@
 import type { FlatKeyframeEntry } from '../adaptation/keyframeAdapter';
+import type { BlendContribution } from './motionBlender';
+import type { SynthesizedCurve } from './novelty';
 
 // Multiplicative scale factors applied on top of a retrieved animation's motion pattern.
 // All axes default to 1 (neutral / no change from the base pattern).
@@ -68,11 +70,30 @@ export interface MotionPattern {
 
 export type RagOutputMode = 'synthesized' | 'raw_copy';
 
+// What the ensemble blend actually contributed, reported so a run can be traced back to the
+// clips behind it rather than only to the single retrieved winner.
+export interface BlendReport {
+  contributions: BlendContribution[];
+  blendStrength: number;
+  blendedBoneCount: number;
+}
+
+// Timing transformations the procedural layer derived for this run.
+export interface ProceduralReport {
+  maxOverlapPhase: number;
+  gaitCorrection: number;
+  asymmetryRatio: number;
+}
+
 export interface SynthesisResult {
   flatKeyframes: FlatKeyframeEntry[];
   appliedDuration: number;
   appliedFps: number;
   generatedKeyframeCount: number;
+  // Continuous per-bone curves the keyframes were sampled from, kept for novelty measurement.
+  synthesizedCurves: SynthesizedCurve[];
+  blend: BlendReport;
+  procedural: ProceduralReport;
 }
 
 export type CandidateRejectionReason = 'below_min_score' | 'insufficient_bone_mapping';

@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import type { MotionModifiers, RagCandidateSummary, RagOutputMode, RagRejectedCandidate } from '../thesis/rag/synthesis/types';
+import type {
+  BlendReport,
+  MotionModifiers,
+  ProceduralReport,
+  RagCandidateSummary,
+  RagOutputMode,
+  RagRejectedCandidate,
+} from '../thesis/rag/synthesis/types';
+import type { NoveltyReport } from '../thesis/rag/synthesis/novelty';
 
 export type EvaluationLogStatus = 'valid' | 'invalid' | 'failed';
 export type VisualReviewStatus = 'not_reviewed' | 'accepted' | 'rejected';
@@ -36,6 +44,12 @@ export interface EvaluationLogEntry {
     retrievedCandidates: RagCandidateSummary[];
     rejectedCandidates: RagRejectedCandidate[];
     generatedKeyframeCount: number | null;
+    // How far the generated output sits from the dataset it was built on. Reported separately
+    // from `validation`, which only checks that the editor received what synthesis produced and
+    // therefore reads 100% for a verbatim copy just as it does for a novel result.
+    novelty: NoveltyReport | null;
+    blend: BlendReport | null;
+    procedural: ProceduralReport | null;
   };
   mcp: {
     status: 'completed' | 'failed';

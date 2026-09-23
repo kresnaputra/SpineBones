@@ -37,11 +37,14 @@ import { exportVideo } from './utils/videoExporter';
 import type { Attachment, Mode, Tool } from './types';
 import { applyRagAnimation, runRagPipeline } from './thesis/ragPipeline';
 import type {
+  BlendReport,
   MotionModifiers,
+  ProceduralReport,
   RagCandidateSummary,
   RagOutputMode,
   RagRejectedCandidate,
 } from './thesis/rag/synthesis/types';
+import type { NoveltyReport } from './thesis/rag/synthesis/novelty';
 import {
   buildFailedRagEvaluationLogEntry,
   buildRagEvaluationLogEntry,
@@ -154,6 +157,9 @@ type McpRagCommandSnapshot = {
   retrievedCandidates?: RagCandidateSummary[];
   rejectedCandidates?: RagRejectedCandidate[];
   generatedKeyframeCount?: number;
+  novelty?: NoveltyReport;
+  blend?: BlendReport;
+  procedural?: ProceduralReport;
 };
 
 let latestMcpRagResult: McpRagCommandSnapshot | null = null;
@@ -1963,6 +1969,9 @@ function App() {
             retrievedCandidates: result.retrievedCandidates,
             rejectedCandidates: result.rejectedCandidates,
             generatedKeyframeCount: result.outputMode === 'synthesized' ? result.keyframeCount : undefined,
+            novelty: result.novelty ?? undefined,
+            blend: result.blend ?? undefined,
+            procedural: result.procedural ?? undefined,
           };
           console.info('MCP apply_rag_animation:', latestMcpRagResult);
         } catch (error) {

@@ -4,19 +4,27 @@ import { useEditorStore } from '../stores/editorStore';
 import { loadRagDatasetFromItems } from './rag/retrieval/loader';
 import { buildRagQueryContext } from './rag/retrieval/queryBuilder';
 import { retrieveTopAnimations } from './rag/retrieval/retriever';
-import { buildSemanticBoneMap } from './rag/adaptation/boneMapper';
-import { flattenDatasetKeyframes, bindKeyframeTargets, resolveKeyframeTarget } from './rag/adaptation/keyframeAdapter';
+import { buildBoneBindings, describeBindings } from './rag/adaptation/boneMapper';
+import { flattenDatasetKeyframes, resolveKeyframeTarget } from './rag/adaptation/keyframeAdapter';
 import { clampDuration, clampFps } from './rag/shared/clamps';
 import { combineModifiers, detectRawCopyIntent, parseMotionModifiers } from './rag/synthesis/promptIntent';
 import { analyzeMotionPattern } from './rag/synthesis/motionAnalyzer';
 import { synthesizeKeyframes } from './rag/synthesis/keyframeSynthesizer';
 import { deriveBaselineModifiers } from './rag/synthesis/ensembleLearning';
+import { buildItemMotionField } from './rag/synthesis/motionCurve';
+import { measureNovelty } from './rag/synthesis/novelty';
 import type { EnsembleMember } from './rag/synthesis/ensembleLearning';
-import type { RagAnimationDatasetItem } from './rag/types/ragTypes';
+import type { BlendCandidate } from './rag/synthesis/motionBlender';
+import type { ItemMotionField } from './rag/synthesis/motionCurve';
+import type { NoveltyReport } from './rag/synthesis/novelty';
+import type { BoneBindingMap, RigBoneRef } from './rag/adaptation/boneMapper';
+import type { RagAnimationDatasetItem, RagRetrievalResult } from './rag/types/ragTypes';
 import type { FlatKeyframeEntry } from './rag/adaptation/keyframeAdapter';
 import type {
+  BlendReport,
   MotionModifiers,
   MotionPattern,
+  ProceduralReport,
   RagOutputMode,
   RagCandidateSummary,
   RagRejectedCandidate,
@@ -38,8 +46,10 @@ export interface RagPipelineResult {
   item: RagAnimationDatasetItem;
   score: number;
   reasons: string[];
-  // sourceBoneName → targetBoneName for bones that were successfully mapped
+  // Semantic role (or name#id when a track has no role) → target bone name, for reporting.
   mappedBones: Record<string, string>;
+  // The authoritative source-bone-id → target-bone binding the whole run was applied through.
+  bindings: BoneBindingMap;
   keyframeCount: number;
   flatKeyframes: FlatKeyframeEntry[];
   outputMode: RagOutputMode;
@@ -49,35 +59,21 @@ export interface RagPipelineResult {
   motionPattern: MotionPattern | null;
   retrievedCandidates: RagCandidateSummary[];
   rejectedCandidates: RagRejectedCandidate[];
+  // Null in raw_copy mode, where nothing is generated and there is nothing to report on.
+  blend: BlendReport | null;
+  procedural: ProceduralReport | null;
+  novelty: NoveltyReport | null;
 }
 
 const MIN_RAG_SCORE = 5;
 const MIN_MAPPED_BONES = 3;
 const CANDIDATE_LIMIT = 3;
 
-// Build a target semantic mapping by checking which source bone names from the dataset
-// also exist in the active rig. Falls back gracefully when rigs differ.
-const buildTargetSemanticMapping = (
-  datasetBoneMapping: Record<string, string>,
-  activeBoneNames: string[],
-): Record<string, string> => {
-  const mapping: Record<string, string> = {};
-  const lowerActive = activeBoneNames.map((n) => n.toLowerCase());
-  for (const [semantic, sourceName] of Object.entries(datasetBoneMapping)) {
-    const idx = lowerActive.indexOf(sourceName.toLowerCase());
-    if (idx !== -1) {
-      // Map semantic label to the actual cased bone name in the active rig
-      mapping[semantic] = activeBoneNames[idx]!;
-    }
-  }
-  return mapping;
-};
-
 interface SelectedCandidate {
   item: RagAnimationDatasetItem;
   score: number;
   reasons: string[];
-  mappedBones: Record<string, string>;
+  bindings: BoneBindingMap;
 }
 
 // Retrieve top candidates and walk them in ranked order until one clears both the minimum
@@ -87,18 +83,17 @@ interface SelectedCandidate {
 const selectCandidate = (
   prompt: string,
   dataset: RagAnimationDatasetItem[],
-  activeBoneNames: string[],
+  activeBones: RigBoneRef[],
 ): {
   selected: SelectedCandidate;
-  candidateItems: RagAnimationDatasetItem[];
+  candidates: RagRetrievalResult[];
   retrievedCandidates: RagCandidateSummary[];
   rejectedCandidates: RagRejectedCandidate[];
 } => {
-  const query = buildRagQueryContext(prompt, activeBoneNames);
+  const query = buildRagQueryContext(prompt, activeBones.map((bone) => bone.name));
   const candidates = retrieveTopAnimations(dataset, query, CANDIDATE_LIMIT);
   if (candidates.length === 0) throw new Error('No matching animation found in dataset');
 
-  const candidateItems = candidates.map((c) => c.item);
   const retrievedCandidates: RagCandidateSummary[] = candidates.map((c) => ({ id: c.item.id, score: c.score }));
   const rejectedCandidates: RagRejectedCandidate[] = [];
 
@@ -108,9 +103,8 @@ const selectCandidate = (
       continue;
     }
 
-    const targetSemanticMapping = buildTargetSemanticMapping(candidate.item.boneMapping, activeBoneNames);
-    const mappedBones = buildSemanticBoneMap(candidate.item.boneMapping, targetSemanticMapping);
-    const mappedBoneCount = Object.keys(mappedBones).length;
+    const bindings = buildBoneBindings(candidate.item, activeBones);
+    const mappedBoneCount = bindings.size;
     if (mappedBoneCount < MIN_MAPPED_BONES) {
       rejectedCandidates.push({
         id: candidate.item.id,
@@ -122,8 +116,8 @@ const selectCandidate = (
     }
 
     return {
-      selected: { item: candidate.item, score: candidate.score, reasons: candidate.reasons, mappedBones },
-      candidateItems,
+      selected: { item: candidate.item, score: candidate.score, reasons: candidate.reasons, bindings },
+      candidates,
       retrievedCandidates,
       rejectedCandidates,
     };
@@ -150,17 +144,16 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
   const activeBones = useSkeletonStore.getState().bones;
   if (activeBones.length === 0) throw new Error('No bones in active rig');
 
-  const activeBoneNames = activeBones.map((b) => b.name);
-
-  const { selected, candidateItems, retrievedCandidates, rejectedCandidates } = selectCandidate(
+  const { selected, candidates, retrievedCandidates, rejectedCandidates } = selectCandidate(
     prompt,
     dataset,
-    activeBoneNames,
+    activeBones,
   );
-  const { item, score, reasons, mappedBones } = selected;
+  const { item, score, reasons, bindings } = selected;
+  const mappedBones = describeBindings(bindings);
 
   if (detectRawCopyIntent(prompt)) {
-    const flatKeyframes = bindKeyframeTargets(flattenDatasetKeyframes(item.animation, mappedBones), item.animation, activeBones);
+    const flatKeyframes = flattenDatasetKeyframes(item.animation, bindings);
     if (flatKeyframes.length === 0) {
       throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
     }
@@ -169,6 +162,7 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
       score,
       reasons,
       mappedBones,
+      bindings,
       keyframeCount: flatKeyframes.length,
       flatKeyframes,
       outputMode: 'raw_copy',
@@ -178,36 +172,78 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
       motionPattern: null,
       retrievedCandidates,
       rejectedCandidates,
+      blend: null,
+      procedural: null,
+      novelty: null,
     };
   }
 
-  // Analyze every retrieved candidate's motion pattern (not just the selected one) so the
-  // synthesizer has real cross-example signal to learn a baseline variation from, instead of
-  // only ever scaling the selected item's own deltas by explicit prompt modifiers.
-  const ensembleMembers: EnsembleMember[] = candidateItems.map((candidateItem) => ({
-    item: candidateItem,
-    pattern: analyzeMotionPattern(candidateItem),
+  // Analyze and phase-normalize every retrieved candidate, not just the selected one. The motion
+  // pattern drives modifier routing; the motion field is the resampled, duration-independent form
+  // the synthesizer can actually blend across clips that were authored at different lengths.
+  const fieldCache = new Map<RagAnimationDatasetItem, ItemMotionField>();
+  const fieldOf = (candidateItem: RagAnimationDatasetItem): ItemMotionField => {
+    const cached = fieldCache.get(candidateItem);
+    if (cached) return cached;
+    const field = buildItemMotionField(candidateItem);
+    fieldCache.set(candidateItem, field);
+    return field;
+  };
+
+  const ensembleMembers: EnsembleMember[] = candidates.map((candidate) => ({
+    item: candidate.item,
+    pattern: analyzeMotionPattern(candidate.item),
+    field: fieldOf(candidate.item),
   }));
   const selectedMember =
-    ensembleMembers.find((member) => member.item === item) ?? { item, pattern: analyzeMotionPattern(item) };
+    ensembleMembers.find((member) => member.item === item) ??
+    { item, pattern: analyzeMotionPattern(item), field: fieldOf(item) };
   const motionPattern = selectedMember.pattern;
 
   const baselineModifiers = deriveBaselineModifiers(selectedMember, ensembleMembers);
   const explicitModifiers = parseMotionModifiers(prompt);
   const modifiers = combineModifiers(baselineModifiers, explicitModifiers);
 
-  const synthesis = synthesizeKeyframes(item, mappedBones, motionPattern, modifiers);
+  const blendCandidates: BlendCandidate[] = candidates
+    .filter((candidate) => candidate.item !== item)
+    .map((candidate) => ({
+      field: fieldOf(candidate.item),
+      score: candidate.score,
+      category: candidate.item.category,
+    }));
+
+  const synthesis = synthesizeKeyframes({
+    item,
+    bindings,
+    pattern: motionPattern,
+    modifiers,
+    selectedField: selectedMember.field,
+    selectedScore: score,
+    candidates: blendCandidates,
+    targetBones: activeBones,
+  });
   if (synthesis.flatKeyframes.length === 0) {
     throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
   }
+
+  // Measure the output against the whole dataset, not only against the clip it was built from —
+  // blending can land the result closer to a clip that was never the top match.
+  const novelty = measureNovelty(
+    synthesis.synthesizedCurves,
+    item,
+    selectedMember.field,
+    dataset.map(fieldOf),
+    synthesis.flatKeyframes,
+  );
 
   return {
     item,
     score,
     reasons,
     mappedBones,
+    bindings,
     keyframeCount: synthesis.generatedKeyframeCount,
-    flatKeyframes: bindKeyframeTargets(synthesis.flatKeyframes, item.animation, activeBones),
+    flatKeyframes: synthesis.flatKeyframes,
     outputMode: 'synthesized',
     appliedDuration: synthesis.appliedDuration,
     appliedFps: synthesis.appliedFps,
@@ -215,6 +251,9 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
     motionPattern,
     retrievedCandidates,
     rejectedCandidates,
+    blend: synthesis.blend,
+    procedural: synthesis.procedural,
+    novelty,
   };
 };
 

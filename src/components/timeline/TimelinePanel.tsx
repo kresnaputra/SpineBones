@@ -108,6 +108,9 @@ export const TimelinePanel = () => {
   const [selectedKeyframes, setSelectedKeyframes] = useState<
     Array<{ boneId: number; frame: number }>
   >([]);
+  // Every producer of this clipboard runs its easing through normalizeKeyframeEasing, so the
+  // stored shape is the resolved one — keeping easing optional here made the copy handler's
+  // NonNullable type predicate unassignable to what it actually narrows.
   const [copiedKeyframes, setCopiedKeyframes] = useState<
     Array<{
       boneId: number;
@@ -118,17 +121,17 @@ export const TimelinePanel = () => {
         rotation: number;
         scaleX: number;
         scaleY: number;
-        easing?: KeyframeEasing;
+        easing: KeyframeEasing;
       };
       attachmentOpacityKeys: Array<{
         attachmentKey: string;
         opacity: number;
-        easing?: KeyframeEasing;
+        easing: KeyframeEasing;
       }>;
       meshDeformKeys: Array<{
         attachmentKey: string;
         vertices: Array<{ x: number; y: number }>;
-        easing?: KeyframeEasing;
+        easing: KeyframeEasing;
       }>;
     }>
   >([]);

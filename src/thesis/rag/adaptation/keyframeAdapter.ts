@@ -1,5 +1,5 @@
 import type { RagAnimationData, RagAnimationDatasetItem, RagKeyframeEasing } from '../types/ragTypes';
-import type { SemanticBoneMap } from './boneMapper';
+import type { BoneBindingMap } from './boneMapper';
 
 export interface FlatKeyframeEntry {
   sourceBoneId?: number;
@@ -14,20 +14,22 @@ export interface FlatKeyframeEntry {
   easing: RagKeyframeEasing;
 }
 
-// Flatten nested bone tracks into per-frame entries, remapping bone names via semanticBoneMap.
-// Tracks whose source bone has no entry in semanticBoneMap are skipped.
+// Flatten nested bone tracks into per-frame entries. Each track is looked up by its own source
+// bone id, so a rig that reuses a bone name still drives two separate destinations. Tracks with
+// no binding onto the active rig are skipped.
 export const flattenDatasetKeyframes = (
   animData: RagAnimationData,
-  semanticBoneMap: SemanticBoneMap,
+  bindings: BoneBindingMap,
 ): FlatKeyframeEntry[] => {
   const entries: FlatKeyframeEntry[] = [];
   for (const track of animData.keyframes) {
-    const targetBoneName = semanticBoneMap[track.boneName];
-    if (!targetBoneName) continue;
+    const binding = bindings.get(track.boneId);
+    if (!binding) continue;
     for (const kf of track.frames) {
       entries.push({
         sourceBoneId: track.boneId,
-        boneName: targetBoneName,
+        targetBoneId: binding.targetBoneId,
+        boneName: binding.targetBoneName,
         frame: kf.frame,
         x: kf.x,
         y: kf.y,
@@ -41,39 +43,22 @@ export const flattenDatasetKeyframes = (
   return entries;
 };
 
-type RigBone = { id: number; name: string; parentId: number | null };
-
-// Source IDs are local to a rig. Only reuse them when the complete source
-// hierarchy matches; otherwise require a unique mapped name on the target rig.
-export const bindKeyframeTargets = (
-  entries: FlatKeyframeEntry[],
-  source: RagAnimationData,
-  bones: RigBone[],
-): FlatKeyframeEntry[] => {
-  const sameRig = Array.isArray(source.bones) && source.bones.length === bones.length &&
-    new Set(source.bones.map((bone) => bone.id)).size === source.bones.length &&
-    source.bones.every((bone) => bones.some((target) =>
-      target.id === bone.id && target.name === bone.name && target.parentId === bone.parentId));
-  return entries.map((entry) => {
-    const matches = bones.filter((bone) => bone.name.toLowerCase() === entry.boneName.toLowerCase());
-    const target = sameRig && entry.sourceBoneId !== undefined
-      ? matches.find((bone) => bone.id === entry.sourceBoneId)
-      : matches.length === 1 ? matches[0] : undefined;
-    return { ...entry, targetBoneId: target?.id };
-  });
-};
-
-export const resolveKeyframeTarget = <T extends { id: number; name: string }>(entry: FlatKeyframeEntry, bones: T[]): T | undefined => {
+// Destinations are decided when bindings are built, so resolution here is an id lookup. The name
+// fallback only covers entries produced outside the binding path.
+export const resolveKeyframeTarget = <T extends { id: number; name: string }>(
+  entry: FlatKeyframeEntry,
+  bones: T[],
+): T | undefined => {
+  if (entry.targetBoneId !== undefined) return bones.find((bone) => bone.id === entry.targetBoneId);
   const matches = bones.filter((bone) => bone.name.toLowerCase() === entry.boneName.toLowerCase());
-  if (entry.targetBoneId !== undefined) return matches.find((bone) => bone.id === entry.targetBoneId);
   return matches.length === 1 ? matches[0] : undefined;
 };
 
 export const adaptDatasetAnimationToTargetRig = (
   item: RagAnimationDatasetItem,
-  semanticBoneMap: SemanticBoneMap,
+  bindings: BoneBindingMap,
 ) => ({
   itemId: item.id,
-  semanticBoneMap,
+  bindings,
   animation: item.animation,
 });
