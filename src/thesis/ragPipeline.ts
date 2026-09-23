@@ -196,7 +196,10 @@ export const runRagPipeline = (prompt: string): RagPipelineResult => {
   const explicitModifiers = parseMotionModifiers(prompt);
   const modifiers = combineModifiers(baselineModifiers, explicitModifiers);
 
-  const synthesis = synthesizeKeyframes(item, mappedBones, motionPattern, modifiers);
+  const synthesis = synthesizeKeyframes(item, mappedBones, motionPattern, modifiers, {
+    blendItems: candidateItems.filter((c) => c !== item),
+    prompt,
+  });
   if (synthesis.flatKeyframes.length === 0) {
     throw new Error(`RAG match "${item.id}" produced no applicable keyframes for the active rig`);
   }

@@ -3,6 +3,7 @@ import type { SemanticBoneMap } from '../adaptation/boneMapper';
 import type { FlatKeyframeEntry } from '../adaptation/keyframeAdapter';
 import type { RagAnimationDatasetItem, RagKeyframeEasing } from '../types/ragTypes';
 import type { MotionModifiers, MotionPattern, MotionPhase, SynthesisResult } from './types';
+import { applyVariation } from './variationEngine';
 
 const SMOOTHING_EASING_THRESHOLD = 1.15;
 
@@ -38,6 +39,7 @@ export const synthesizeKeyframes = (
   semanticBoneMap: SemanticBoneMap,
   pattern: MotionPattern,
   modifiers: MotionModifiers,
+  variation?: { blendItems: RagAnimationDatasetItem[]; prompt: string },
 ): SynthesisResult => {
   const patternFrames = pattern.frames;
   const frameToPatternIndex = new Map<number, number>(patternFrames.map((frame, index) => [frame, index]));
@@ -106,10 +108,23 @@ export const synthesizeKeyframes = (
     }
   }
 
+  // Apply 4-layer variation (cross-candidate blending, timing redistribution,
+  // pose perturbation, style-based easing) when blend data is available.
+  const finalKeyframes = variation
+    ? applyVariation({
+        entries: flatKeyframes,
+        blendItems: variation.blendItems,
+        pattern,
+        modifiers,
+        prompt: variation.prompt,
+        duration: appliedDuration,
+      })
+    : flatKeyframes;
+
   return {
-    flatKeyframes,
+    flatKeyframes: finalKeyframes,
     appliedDuration,
     appliedFps,
-    generatedKeyframeCount: flatKeyframes.length,
+    generatedKeyframeCount: finalKeyframes.length,
   };
 };
