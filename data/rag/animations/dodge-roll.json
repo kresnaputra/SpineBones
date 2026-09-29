@@ -1,0 +1,19 @@
+{
+  "datasetFormat":"spinebones-rag-animation","version":"1.0","id":"dodge-roll","name":"Dodge Roll","description":"Tuck, rotate through a forward evasive roll, and recover to standing.","category":"dodge","loop":false,
+  "style":["combat","acrobatics"],"motionFeatures":{"speed":"fast","energy":"high","mood":"reactive","cycle":false},
+  "requiredBones":["torso","head","leftUpperLeg","rightUpperLeg"],"usage":"One-shot dodge roll using root rotation and translation; restore upright after landing.",
+  "tags":["dodge","roll","evade","menghindar","guling","combat","humanoid"],
+  "source":{"type":"synthetic","projectPath":null,"exportedAt":"2026-09-25T00:00:00.000Z"},
+  "rigProfile":{"type":"humanoid","semanticBones":["torso","head","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"boneCount":6,"slotCount":0},
+  "boneMapping":{"torso":"torso","head":"head","leftArm":"leftArm","rightArm":"rightArm","leftUpperLeg":"leftUpperLeg","rightUpperLeg":"rightUpperLeg"},
+  "animation":{"format":"spinebones-animation-keyframes","version":"1.0","duration":30,"fps":30,
+    "bones":[{"id":0,"name":"torso","parentId":null},{"id":1,"name":"head","parentId":0},{"id":2,"name":"leftArm","parentId":0},{"id":3,"name":"rightArm","parentId":0},{"id":4,"name":"leftUpperLeg","parentId":0},{"id":5,"name":"rightUpperLeg","parentId":0}],"slots":[],"attachmentKeys":[],
+    "keyframes":[
+      {"boneId":0,"boneName":"torso","frames":[{"frame":0,"x":0,"y":0,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":5,"y":18,"rotation":35,"scaleX":1,"scaleY":0.9,"easing":"easeIn"},{"frame":15,"x":32,"y":28,"rotation":180,"scaleX":1,"scaleY":0.9,"easing":"linear"},{"frame":24,"x":60,"y":16,"rotation":330,"scaleX":1,"scaleY":0.95,"easing":"easeOut"},{"frame":30,"x":70,"y":0,"rotation":360,"scaleX":1,"scaleY":1,"easing":"easeOut"}]},
+      {"boneId":1,"boneName":"head","frames":[{"frame":0,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":0,"y":-48,"rotation":-25,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":24,"x":0,"y":-48,"rotation":-25,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"}]},
+      {"boneId":2,"boneName":"leftArm","frames":[{"frame":0,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":-20,"y":-30,"rotation":70,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":24,"x":-20,"y":-30,"rotation":70,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"}]},
+      {"boneId":3,"boneName":"rightArm","frames":[{"frame":0,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":20,"y":-30,"rotation":-70,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":24,"x":20,"y":-30,"rotation":-70,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"}]},
+      {"boneId":4,"boneName":"leftUpperLeg","frames":[{"frame":0,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":-12,"y":35,"rotation":-65,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":24,"x":-12,"y":35,"rotation":-65,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"}]},
+      {"boneId":5,"boneName":"rightUpperLeg","frames":[{"frame":0,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":12,"y":35,"rotation":65,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":24,"x":12,"y":35,"rotation":65,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"}]}
+    ],"meshDeformKeyframes":[],"attachmentOpacityKeyframes":[]}
+}

@@ -1,0 +1,19 @@
+{
+  "datasetFormat":"spinebones-rag-animation","version":"1.0","id":"crouch-walk","name":"Crouch Walk","description":"Low alternating steps while keeping the body crouched.","category":"walk","loop":true,
+  "style":["stealth","locomotion"],"motionFeatures":{"speed":"slow","energy":"low","mood":"cautious","cycle":true},
+  "requiredBones":["torso","leftUpperLeg","rightUpperLeg"],"usage":"Looping crouched walk for humanoid rigs with two upper legs and a torso.",
+  "tags":["crouch","walk","sneak","jongkok","jalan","low","stealth","humanoid"],
+  "source":{"type":"synthetic","projectPath":null,"exportedAt":"2026-09-25T00:00:00.000Z"},
+  "rigProfile":{"type":"humanoid","semanticBones":["torso","head","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"boneCount":6,"slotCount":0},
+  "boneMapping":{"torso":"torso","head":"head","leftArm":"leftArm","rightArm":"rightArm","leftUpperLeg":"leftUpperLeg","rightUpperLeg":"rightUpperLeg"},
+  "animation":{"format":"spinebones-animation-keyframes","version":"1.0","duration":40,"fps":30,
+    "bones":[{"id":0,"name":"torso","parentId":null},{"id":1,"name":"head","parentId":0},{"id":2,"name":"leftArm","parentId":0},{"id":3,"name":"rightArm","parentId":0},{"id":4,"name":"leftUpperLeg","parentId":0},{"id":5,"name":"rightUpperLeg","parentId":0}],"slots":[],"attachmentKeys":[],
+    "keyframes":[
+      {"boneId":0,"boneName":"torso","frames":[{"frame":0,"x":0,"y":20,"rotation":10,"scaleX":1,"scaleY":0.95,"easing":"easeInOut"},{"frame":10,"x":1,"y":22,"rotation":13,"scaleX":1,"scaleY":0.95,"easing":"easeInOut"},{"frame":20,"x":0,"y":20,"rotation":10,"scaleX":1,"scaleY":0.95,"easing":"easeInOut"},{"frame":30,"x":-1,"y":22,"rotation":7,"scaleX":1,"scaleY":0.95,"easing":"easeInOut"},{"frame":40,"x":0,"y":20,"rotation":10,"scaleX":1,"scaleY":0.95,"easing":"easeInOut"}]},
+      {"boneId":1,"boneName":"head","frames":[{"frame":0,"x":0,"y":-50,"rotation":-10,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":20,"x":0,"y":-49,"rotation":-8,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":40,"x":0,"y":-50,"rotation":-10,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":2,"boneName":"leftArm","frames":[{"frame":0,"x":-20,"y":-30,"rotation":18,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":20,"x":-20,"y":-30,"rotation":-12,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":40,"x":-20,"y":-30,"rotation":18,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":3,"boneName":"rightArm","frames":[{"frame":0,"x":20,"y":-30,"rotation":-18,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":20,"x":20,"y":-30,"rotation":12,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":40,"x":20,"y":-30,"rotation":-18,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":4,"boneName":"leftUpperLeg","frames":[{"frame":0,"x":-12,"y":35,"rotation":-30,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":10,"x":-12,"y":35,"rotation":-50,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":20,"x":-12,"y":35,"rotation":-20,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":30,"x":-12,"y":35,"rotation":-5,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":40,"x":-12,"y":35,"rotation":-30,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":5,"boneName":"rightUpperLeg","frames":[{"frame":0,"x":12,"y":35,"rotation":30,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":10,"x":12,"y":35,"rotation":5,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":20,"x":12,"y":35,"rotation":20,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":30,"x":12,"y":35,"rotation":50,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":40,"x":12,"y":35,"rotation":30,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]}
+    ],"meshDeformKeyframes":[],"attachmentOpacityKeyframes":[]}
+}

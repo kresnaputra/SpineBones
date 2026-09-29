@@ -1,0 +1,19 @@
+{
+  "datasetFormat":"spinebones-rag-animation","version":"1.0","id":"punch","name":"Straight Punch","description":"Wind up and drive a straight right-hand punch with a torso twist.","category":"attack","loop":false,
+  "style":["combat","unarmed"],"motionFeatures":{"speed":"fast","energy":"high","mood":"aggressive","cycle":false},
+  "requiredBones":["torso","rightArm"],"usage":"One-shot unarmed right punch; extend arm sharply at contact and recoil.",
+  "tags":["punch","jab","attack","tinju","pukul","unarmed","humanoid"],
+  "source":{"type":"synthetic","projectPath":null,"exportedAt":"2026-09-25T00:00:00.000Z"},
+  "rigProfile":{"type":"humanoid","semanticBones":["torso","head","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"boneCount":6,"slotCount":0},
+  "boneMapping":{"torso":"torso","head":"head","leftArm":"leftArm","rightArm":"rightArm","leftUpperLeg":"leftUpperLeg","rightUpperLeg":"rightUpperLeg"},
+  "animation":{"format":"spinebones-animation-keyframes","version":"1.0","duration":22,"fps":30,
+    "bones":[{"id":0,"name":"torso","parentId":null},{"id":1,"name":"head","parentId":0},{"id":2,"name":"leftArm","parentId":0},{"id":3,"name":"rightArm","parentId":0},{"id":4,"name":"leftUpperLeg","parentId":0},{"id":5,"name":"rightUpperLeg","parentId":0}],"slots":[],"attachmentKeys":[],
+    "keyframes":[
+      {"boneId":0,"boneName":"torso","frames":[{"frame":0,"x":0,"y":0,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":-3,"y":0,"rotation":-18,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":6,"y":0,"rotation":24,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":0,"y":0,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":1,"boneName":"head","frames":[{"frame":0,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":0,"y":-50,"rotation":-15,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":2,"boneName":"leftArm","frames":[{"frame":0,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":-20,"y":-30,"rotation":-45,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":3,"boneName":"rightArm","frames":[{"frame":0,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":6,"x":20,"y":-30,"rotation":60,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":20,"y":-30,"rotation":-80,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":20,"y":-30,"rotation":-80,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":4,"boneName":"leftUpperLeg","frames":[{"frame":0,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":-12,"y":35,"rotation":-20,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":5,"boneName":"rightUpperLeg","frames":[{"frame":0,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeIn"},{"frame":10,"x":12,"y":35,"rotation":20,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]}
+    ],"meshDeformKeyframes":[],"attachmentOpacityKeyframes":[]}
+}

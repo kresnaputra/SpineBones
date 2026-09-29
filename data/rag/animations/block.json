@@ -1,0 +1,19 @@
+{
+  "datasetFormat":"spinebones-rag-animation","version":"1.0","id":"block","name":"Block","description":"Raise both forearms into a guarded stance, absorb an impact, then release.","category":"block","loop":false,
+  "style":["combat","defense"],"motionFeatures":{"speed":"medium","energy":"medium","mood":"defensive","cycle":false},
+  "requiredBones":["torso","leftArm","rightArm"],"usage":"One-shot defensive guard with a short recoil at impact.",
+  "tags":["block","guard","defend","tahan","bertahan","shield","humanoid"],
+  "source":{"type":"synthetic","projectPath":null,"exportedAt":"2026-09-25T00:00:00.000Z"},
+  "rigProfile":{"type":"humanoid","semanticBones":["torso","head","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"boneCount":6,"slotCount":0},
+  "boneMapping":{"torso":"torso","head":"head","leftArm":"leftArm","rightArm":"rightArm","leftUpperLeg":"leftUpperLeg","rightUpperLeg":"rightUpperLeg"},
+  "animation":{"format":"spinebones-animation-keyframes","version":"1.0","duration":30,"fps":30,
+    "bones":[{"id":0,"name":"torso","parentId":null},{"id":1,"name":"head","parentId":0},{"id":2,"name":"leftArm","parentId":0},{"id":3,"name":"rightArm","parentId":0},{"id":4,"name":"leftUpperLeg","parentId":0},{"id":5,"name":"rightUpperLeg","parentId":0}],"slots":[],"attachmentKeys":[],
+    "keyframes":[
+      {"boneId":0,"boneName":"torso","frames":[{"frame":0,"x":0,"y":0,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":7,"x":-2,"y":3,"rotation":-8,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":-6,"y":4,"rotation":-14,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":-2,"y":2,"rotation":-8,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":30,"x":0,"y":0,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":1,"boneName":"head","frames":[{"frame":0,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":0,"y":-50,"rotation":12,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":0,"y":-50,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":2,"boneName":"leftArm","frames":[{"frame":0,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":7,"x":-20,"y":-30,"rotation":-85,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":-20,"y":-30,"rotation":-95,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":-20,"y":-30,"rotation":-85,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":30,"x":-20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":3,"boneName":"rightArm","frames":[{"frame":0,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":7,"x":20,"y":-30,"rotation":85,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":20,"y":-30,"rotation":95,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":22,"x":20,"y":-30,"rotation":85,"scaleX":1,"scaleY":1,"easing":"easeInOut"},{"frame":30,"x":20,"y":-30,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":4,"boneName":"leftUpperLeg","frames":[{"frame":0,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":-12,"y":35,"rotation":-15,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":-12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]},
+      {"boneId":5,"boneName":"rightUpperLeg","frames":[{"frame":0,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":14,"x":12,"y":35,"rotation":15,"scaleX":1,"scaleY":1,"easing":"easeOut"},{"frame":30,"x":12,"y":35,"rotation":0,"scaleX":1,"scaleY":1,"easing":"easeInOut"}]}
+    ],"meshDeformKeyframes":[],"attachmentOpacityKeyframes":[]}
+}

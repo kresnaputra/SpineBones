@@ -1,0 +1,19 @@
+{
+  "datasetFormat":"spinebones-rag-animation","version":"1.0","id":"sprint","name":"Sprint","description":"Fast running cycle with strong opposite arm and leg swings.","category":"run","loop":true,
+  "style":["locomotion","athletic"],"motionFeatures":{"speed":"fast","energy":"high","mood":"urgent","cycle":true},
+  "requiredBones":["torso","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"usage":"Fast looping sprint for humanoids; arms counter-swing against the legs.",
+  "tags":["sprint","run","dash","lari","cepat","fast","humanoid"],
+  "source":{"type":"synthetic","projectPath":null,"exportedAt":"2026-09-25T00:00:00.000Z"},
+  "rigProfile":{"type":"humanoid","semanticBones":["torso","head","leftArm","rightArm","leftUpperLeg","rightUpperLeg"],"boneCount":6,"slotCount":0},
+  "boneMapping":{"torso":"torso","head":"head","leftArm":"leftArm","rightArm":"rightArm","leftUpperLeg":"leftUpperLeg","rightUpperLeg":"rightUpperLeg"},
+  "animation":{"format":"spinebones-animation-keyframes","version":"1.0","duration":20,"fps":30,
+    "bones":[{"id":0,"name":"torso","parentId":null},{"id":1,"name":"head","parentId":0},{"id":2,"name":"leftArm","parentId":0},{"id":3,"name":"rightArm","parentId":0},{"id":4,"name":"leftUpperLeg","parentId":0},{"id":5,"name":"rightUpperLeg","parentId":0}],"slots":[],"attachmentKeys":[],
+    "keyframes":[
+      {"boneId":0,"boneName":"torso","frames":[{"frame":0,"x":0,"y":0,"rotation":15,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":5,"x":0,"y":-6,"rotation":18,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":0,"y":0,"rotation":15,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":15,"x":0,"y":-6,"rotation":12,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":0,"y":0,"rotation":15,"scaleX":1,"scaleY":1,"easing":"linear"}]},
+      {"boneId":1,"boneName":"head","frames":[{"frame":0,"x":0,"y":-50,"rotation":-12,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":0,"y":-50,"rotation":-10,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":0,"y":-50,"rotation":-12,"scaleX":1,"scaleY":1,"easing":"linear"}]},
+      {"boneId":2,"boneName":"leftArm","frames":[{"frame":0,"x":-20,"y":-30,"rotation":-55,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":-20,"y":-30,"rotation":55,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":-20,"y":-30,"rotation":-55,"scaleX":1,"scaleY":1,"easing":"linear"}]},
+      {"boneId":3,"boneName":"rightArm","frames":[{"frame":0,"x":20,"y":-30,"rotation":55,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":20,"y":-30,"rotation":-55,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":20,"y":-30,"rotation":55,"scaleX":1,"scaleY":1,"easing":"linear"}]},
+      {"boneId":4,"boneName":"leftUpperLeg","frames":[{"frame":0,"x":-12,"y":35,"rotation":50,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":5,"x":-12,"y":35,"rotation":10,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":-12,"y":35,"rotation":-50,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":15,"x":-12,"y":35,"rotation":-10,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":-12,"y":35,"rotation":50,"scaleX":1,"scaleY":1,"easing":"linear"}]},
+      {"boneId":5,"boneName":"rightUpperLeg","frames":[{"frame":0,"x":12,"y":35,"rotation":-50,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":5,"x":12,"y":35,"rotation":-10,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":10,"x":12,"y":35,"rotation":50,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":15,"x":12,"y":35,"rotation":10,"scaleX":1,"scaleY":1,"easing":"linear"},{"frame":20,"x":12,"y":35,"rotation":-50,"scaleX":1,"scaleY":1,"easing":"linear"}]}
+    ],"meshDeformKeyframes":[],"attachmentOpacityKeyframes":[]}
+}

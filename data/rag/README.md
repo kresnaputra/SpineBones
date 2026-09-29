@@ -1,6 +1,6 @@
 # RAG Dataset
 
-This folder stores curated animation dataset files for the thesis RAG pipeline.
+This folder stores animation dataset files for the thesis RAG pipeline.
 
 Recommended structure:
 
@@ -13,3 +13,9 @@ Example dataset items:
 - `knight-run.json`
 
 Each file should use the `spinebones-rag-animation` format exported by SpineBones.
+
+The collection contains 30 animation JSON files. Existing clips with
+`source.type: "spinebones-export"` come from SpineBones projects. The 12
+additional example clips use `source.type: "synthetic"` and have authored
+keyframes on a six-bone humanoid reference rig; they are not project exports.
+Their `boneMapping` maps semantic roles to that rig's bone names for adaptation.
